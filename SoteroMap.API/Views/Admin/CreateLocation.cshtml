@@ -1,0 +1,74 @@
+@model SoteroMap.API.Models.Location
+@{
+    ViewData["Title"] = "Nueva Ubicación";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="d-flex align-items-center gap-3 mb-4">
+    <a href="/admin/locations" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <h2 class="fw-bold mb-0">Nueva Ubicación</h2>
+</div>
+
+<div class="card border-0 shadow-sm" style="max-width:600px">
+    <div class="card-body">
+        <form asp-action="CreateLocation" method="post">
+            @Html.AntiForgeryToken()
+
+            <div class="mb-3">
+                <label asp-for="Name" class="form-label fw-semibold">Nombre *</label>
+                <input asp-for="Name" class="form-control" placeholder="ej: Sala de Servidores" />
+                <span asp-validation-for="Name" class="text-danger small"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Description" class="form-label fw-semibold">Descripción</label>
+                <textarea asp-for="Description" class="form-control" rows="2"></textarea>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col">
+                    <label asp-for="Campus" class="form-label fw-semibold">Campus *</label>
+                    <input asp-for="Campus" class="form-control" placeholder="sotero" />
+                </div>
+                <div class="col">
+                    <label asp-for="Floor" class="form-label fw-semibold">Piso</label>
+                    <select asp-for="Floor" class="form-select">
+                        <option value="0">Piso 0</option>
+                        <option value="1">Piso 1</option>
+                        <option value="2">Piso 2</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Type" class="form-label fw-semibold">Tipo</label>
+                <select asp-for="Type" class="form-select">
+                    <option value="room">Sala</option>
+                    <option value="lab">Laboratorio</option>
+                    <option value="office">Oficina</option>
+                    <option value="common">Área común</option>
+                </select>
+            </div>
+
+            <div class="row g-3 mb-4">
+                <div class="col">
+                    <label asp-for="Latitude" class="form-label fw-semibold">Latitud *</label>
+                    <input asp-for="Latitude" type="number" step="0.00001" class="form-control" />
+                </div>
+                <div class="col">
+                    <label asp-for="Longitude" class="form-label fw-semibold">Longitud *</label>
+                    <input asp-for="Longitude" type="number" step="0.00001" class="form-control" />
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-lg me-1"></i> Guardar
+                </button>
+                <a href="/admin/locations" class="btn btn-outline-secondary">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>

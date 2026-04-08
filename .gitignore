@@ -1,0 +1,18 @@
+# .env con credenciales — NUNCA subir al repo
+.env
+
+# Build outputs
+**/bin/
+**/obj/
+out/
+
+# User secrets
+**/appsettings.Development.json
+
+# VS / Rider
+.vs/
+.idea/
+*.user
+
+# Migrations generadas localmente (opcional dejarlo fuera)
+# **/Migrations/

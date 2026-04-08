@@ -1,0 +1,149 @@
+@model SoteroMap.API.ViewModels.AdminLocationsViewModel
+@{
+    ViewData["Title"] = "Ubicaciones";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="fw-bold mb-1">Ubicaciones reales del frontend</h2>
+        <div class="text-muted">Esta vista usa los edificios y salas sincronizados desde el mapa.</div>
+    </div>
+    <a href="/api/synced-buildings" class="btn btn-outline-secondary" target="_blank">
+        <i class="bi bi-box-arrow-up-right me-1"></i> Ver API
+    </a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small">Edificios</div>
+                <div class="fs-4 fw-bold">@Model.TotalBuildings</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small">Con mapa interior</div>
+                <div class="fs-4 fw-bold">@Model.BuildingsWithInteriorMap</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small">Salas sincronizadas</div>
+                <div class="fs-4 fw-bold">@Model.TotalRooms</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small">Equipos asignados</div>
+                <div class="fs-4 fw-bold">@Model.AssignedInventoryItems</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold">Buscar edificio</label>
+                <input type="text" name="search" value="@Model.Search" class="form-control" placeholder="nombre, ID, tipo, area..." />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label small fw-semibold">Campus</label>
+                <input type="text" name="campus" value="@Model.Campus" class="form-control" placeholder="ej: sotero" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Piso</label>
+                <select name="floor" class="form-select">
+                    <option value="">Todos</option>
+                    <option value="0" selected="@(Model.Floor == "0")">Piso 0</option>
+                    <option value="1" selected="@(Model.Floor == "1")">Piso 1</option>
+                    <option value="2" selected="@(Model.Floor == "2")">Piso 2</option>
+                    <option value="3" selected="@(Model.Floor == "3")">Piso 3</option>
+                    <option value="4" selected="@(Model.Floor == "4")">Piso 4</option>
+                    <option value="5" selected="@(Model.Floor == "5")">Piso 5</option>
+                </select>
+            </div>
+            <div class="col-md-12">
+                <button type="submit" class="btn btn-outline-primary w-100">
+                    <i class="bi bi-funnel me-1"></i> Filtrar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Edificio</th>
+                        <th>Campus</th>
+                        <th>Tipo</th>
+                        <th>Pisos</th>
+                        <th>Salas</th>
+                        <th>Equipos asignados</th>
+                        <th>Sugeridos</th>
+                        <th>Estado mapa</th>
+                        <th>Coordenadas</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var loc in Model.Locations)
+                    {
+                        <tr>
+                            <td>
+                                <div class="fw-semibold">@loc.DisplayName</div>
+                                <div class="small text-muted">@loc.ExternalId</div>
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary">@loc.Campus</span>
+                                @if (loc.HasManualOverride)
+                                {
+                                    <span class="badge bg-warning text-dark ms-1">override</span>
+                                }
+                            </td>
+                            <td><span class="badge bg-info text-dark">@loc.Type</span></td>
+                            <td class="small">@loc.AvailableFloors</td>
+                            <td>@loc.RoomsCount</td>
+                            <td>
+                                <a href="/admin/inventory?assignment=assigned&buildingExternalId=@loc.ExternalId" class="badge bg-success text-decoration-none">
+                                    @loc.AssignedInventoryCount equipos
+                                </a>
+                            </td>
+                            <td>
+                                <a href="/admin/inventory?assignment=suggested&buildingExternalId=@loc.ExternalId" class="badge bg-warning text-dark text-decoration-none">
+                                    @loc.SuggestedInventoryCount sugeridos
+                                </a>
+                            </td>
+                            <td class="small">
+                                <div>@loc.MappingStatus</div>
+                                <div class="text-muted">Inventario: @loc.InventoryStatus</div>
+                            </td>
+                            <td class="text-muted small">@loc.Coordinates</td>
+                            <td class="text-end">
+                                <a href="/admin/editsyncedbuilding/@loc.ExternalId" class="btn btn-sm btn-outline-primary">
+                                    Editar edificio
+                                </a>
+                                <a href="/admin/activity?buildingExternalId=@loc.ExternalId" class="btn btn-sm btn-outline-secondary ms-2">
+                                    Historial
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

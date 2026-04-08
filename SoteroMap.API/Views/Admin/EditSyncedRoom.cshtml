@@ -1,0 +1,78 @@
+@model SoteroMap.API.ViewModels.EditSyncedRoomViewModel
+@{
+    ViewData["Title"] = "Editar sala sincronizada";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+
+    var room = Model.Room;
+    var building = Model.Building;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="fw-bold mb-1">Editar sala sincronizada</h2>
+        <div class="text-muted">Este cambio queda guardado como override manual y se mantiene despues de resincronizar.</div>
+    </div>
+    <a href="/admin/editsyncedbuilding/@building.ExternalId" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Volver al edificio
+    </a>
+</div>
+
+@if (TempData["SuccessMessage"] is string successMessage)
+{
+    <div class="alert alert-success">@successMessage</div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <h5 class="fw-semibold mb-3">Override manual</h5>
+                <form method="post">
+                    @Html.AntiForgeryToken()
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Nombre de la sala</label>
+                        <input name="manualName"
+                               class="form-control"
+                               value="@room.ManualName"
+                               placeholder="@room.Name" />
+                        <div class="form-text">Dejalo vacio para volver al nombre fuente del frontend.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Piso</label>
+                        <input name="manualFloor"
+                               type="number"
+                               class="form-control"
+                               value="@(room.ManualFloor?.ToString() ?? string.Empty)"
+                               placeholder="@room.Floor" />
+                        <div class="form-text">Si lo dejas vacio, se conserva el piso original sincronizado.</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save me-1"></i> Guardar override
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <h5 class="fw-semibold mb-3">Contexto actual</h5>
+                <div class="mb-2"><span class="text-muted">Edificio:</span> <span class="fw-semibold">@building.EffectiveDisplayName</span></div>
+                <div class="mb-2"><span class="text-muted">ID edificio:</span> @building.ExternalId</div>
+                <div class="mb-2"><span class="text-muted">ID sala:</span> @room.ExternalId</div>
+                <div class="mb-2"><span class="text-muted">Nombre fuente:</span> @room.Name</div>
+                <div class="mb-2"><span class="text-muted">Piso fuente:</span> @room.Floor</div>
+                <hr />
+                <div class="mb-2"><span class="text-muted">Nombre efectivo:</span> <span class="fw-semibold">@room.EffectiveName</span></div>
+                <div class="mb-2"><span class="text-muted">Piso efectivo:</span> @room.EffectiveFloor</div>
+                <div class="mb-2"><span class="text-muted">Tipo:</span> @room.Type</div>
+                <div class="mb-2"><span class="text-muted">Unidad:</span> @room.Unit</div>
+                <div class="mb-0"><span class="text-muted">Equipos registrados:</span> @room.DevicesCount</div>
+            </div>
+        </div>
+    </div>
+</div>

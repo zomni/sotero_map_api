@@ -1,0 +1,77 @@
+@model SoteroMap.API.Models.Equipment
+@{
+    ViewData["Title"] = "Nuevo Equipo";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="d-flex align-items-center gap-3 mb-4">
+    <a href="/admin/equipments" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <h2 class="fw-bold mb-0">Nuevo Equipo</h2>
+</div>
+
+<div class="card border-0 shadow-sm" style="max-width:600px">
+    <div class="card-body">
+        <form asp-action="CreateEquipment" method="post">
+            @Html.AntiForgeryToken()
+
+            <div class="mb-3">
+                <label asp-for="Name" class="form-label fw-semibold">Nombre *</label>
+                <input asp-for="Name" class="form-control" placeholder="ej: Servidor Dell PowerEdge R740" />
+                <span asp-validation-for="Name" class="text-danger small"></span>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col">
+                    <label asp-for="Category" class="form-label fw-semibold">Categoría</label>
+                    <select asp-for="Category" class="form-select">
+                        <option value="PC">PC</option>
+                        <option value="Server">Servidor</option>
+                        <option value="Network">Red</option>
+                        <option value="Projector">Proyector</option>
+                        <option value="Printer">Impresora</option>
+                        <option value="Audio">Audio</option>
+                        <option value="Other">Otro</option>
+                    </select>
+                </div>
+                <div class="col">
+                    <label asp-for="SerialNumber" class="form-label fw-semibold">N° Serie</label>
+                    <input asp-for="SerialNumber" class="form-control font-monospace" placeholder="SRV-001" />
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Status" class="form-label fw-semibold">Estado</label>
+                <select asp-for="Status" class="form-select">
+                    <option value="active">Activo</option>
+                    <option value="maintenance">En Mantención</option>
+                    <option value="inactive">Inactivo</option>
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="LocationId" class="form-label fw-semibold">Ubicación *</label>
+                <select asp-for="LocationId" class="form-select">
+                    <option value="">-- Seleccione --</option>
+                    @foreach (var loc in ViewBag.Locations as List<SoteroMap.API.Models.Location> ?? new())
+                    {
+                        <option value="@loc.Id">[@loc.Campus / Piso @loc.Floor] @loc.Name</option>
+                    }
+                </select>
+            </div>
+
+            <div class="mb-4">
+                <label asp-for="Notes" class="form-label fw-semibold">Notas</label>
+                <textarea asp-for="Notes" class="form-control" rows="2" placeholder="Observaciones adicionales..."></textarea>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-success">
+                    <i class="bi bi-check-lg me-1"></i> Guardar
+                </button>
+                <a href="/admin/equipments" class="btn btn-outline-secondary">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>

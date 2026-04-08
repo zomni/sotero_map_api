@@ -1,0 +1,120 @@
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using SoteroMap.API.Data;
+using SoteroMap.API.Models;
+using SoteroMap.API.Services;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Controllers con Vistas Razor (MVC) + API
+builder.Services.AddControllersWithViews();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+builder.Services
+    .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/Auth/Login";
+        options.AccessDeniedPath = "/Auth/AccessDenied";
+        options.Cookie.Name = "SoteroMap.Auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.SlidingExpiration = true;
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+    });
+builder.Services.AddAuthorization();
+
+// SQLite local — no requiere servidor, genera un archivo .db
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("Default")));
+builder.Services.AddScoped<IPasswordHasher<AuthUser>, PasswordHasher<AuthUser>>();
+builder.Services.AddScoped<BackendAuthService>();
+builder.Services.AddScoped<AuditLogService>();
+builder.Services.AddScoped<FrontendSyncService>();
+builder.Services.AddScoped<ExcelInventoryImportService>();
+builder.Services.AddScoped<InventoryReconciliationService>();
+
+// CORS para que el frontend (sotero_map) pueda consumir la API
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("FrontendPolicy", policy =>
+    {
+        var allowedOrigins = (builder.Configuration["AllowedOrigins"] ?? "http://localhost:3000")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        policy.WithOrigins(allowedOrigins)
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
+var app = builder.Build();
+
+// Seed data al iniciar
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    // Si el proyecto aún no tiene migraciones EF, EnsureCreated permite
+    // levantar la base SQLite por primera vez sin romper el arranque.
+    if (context.Database.GetMigrations().Any())
+    {
+        await context.Database.MigrateAsync();
+    }
+    else
+    {
+        await context.Database.EnsureCreatedAsync();
+    }
+
+    await ExtendedSchemaInitializer.EnsureAsync(context);
+    await SeedData.InitializeAsync(context);
+    var authService = scope.ServiceProvider.GetRequiredService<BackendAuthService>();
+    await authService.EnsureSeedUsersAsync();
+}
+
+app.UseCors("FrontendPolicy");
+app.UseStaticFiles();
+app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseWhen(
+        context => context.Request.Path.StartsWithSegments("/swagger"),
+        branch =>
+        {
+            branch.Use(async (context, next) =>
+            {
+                if (context.User.Identity?.IsAuthenticated != true)
+                {
+                    await context.ChallengeAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                    return;
+                }
+
+                await next();
+            });
+        });
+
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+// Ruta para Admin (MVC con Razor)
+app.MapControllerRoute(
+    name: "admin",
+    pattern: "admin/{action=Index}/{id?}",
+    defaults: new { controller = "Admin" });
+
+// Ruta default
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Admin}/{action=Index}/{id?}");
+
+// Ruta API REST
+app.MapControllers();
+
+app.Run();

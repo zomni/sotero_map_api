@@ -1,0 +1,194 @@
+@model SoteroMap.API.ViewModels.AdminInventoryListViewModel
+@{
+    ViewData["Title"] = "Inventario";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var isAdmin = User.IsInRole(SoteroMap.API.Models.AppRoles.Admin);
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="fw-bold mb-1">Inventario importado</h2>
+        <div class="text-muted">Los equipos viven en el backend. El mapa y las salas siguen viniendo del frontend.</div>
+    </div>
+    <a href="/api/inventory-import/status" class="btn btn-outline-secondary" target="_blank">
+        <i class="bi bi-activity me-1"></i> Estado importacion
+    </a>
+</div>
+
+@if (TempData["SuccessMessage"] is string successMessage)
+{
+    <div class="alert alert-success">@successMessage</div>
+}
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small">Total</div>
+                <div class="fs-4 fw-bold">@Model.TotalItems</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small">Asignados</div>
+                <div class="fs-4 fw-bold">@Model.AssignedItems</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small">Pendientes</div>
+                <div class="fs-4 fw-bold">@Model.PendingItems</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small">Con sugerencia</div>
+                <div class="fs-4 fw-bold">@Model.SuggestedItems</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" action="/admin/inventory" class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">Buscar</label>
+                <input type="text" name="search" value="@Model.Search" class="form-control" placeholder="S/N, descripcion, usuario, IP..." />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Categoria</label>
+                <input type="text" name="category" value="@Model.Category" class="form-control" placeholder="pc, printer..." />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Estado</label>
+                <input type="text" name="status" value="@Model.Status" class="form-control" placeholder="active, stolen..." />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Asignacion</label>
+                <select name="assignment" class="form-select">
+                    <option value="pending" selected="@(Model.AssignmentFilter == "pending")">Pendientes</option>
+                    <option value="assigned" selected="@(Model.AssignmentFilter == "assigned")">Asignados</option>
+                    <option value="suggested" selected="@(Model.AssignmentFilter == "suggested")">Con sugerencia</option>
+                    <option value="all" selected="@(Model.AssignmentFilter == "all")">Todos</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Edificio asignado</label>
+                <select name="buildingExternalId" class="form-select">
+                    <option value="">Todos</option>
+                    @foreach (var building in Model.Buildings)
+                    {
+                        <option value="@building.ExternalId" selected="@(Model.BuildingExternalId == building.ExternalId)">
+                            @building.EffectiveDisplayName
+                        </option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-primary w-100">Filtrar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Fila</th>
+                        <th>Equipo</th>
+                        <th>Unidad</th>
+                        <th>Usuario</th>
+                        <th>IP</th>
+                        <th>Categoria</th>
+                        <th>Estado</th>
+                        <th>Sugerencia</th>
+                        <th>Asignacion manual</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Model.Items)
+                    {
+                        <tr>
+                            <td class="text-muted small">#@item.RowNumber</td>
+                            <td>
+                                <div class="fw-semibold">S/N: @(string.IsNullOrWhiteSpace(item.SerialNumber) ? "Sin S/N" : item.SerialNumber)</div>
+                                <div class="small text-muted">@item.Description</div>
+                                <div class="small text-muted">Item @item.ItemNumber</div>
+                            </td>
+                            <td class="small">
+                                <div>@item.UnitOrDepartment</div>
+                                <div class="text-muted">@item.OrganizationalUnit</div>
+                            </td>
+                            <td class="small">
+                                <div>@item.ResponsibleUser</div>
+                                <div class="text-muted">@item.Email</div>
+                            </td>
+                            <td class="small font-monospace">@item.IpAddress</td>
+                            <td><span class="badge bg-secondary">@item.InferredCategory</span></td>
+                            <td>
+                                @{
+                                    var badgeClass = item.InferredStatus switch
+                                    {
+                                        "active" => "bg-success",
+                                        "stolen" => "bg-danger",
+                                        _ => "bg-warning text-dark"
+                                    };
+                                }
+                                <span class="badge @badgeClass">@item.InferredStatus</span>
+                            </td>
+                            <td class="small">
+                                @if (string.IsNullOrWhiteSpace(item.MatchedBuildingExternalId))
+                                {
+                                    <span class="text-muted">Sin sugerencia</span>
+                                }
+                                else
+                                {
+                                    <div>@item.MatchedBuildingExternalId</div>
+                                    @if (!string.IsNullOrWhiteSpace(item.MatchedRoomExternalId))
+                                    {
+                                        <div class="text-muted">@item.MatchedRoomExternalId</div>
+                                    }
+                                    <div class="text-muted">@item.MatchConfidence</div>
+                                }
+                            </td>
+                            <td class="small">
+                                @if (string.IsNullOrWhiteSpace(item.AssignedBuildingExternalId))
+                                {
+                                    <span class="text-muted">Pendiente</span>
+                                }
+                                else
+                                {
+                                    <div>@item.AssignedBuildingExternalId</div>
+                                    @if (!string.IsNullOrWhiteSpace(item.AssignedRoomExternalId))
+                                    {
+                                        <div class="text-muted">@item.AssignedRoomExternalId</div>
+                                    }
+                                    @if (item.AssignedFloor.HasValue)
+                                    {
+                                        <div class="text-muted">Piso @item.AssignedFloor</div>
+                                    }
+                                }
+                            </td>
+                            <td>
+                                <a href="/admin/editinventoryitem/@item.Id" class="btn btn-sm btn-outline-primary">
+                                    @(isAdmin ? "Editar" : "Ver")
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

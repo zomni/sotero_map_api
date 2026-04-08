@@ -1,0 +1,258 @@
+@model SoteroMap.API.ViewModels.EditInventoryItemViewModel
+@{
+    ViewData["Title"] = "Editar inventario";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var item = Model.Item;
+    var isAdmin = User.IsInRole(SoteroMap.API.Models.AppRoles.Admin);
+    var disabledAttr = isAdmin ? null : "disabled";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="fw-bold mb-1">@(isAdmin ? "Editar equipo importado" : "Detalle equipo importado")</h2>
+        <div class="text-muted">Registro Excel fila #@item.RowNumber</div>
+    </div>
+    <a href="/admin/inventory" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Volver
+    </a>
+</div>
+
+@if (TempData["SuccessMessage"] is string successMessage)
+{
+    <div class="alert alert-success">@successMessage</div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold">Datos importados desde Excel</div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Numero item</label>
+                        <input class="form-control" value="@item.ItemNumber" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Descripcion</label>
+                        <input class="form-control" value="@item.Description" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Lote</label>
+                        <input class="form-control" value="@item.Lot" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Fecha instalacion</label>
+                        <input class="form-control" value="@item.InstallDate" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Unidad o depto</label>
+                        <input class="form-control" value="@item.UnitOrDepartment" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Unidad organizativa</label>
+                        <input class="form-control" value="@item.OrganizationalUnit" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Usuario responsable</label>
+                        <input class="form-control" value="@item.ResponsibleUser" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">RUN</label>
+                        <input class="form-control" value="@item.Run" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Email</label>
+                        <input class="form-control" value="@item.Email" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Cargo</label>
+                        <input class="form-control" value="@item.JobTitle" readonly />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-muted">IP</label>
+                        <input class="form-control" value="@item.IpAddress" readonly />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-muted">Anexo / Telefono</label>
+                        <input class="form-control" value="@item.AnnexPhone" readonly />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-muted">Ticket MDA</label>
+                        <input class="form-control" value="@item.TicketMda" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Equipo reemplazado</label>
+                        <input class="form-control" value="@item.ReplacedEquipment" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Tecnico instalador</label>
+                        <input class="form-control" value="@item.Installer" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Observacion</label>
+                        <textarea class="form-control" rows="3" readonly>@item.Observation</textarea>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label text-muted">RUT</label>
+                        <input class="form-control" value="@item.Rut" readonly />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label text-muted">Fecha inventario</label>
+                        <input class="form-control" value="@item.InventoryDate" readonly />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label text-muted">Categoria inferida</label>
+                        <input class="form-control" value="@item.InferredCategory" readonly />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label text-muted">Estado inferido</label>
+                        <input class="form-control" value="@item.InferredStatus" readonly />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white fw-semibold">Asignacion manual</div>
+            <div class="card-body">
+                @if (!isAdmin)
+                {
+                    <div class="alert alert-info">
+                        Tu perfil es de solo lectura. Puedes ver toda la informacion, pero solo un admin puede modificar asignaciones.
+                    </div>
+                }
+
+                <form method="post" action="/admin/editinventoryitem/@item.Id">
+                    @Html.AntiForgeryToken()
+                    <fieldset @disabledAttr>
+                        <div class="mb-3">
+                            <label class="form-label">S/N serial number</label>
+                            <input type="text" class="form-control font-monospace" name="serialNumber" value="@item.SerialNumber" placeholder="Ej: SMJ0LBD3N" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Edificio</label>
+                            <select class="form-select" name="assignedBuildingExternalId" id="assignedBuildingExternalId">
+                                <option value="">Sin asignar</option>
+                                @foreach (var building in Model.Buildings)
+                                {
+                                    <option value="@building.ExternalId" selected="@(item.AssignedBuildingExternalId == building.ExternalId)">
+                                        @building.EffectiveDisplayName (@building.ExternalId)
+                                    </option>
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Sala</label>
+                            <select class="form-select" name="assignedRoomExternalId" id="assignedRoomExternalId">
+                                <option value="">Sin asignar</option>
+                                @foreach (var room in Model.Rooms)
+                                {
+                                    <option value="@room.ExternalId"
+                                            data-building="@room.BuildingExternalId"
+                                            data-floor="@room.EffectiveFloor"
+                                            selected="@(item.AssignedRoomExternalId == room.ExternalId)">
+                                        @room.EffectiveName (@room.BuildingExternalId / piso @room.EffectiveFloor)
+                                    </option>
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Piso</label>
+                            <input type="number" class="form-control" name="assignedFloor" value="@item.AssignedFloor" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Notas de asignacion</label>
+                            <textarea class="form-control" name="assignmentNotes" rows="4" placeholder="Ej: pendiente confirmar sala exacta">@item.AssignmentNotes</textarea>
+                        </div>
+                    </fieldset>
+                    @if (isAdmin)
+                    {
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">Guardar asignacion</button>
+                            <button type="button" class="btn btn-outline-secondary" id="useSuggestionButton">Usar sugerencia</button>
+                        </div>
+                    }
+                </form>
+                @if (isAdmin)
+                {
+                    <form method="post" action="/admin/clearinventoryassignment/@item.Id" class="mt-3">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn btn-outline-danger">Limpiar asignacion</button>
+                    </form>
+                }
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold">Sugerencia automatica</div>
+            <div class="card-body">
+                @if (string.IsNullOrWhiteSpace(item.MatchedBuildingExternalId))
+                {
+                    <div class="text-muted">No hay sugerencia automatica para este equipo.</div>
+                }
+                else
+                {
+                    <div class="mb-2"><strong>Edificio sugerido:</strong> @item.MatchedBuildingExternalId</div>
+                    <div class="mb-2"><strong>Sala sugerida:</strong> @(string.IsNullOrWhiteSpace(item.MatchedRoomExternalId) ? "Sin sala" : item.MatchedRoomExternalId)</div>
+                    <div class="mb-2"><strong>Confianza:</strong> @item.MatchConfidence</div>
+                    <div class="mb-2"><strong>Notas:</strong> @(string.IsNullOrWhiteSpace(item.MatchNotes) ? "Sin notas" : item.MatchNotes)</div>
+                }
+
+                <div class="text-muted small mt-3">
+                    Las sugerencias no asignan nada por si solas. Tu asignacion manual es la que manda.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+@if (isAdmin)
+{
+<script>
+    (function () {
+        const buildingSelect = document.getElementById("assignedBuildingExternalId");
+        const roomSelect = document.getElementById("assignedRoomExternalId");
+        const useSuggestionButton = document.getElementById("useSuggestionButton");
+        const suggestedBuilding = "@item.MatchedBuildingExternalId";
+        const suggestedRoom = "@item.MatchedRoomExternalId";
+
+        function syncRoomOptions() {
+            const selectedBuilding = buildingSelect.value;
+            Array.from(roomSelect.options).forEach((option, index) => {
+                if (index === 0) {
+                    option.hidden = false;
+                    return;
+                }
+
+                const optionBuilding = option.getAttribute("data-building");
+                option.hidden = selectedBuilding !== "" && optionBuilding !== selectedBuilding;
+            });
+
+            const selectedOption = roomSelect.options[roomSelect.selectedIndex];
+            if (selectedOption && selectedOption.hidden) {
+                roomSelect.value = "";
+            }
+        }
+
+        buildingSelect.addEventListener("change", syncRoomOptions);
+        syncRoomOptions();
+
+        useSuggestionButton.addEventListener("click", function () {
+            if (!suggestedBuilding) {
+                return;
+            }
+
+            buildingSelect.value = suggestedBuilding;
+            syncRoomOptions();
+
+            if (suggestedRoom) {
+                roomSelect.value = suggestedRoom;
+            }
+        });
+    })();
+</script>
+}
+}

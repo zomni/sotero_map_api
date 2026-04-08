@@ -1,0 +1,71 @@
+@model SoteroMap.API.ViewModels.AdminActivityViewModel
+@{
+    ViewData["Title"] = "Actividad";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="fw-bold mb-1">Actividad reciente</h2>
+        <div class="text-muted">Bitacora completa de cambios registrados en el backend.</div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label small fw-semibold">Edificio</label>
+                <input type="text" name="buildingExternalId" value="@Model.BuildingExternalId" class="form-control" placeholder="Ej: SR-BLD-069" />
+            </div>
+            <div class="col-md-5">
+                <label class="form-label small fw-semibold">Usuario</label>
+                <input type="text" name="changedByUsername" value="@Model.ChangedByUsername" class="form-control" placeholder="Ej: admin" />
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-outline-primary w-100">Filtrar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Usuario</th>
+                        <th>Edificio</th>
+                        <th>Accion</th>
+                        <th>Resumen</th>
+                        <th>Detalle</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Items.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">No hay registros para ese filtro.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in Model.Items)
+                        {
+                            <tr>
+                                <td class="small text-nowrap">@item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+                                <td class="small">@item.ChangedByUsername</td>
+                                <td class="small">@item.BuildingExternalId</td>
+                                <td><span class="badge bg-secondary">@item.ActionType</span></td>
+                                <td>@item.Summary</td>
+                                <td class="small text-muted">@item.Details</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
