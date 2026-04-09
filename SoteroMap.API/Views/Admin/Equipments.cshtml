@@ -3,6 +3,23 @@
     ViewData["Title"] = "Inventario";
     Layout = "~/Views/Shared/_Layout.cshtml";
     var isAdmin = User.IsInRole(SoteroMap.API.Models.AppRoles.Admin);
+    var mapBaseUrl = "http://localhost:8080";
+    var totalPages = (int)Math.Ceiling((Model.TotalFilteredItems <= 0 ? 1 : Model.TotalFilteredItems) / (double)Model.PageSize);
+    var currentPage = Math.Min(Model.Page, totalPages);
+    int[] pageSizeOptions = [30, 50, 100, 200, 500];
+    var buildingFloorLookup = Model.Buildings.ToDictionary(
+        building => building.ExternalId,
+        building =>
+        {
+            var effectiveFloors = (building.EffectiveFloorsJson ?? string.Empty)
+                .Replace("[", string.Empty)
+                .Replace("]", string.Empty)
+                .Replace("\"", string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .FirstOrDefault();
+
+            return int.TryParse(effectiveFloors, out var parsedFloor) ? parsedFloor : 0;
+        });
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -91,8 +108,20 @@
                     }
                 </select>
             </div>
-            <div class="col-md-1">
-                <button type="submit" class="btn btn-primary w-100">Filtrar</button>
+            <div class="col-md-2">
+                <label class="form-label">Por pagina</label>
+                <select name="pageSize" class="form-select">
+                    @foreach (var size in pageSizeOptions)
+                    {
+                        <option value="@size" selected="@(Model.PageSize == size)">@size</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-12">
+                <input type="hidden" name="page" value="1" />
+                <button type="submit" class="btn btn-outline-primary w-100">
+                    <i class="bi bi-funnel me-1"></i> Filtrar
+                </button>
             </div>
         </form>
     </div>
@@ -120,11 +149,15 @@
                     @foreach (var item in Model.Items)
                     {
                         <tr>
-                            <td class="text-muted small">#@item.RowNumber</td>
+                            <td class="text-muted small">
+                                <div>#@item.Id</div>
+                                <div class="text-muted">origen: @item.RowNumber</div>
+                            </td>
                             <td>
                                 <div class="fw-semibold">S/N: @(string.IsNullOrWhiteSpace(item.SerialNumber) ? "Sin S/N" : item.SerialNumber)</div>
                                 <div class="small text-muted">@item.Description</div>
                                 <div class="small text-muted">Item @item.ItemNumber</div>
+                                <div class="small text-muted">@item.SourceFile</div>
                             </td>
                             <td class="small">
                                 <div>@item.UnitOrDepartment</div>
@@ -181,14 +214,51 @@
                                 }
                             </td>
                             <td>
-                                <a href="/admin/editinventoryitem/@item.Id" class="btn btn-sm btn-outline-primary">
-                                    @(isAdmin ? "Editar" : "Ver")
-                                </a>
+                                <div class="d-flex gap-2 justify-content-end">
+                                    @if (!string.IsNullOrWhiteSpace(item.AssignedBuildingExternalId))
+                                    {
+                                        var resolvedFloor = item.AssignedFloor
+                                            ?? buildingFloorLookup.GetValueOrDefault(item.AssignedBuildingExternalId, 0);
+                                        var inventoryMapUrl = $"{mapBaseUrl}/?id={Uri.EscapeDataString(item.AssignedBuildingExternalId)}&zoom=20&floor={resolvedFloor}";
+                                        if (!string.IsNullOrWhiteSpace(item.AssignedRoomExternalId))
+                                        {
+                                            inventoryMapUrl += $"&view=rooms&roomId={Uri.EscapeDataString(item.AssignedRoomExternalId)}";
+                                        }
+
+                                        <a href="@inventoryMapUrl"
+                                           class="btn btn-sm btn-outline-info"
+                                           target="sotero-map"
+                                           onclick="window.open(this.href, 'sotero-map'); return false;"
+                                           title="Ir al edificio en el mapa">
+                                            <i class="bi bi-map"></i>
+                                        </a>
+                                    }
+                                    <a href="/admin/editinventoryitem/@item.Id" class="btn btn-sm btn-outline-primary">
+                                        @(isAdmin ? "Editar" : "Ver")
+                                    </a>
+                                </div>
                             </td>
                         </tr>
                     }
                 </tbody>
             </table>
         </div>
+    </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mt-3">
+    <div class="text-muted small">
+        Mostrando @Model.Items.Count de @Model.TotalFilteredItems resultado(s)
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-secondary @(currentPage <= 1 ? "disabled" : null)"
+           href="/admin/inventory?search=@Uri.EscapeDataString(Model.Search)&category=@Uri.EscapeDataString(Model.Category)&status=@Uri.EscapeDataString(Model.Status)&assignment=@Uri.EscapeDataString(Model.AssignmentFilter)&buildingExternalId=@Uri.EscapeDataString(Model.BuildingExternalId)&page=@(currentPage - 1)&pageSize=@Model.PageSize">
+            Anterior
+        </a>
+        <span class="btn btn-sm btn-light disabled">Pagina @currentPage de @totalPages</span>
+        <a class="btn btn-sm btn-outline-secondary @(currentPage >= totalPages ? "disabled" : null)"
+           href="/admin/inventory?search=@Uri.EscapeDataString(Model.Search)&category=@Uri.EscapeDataString(Model.Category)&status=@Uri.EscapeDataString(Model.Status)&assignment=@Uri.EscapeDataString(Model.AssignmentFilter)&buildingExternalId=@Uri.EscapeDataString(Model.BuildingExternalId)&page=@(currentPage + 1)&pageSize=@Model.PageSize">
+            Siguiente
+        </a>
     </div>
 </div>

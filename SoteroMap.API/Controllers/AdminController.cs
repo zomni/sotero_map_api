@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SoteroMap.API.Data;
 using SoteroMap.API.Models;
 using SoteroMap.API.Services;
 using SoteroMap.API.ViewModels;
+using System.Text.Json;
 
 namespace SoteroMap.API.Controllers;
 
@@ -13,15 +15,20 @@ public class AdminController : Controller
 {
     private readonly AppDbContext _context;
     private readonly AuditLogService _auditLogService;
+    private readonly IConfiguration _configuration;
 
-    public AdminController(AppDbContext context, AuditLogService auditLogService)
+    public AdminController(AppDbContext context, AuditLogService auditLogService, IConfiguration configuration)
     {
         _context = context;
         _auditLogService = auditLogService;
+        _configuration = configuration;
     }
 
     public async Task<IActionResult> Index()
     {
+        var databaseFileInfo = GetDatabaseFileInfo();
+        var databaseBackups = GetDatabaseBackupFiles();
+
         var model = new AdminDashboardViewModel
         {
             SyncedBuildings = await _context.SyncedBuildings.CountAsync(),
@@ -36,6 +43,18 @@ public class AdminController : Controller
                 .Select(i => i.InferredCategory)
                 .Distinct()
                 .CountAsync(),
+            DatabaseFileName = databaseFileInfo?.Name ?? "soteromap.db",
+            DatabaseFileSizeBytes = databaseFileInfo?.Length ?? 0,
+            DatabaseLastWriteUtc = databaseFileInfo?.LastWriteTimeUtc,
+            FrontendMapUrl = ResolveFrontendMapUrl(),
+            DatabaseBackups = databaseBackups
+                .Select(file => new DatabaseBackupViewModel
+                {
+                    FileName = file.Name,
+                    SizeBytes = file.Length,
+                    LastWriteUtc = file.LastWriteTimeUtc
+                })
+                .ToList(),
             CategoryBreakdown = await _context.ImportedInventoryItems
                 .AsNoTracking()
                 .GroupBy(i => i.InferredCategory == "" ? "sin-categoria" : i.InferredCategory)
@@ -82,6 +101,143 @@ public class AdminController : Controller
         return View(model);
     }
 
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpGet("/admin/database/download")]
+    public IActionResult DownloadDatabase()
+    {
+        var databasePath = GetDatabaseFilePath();
+        if (!System.IO.File.Exists(databasePath))
+            return NotFound("No se encontro la base de datos.");
+
+        return DownloadDatabaseFile(databasePath, $"soteromap-backup-{DateTime.UtcNow:yyyyMMdd-HHmmss}.db");
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpGet("/admin/database/backups/{fileName}")]
+    public IActionResult DownloadDatabaseBackup(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            return NotFound();
+
+        var backupPath = Path.Combine(GetDatabaseBackupDirectory(), Path.GetFileName(fileName));
+        if (!System.IO.File.Exists(backupPath))
+            return NotFound("No se encontro el respaldo solicitado.");
+
+        return DownloadDatabaseFile(backupPath, Path.GetFileName(backupPath));
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPost("/admin/database/backups/{fileName}/restore")]
+    [ValidateAntiForgeryToken]
+    public IActionResult RestoreDatabaseBackup(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            TempData["ErrorMessage"] = "No se indico ningun respaldo para restaurar.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var backupPath = Path.Combine(GetDatabaseBackupDirectory(), Path.GetFileName(fileName));
+        if (!System.IO.File.Exists(backupPath))
+        {
+            TempData["ErrorMessage"] = "No se encontro el respaldo seleccionado.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            ValidateSqliteFile(backupPath);
+            RestoreDatabaseFromFile(backupPath);
+            TempData["SuccessMessage"] = $"Respaldo restaurado correctamente: {Path.GetFileName(backupPath)}";
+        }
+        catch (Exception ex)
+        {
+            TempData["ErrorMessage"] = $"No se pudo restaurar el respaldo: {ex.Message}";
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPost("/admin/database/backups/{fileName}/delete")]
+    [ValidateAntiForgeryToken]
+    public IActionResult DeleteDatabaseBackup(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            TempData["ErrorMessage"] = "No se indico ningun respaldo para eliminar.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var backupPath = Path.Combine(GetDatabaseBackupDirectory(), Path.GetFileName(fileName));
+        if (!System.IO.File.Exists(backupPath))
+        {
+            TempData["ErrorMessage"] = "No se encontro el respaldo seleccionado.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            System.IO.File.Delete(backupPath);
+            TempData["SuccessMessage"] = $"Respaldo eliminado correctamente: {Path.GetFileName(backupPath)}";
+        }
+        catch (Exception ex)
+        {
+            TempData["ErrorMessage"] = $"No se pudo eliminar el respaldo: {ex.Message}";
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPost("/admin/database/upload")]
+    [ValidateAntiForgeryToken]
+    [RequestSizeLimit(100_000_000)]
+    public async Task<IActionResult> UploadDatabase(IFormFile? databaseFile)
+    {
+        if (databaseFile is null || databaseFile.Length == 0)
+        {
+            TempData["ErrorMessage"] = "Selecciona un archivo .db para restaurar.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var extension = Path.GetExtension(databaseFile.FileName);
+        if (!new[] { ".db", ".sqlite", ".sqlite3" }.Contains(extension, StringComparer.OrdinalIgnoreCase))
+        {
+            TempData["ErrorMessage"] = "Formato no valido. Sube un archivo .db, .sqlite o .sqlite3.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var databasePath = GetDatabaseFilePath();
+        var databaseDirectory = Path.GetDirectoryName(databasePath) ?? AppContext.BaseDirectory;
+        Directory.CreateDirectory(databaseDirectory);
+
+        var tempPath = Path.Combine(databaseDirectory, $"upload-{Guid.NewGuid():N}{extension}");
+
+        try
+        {
+            await using (var stream = System.IO.File.Create(tempPath))
+            {
+                await databaseFile.CopyToAsync(stream);
+            }
+
+            ValidateSqliteFile(tempPath);
+            RestoreDatabaseFromFile(tempPath);
+            TempData["SuccessMessage"] = "Base de datos restaurada correctamente. Si tienes otra sesion abierta, recarga la pagina.";
+        }
+        catch (Exception ex)
+        {
+            TempData["ErrorMessage"] = $"No se pudo restaurar la base de datos: {ex.Message}";
+        }
+        finally
+        {
+            if (System.IO.File.Exists(tempPath))
+                System.IO.File.Delete(tempPath);
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
     [HttpGet("/admin/activity")]
     public async Task<IActionResult> Activity(string? buildingExternalId, string? changedByUsername)
     {
@@ -120,8 +276,11 @@ public class AdminController : Controller
         return View(model);
     }
 
-    public async Task<IActionResult> Locations(string? search, string? campus, string? floor)
+    public async Task<IActionResult> Locations(string? search, string? campus, string? floor, int page = 1, int pageSize = 30)
     {
+        pageSize = NormalizePageSize(pageSize);
+        page = Math.Max(page, 1);
+
         var buildingsQuery = _context.SyncedBuildings.AsNoTracking().AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -144,8 +303,23 @@ public class AdminController : Controller
             buildingsQuery = buildingsQuery.Where(b => (b.ManualFloorsJson != "" ? b.ManualFloorsJson : b.FloorsJson).Contains(floorToken));
         }
 
+        var totalFilteredLocations = await buildingsQuery.CountAsync();
+        var filteredBuildingSnapshot = await buildingsQuery
+            .Select(b => new
+            {
+                b.Id,
+                b.ExternalId,
+                b.HasInteriorMap
+            })
+            .ToListAsync();
+
+        var filteredBuildingIds = filteredBuildingSnapshot.Select(b => b.Id).ToList();
+        var filteredBuildingExternalIds = filteredBuildingSnapshot.Select(b => b.ExternalId).ToList();
+
         var buildings = await buildingsQuery
             .OrderBy(b => b.ManualDisplayName != "" ? b.ManualDisplayName : b.DisplayName)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync();
 
         var buildingIds = buildings.Select(b => b.Id).ToList();
@@ -153,7 +327,7 @@ public class AdminController : Controller
 
         var roomsByBuilding = await _context.SyncedRooms
             .AsNoTracking()
-            .Where(r => buildingIds.Contains(r.SyncedBuildingId))
+            .Where(r => filteredBuildingIds.Contains(r.SyncedBuildingId))
             .GroupBy(r => r.BuildingExternalId)
             .Select(g => new
             {
@@ -164,7 +338,7 @@ public class AdminController : Controller
 
         var assignedInventoryByBuilding = await _context.ImportedInventoryItems
             .AsNoTracking()
-            .Where(i => i.AssignedBuildingExternalId != "" && buildingExternalIds.Contains(i.AssignedBuildingExternalId))
+            .Where(i => i.AssignedBuildingExternalId != "" && filteredBuildingExternalIds.Contains(i.AssignedBuildingExternalId))
             .GroupBy(i => i.AssignedBuildingExternalId)
             .Select(g => new
             {
@@ -175,7 +349,7 @@ public class AdminController : Controller
 
         var suggestedInventoryByBuilding = await _context.ImportedInventoryItems
             .AsNoTracking()
-            .Where(i => i.AssignedBuildingExternalId == "" && i.MatchedBuildingExternalId != "" && buildingExternalIds.Contains(i.MatchedBuildingExternalId))
+            .Where(i => i.AssignedBuildingExternalId == "" && i.MatchedBuildingExternalId != "" && filteredBuildingExternalIds.Contains(i.MatchedBuildingExternalId))
             .GroupBy(i => i.MatchedBuildingExternalId)
             .Select(g => new
             {
@@ -189,11 +363,15 @@ public class AdminController : Controller
             Search = search ?? string.Empty,
             Campus = campus ?? string.Empty,
             Floor = floor ?? string.Empty,
+            Page = page,
+            PageSize = pageSize,
+            TotalFilteredLocations = totalFilteredLocations,
             Locations = buildings.Select(b => new AdminLocationRowViewModel
             {
                 ExternalId = b.ExternalId,
                 DisplayName = b.EffectiveDisplayName,
                 Campus = b.EffectiveCampus,
+                DefaultMapFloor = GetPrimaryFloor(b.EffectiveFloorsJson),
                 HasManualOverride = !string.IsNullOrWhiteSpace(b.ManualCampus) ||
                                     !string.IsNullOrWhiteSpace(b.ManualDisplayName) ||
                                     !string.IsNullOrWhiteSpace(b.ManualFloorsJson),
@@ -209,8 +387,8 @@ public class AdminController : Controller
                     ? $"{b.CentroidLatitude.Value:F4}, {b.CentroidLongitude.Value:F4}"
                     : "-"
             }).ToList(),
-            TotalBuildings = buildings.Count,
-            BuildingsWithInteriorMap = buildings.Count(b => b.HasInteriorMap),
+            TotalBuildings = totalFilteredLocations,
+            BuildingsWithInteriorMap = filteredBuildingSnapshot.Count(b => b.HasInteriorMap),
             TotalRooms = roomsByBuilding.Values.Sum(),
             AssignedInventoryItems = assignedInventoryByBuilding.Values.Sum()
         };
@@ -364,8 +542,13 @@ public class AdminController : Controller
         string? category,
         string? status,
         string? assignment,
-        string? buildingExternalId)
+        string? buildingExternalId,
+        int page = 1,
+        int pageSize = 30)
     {
+        pageSize = NormalizePageSize(pageSize);
+        page = Math.Max(page, 1);
+
         var query = _context.ImportedInventoryItems.AsNoTracking().AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -378,7 +561,8 @@ public class AdminController : Controller
                 i.OrganizationalUnit.Contains(search) ||
                 i.ResponsibleUser.Contains(search) ||
                 i.Email.Contains(search) ||
-                i.IpAddress.Contains(search));
+                i.IpAddress.Contains(search) ||
+                i.MacAddress.Contains(search));
         }
 
         if (!string.IsNullOrWhiteSpace(category))
@@ -421,6 +605,8 @@ public class AdminController : Controller
                 break;
         }
 
+        var totalFilteredItems = await query.CountAsync();
+
         var model = new AdminInventoryListViewModel
         {
             Search = search ?? string.Empty,
@@ -428,10 +614,14 @@ public class AdminController : Controller
             Status = status ?? string.Empty,
             AssignmentFilter = assignment ?? "all",
             BuildingExternalId = buildingExternalId ?? string.Empty,
+            Page = page,
+            PageSize = pageSize,
+            TotalFilteredItems = totalFilteredItems,
             Items = await query
                 .OrderBy(i => i.AssignedBuildingExternalId == "" ? 0 : 1)
-                .ThenBy(i => i.RowNumber)
-                .Take(250)
+                .ThenBy(i => i.Id)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync(),
             Buildings = await _context.SyncedBuildings
                 .AsNoTracking()
@@ -603,6 +793,40 @@ public class AdminController : Controller
         return string.IsNullOrWhiteSpace(trimmed) ? "-" : trimmed;
     }
 
+    private static int GetPrimaryFloor(string floorsJson)
+    {
+        if (string.IsNullOrWhiteSpace(floorsJson))
+            return 0;
+
+        try
+        {
+            var floors = JsonSerializer.Deserialize<List<int>>(floorsJson);
+            if (floors is { Count: > 0 })
+                return floors.Min();
+        }
+        catch
+        {
+        }
+
+        var firstToken = floorsJson
+            .Replace("[", string.Empty)
+            .Replace("]", string.Empty)
+            .Replace("\"", string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault();
+
+        return int.TryParse(firstToken, out var parsedFloor) ? parsedFloor : 0;
+    }
+
+    private static int NormalizePageSize(int pageSize)
+    {
+        return pageSize switch
+        {
+            30 or 50 or 100 or 200 or 500 => pageSize,
+            _ => 30
+        };
+    }
+
     private static string NormalizeFloorsCsv(string? manualFloorsCsv)
     {
         var tokens = (manualFloorsCsv ?? string.Empty)
@@ -614,6 +838,107 @@ public class AdminController : Controller
             .ToList();
 
         return tokens.Count == 0 ? string.Empty : System.Text.Json.JsonSerializer.Serialize(tokens);
+    }
+
+    private string ResolveFrontendMapUrl()
+    {
+        var configured = _configuration["FrontendAppUrl"];
+        if (!string.IsNullOrWhiteSpace(configured))
+            return configured;
+
+        var allowedOrigins = _configuration["AllowedOrigins"];
+        if (!string.IsNullOrWhiteSpace(allowedOrigins))
+        {
+            var frontendOrigin = allowedOrigins
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .FirstOrDefault(origin => origin.Contains("8080", StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrWhiteSpace(frontendOrigin))
+                return frontendOrigin;
+        }
+
+        return "http://localhost:8080";
+    }
+
+    private string GetDatabaseFilePath()
+    {
+        var connectionString = _configuration.GetConnectionString("Default")
+            ?? _configuration["ConnectionStrings:Default"]
+            ?? throw new InvalidOperationException("No se encontro la cadena de conexion SQLite.");
+
+        var builder = new SqliteConnectionStringBuilder(connectionString);
+        var dataSource = builder.DataSource;
+
+        if (string.IsNullOrWhiteSpace(dataSource))
+            throw new InvalidOperationException("No se encontro la ruta del archivo SQLite.");
+
+        return Path.IsPathRooted(dataSource)
+            ? dataSource
+            : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, dataSource));
+    }
+
+    private FileInfo? GetDatabaseFileInfo()
+    {
+        var databasePath = GetDatabaseFilePath();
+        return System.IO.File.Exists(databasePath) ? new FileInfo(databasePath) : null;
+    }
+
+    private IReadOnlyList<FileInfo> GetDatabaseBackupFiles()
+    {
+        var backupDirectory = GetDatabaseBackupDirectory();
+        if (!Directory.Exists(backupDirectory))
+            return [];
+
+        return new DirectoryInfo(backupDirectory)
+            .GetFiles("*.db", SearchOption.TopDirectoryOnly)
+            .OrderByDescending(file => file.LastWriteTimeUtc)
+            .Take(15)
+            .ToList();
+    }
+
+    private string GetDatabaseBackupDirectory()
+    {
+        var databasePath = GetDatabaseFilePath();
+        var databaseDirectory = Path.GetDirectoryName(databasePath) ?? AppContext.BaseDirectory;
+        return Path.Combine(databaseDirectory, "backups");
+    }
+
+    private FileContentResult DownloadDatabaseFile(string sourcePath, string downloadFileName)
+    {
+        var bytes = System.IO.File.ReadAllBytes(sourcePath);
+        return File(bytes, "application/octet-stream", downloadFileName);
+    }
+
+    private void RestoreDatabaseFromFile(string sourcePath)
+    {
+        var databasePath = GetDatabaseFilePath();
+        var databaseDirectory = Path.GetDirectoryName(databasePath) ?? AppContext.BaseDirectory;
+        Directory.CreateDirectory(databaseDirectory);
+
+        _context.ChangeTracker.Clear();
+        _context.Database.CloseConnection();
+        SqliteConnection.ClearAllPools();
+
+        if (System.IO.File.Exists(databasePath))
+        {
+            var backupDirectory = GetDatabaseBackupDirectory();
+            Directory.CreateDirectory(backupDirectory);
+            var backupPath = Path.Combine(backupDirectory, $"soteromap-backup-{DateTime.UtcNow:yyyyMMdd-HHmmss}.db");
+            System.IO.File.Copy(databasePath, backupPath, overwrite: true);
+        }
+
+        System.IO.File.Copy(sourcePath, databasePath, overwrite: true);
+        SqliteConnection.ClearAllPools();
+    }
+
+    private static void ValidateSqliteFile(string path)
+    {
+        using var connection = new SqliteConnection($"Data Source={path}");
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT name FROM sqlite_master LIMIT 1;";
+        command.ExecuteScalar();
     }
 
     private async Task LogBuildingOverrideAsync(

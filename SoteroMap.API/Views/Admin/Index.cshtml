@@ -10,6 +10,22 @@
     <span class="text-muted">Inventario importado y asignacion manual</span>
 </div>
 
+@if (TempData["SuccessMessage"] is string successMessage)
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @successMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+    </div>
+}
+
+@if (TempData["ErrorMessage"] is string errorMessage)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @errorMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+    </div>
+}
+
 <div class="row g-4 mb-4">
     <div class="col-md-3">
         <div class="card border-0 shadow-sm">
@@ -93,6 +109,9 @@
                 <a href="/admin/activity" class="btn btn-outline-primary">
                     <i class="bi bi-clock-history me-1"></i> Ver actividad
                 </a>
+                <a href="@Model.FrontendMapUrl" class="btn btn-outline-info js-map-link" target="sotero-map">
+                    <i class="bi bi-map me-1"></i> Ir al mapa
+                </a>
             </div>
         </div>
     </div>
@@ -120,6 +139,97 @@
         </div>
     </div>
 </div>
+
+@if (isAdmin)
+{
+    <div class="row g-4 mt-1">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white fw-semibold">Base de datos</div>
+                <div class="card-body">
+                    <div class="row g-4 align-items-start">
+                        <div class="col-lg-5">
+                            <div class="small text-muted mb-2">Archivo actual</div>
+                            <div class="fw-semibold">@Model.DatabaseFileName</div>
+                            <div class="text-muted small">Tamano: @(Model.DatabaseFileSizeBytes > 0 ? $"{Model.DatabaseFileSizeBytes / 1024.0 / 1024.0:F2} MB" : "Sin datos")</div>
+                            <div class="text-muted small">Ultima modificacion: @(Model.DatabaseLastWriteUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "Sin datos")</div>
+                            <a href="/admin/database/download" class="btn btn-outline-primary mt-3">
+                                <i class="bi bi-download me-1"></i> Descargar DB
+                            </a>
+                        </div>
+                        <div class="col-lg-7">
+                            <div class="small text-muted mb-2">Restaurar base de datos</div>
+                            <form id="databaseUploadForm" method="post" action="/admin/database/upload" enctype="multipart/form-data" class="row g-3">
+                                @Html.AntiForgeryToken()
+                                <div class="col-md-8">
+                                    <input id="databaseFileInput" type="file" name="databaseFile" class="form-control" accept=".db,.sqlite,.sqlite3" required />
+                                    <div class="form-text">Se crea un respaldo automatico antes de reemplazar la base actual.</div>
+                                </div>
+                                <div class="col-md-4 d-grid">
+                                    <button id="databaseUploadButton" type="submit" class="btn btn-secondary" disabled>
+                                        <i class="bi bi-upload me-1"></i> Subir DB
+                                    </button>
+                                </div>
+                            </form>
+
+                            <div class="mt-4">
+                                <div class="small text-muted mb-2">Respaldos disponibles</div>
+                                @if (Model.DatabaseBackups.Count == 0)
+                                {
+                                    <div class="text-muted small">Todavia no hay respaldos guardados.</div>
+                                }
+                                else
+                                {
+                                    <div class="table-responsive">
+                                        <table class="table table-sm align-middle mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Archivo</th>
+                                                    <th>Fecha</th>
+                                                    <th>Tamano</th>
+                                                    <th></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var backup in Model.DatabaseBackups)
+                                                {
+                                                    <tr>
+                                                        <td class="small fw-semibold">@backup.FileName</td>
+                                                        <td class="small">@backup.LastWriteUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+                                                        <td class="small">@($"{backup.SizeBytes / 1024.0 / 1024.0:F2} MB")</td>
+                                                        <td class="text-end">
+                                                            <div class="d-flex gap-2 justify-content-end">
+                                                                <a href="/admin/database/backups/@backup.FileName" class="btn btn-sm btn-outline-secondary">
+                                                                    Descargar
+                                                                </a>
+                                                                <form method="post" action="/admin/database/backups/@backup.FileName/restore" onsubmit="return confirm('Se restaurara este respaldo y se reemplazara la base actual. ¿Continuar?');">
+                                                                    @Html.AntiForgeryToken()
+                                                                    <button type="submit" class="btn btn-sm btn-outline-warning">
+                                                                        Restaurar
+                                                                    </button>
+                                                                </form>
+                                                                <form method="post" action="/admin/database/backups/@backup.FileName/delete" onsubmit="return confirm('Se eliminara este respaldo. Esta accion no se puede deshacer. ¿Continuar?');">
+                                                                    @Html.AntiForgeryToken()
+                                                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                                                        Eliminar
+                                                                    </button>
+                                                                </form>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
 
 <div class="row g-4 mt-1">
     <div class="col-12">
@@ -167,6 +277,108 @@
         </div>
     </div>
 </div>
+
+@section Scripts {
+    <script>
+        (() => {
+            const fileInput = document.getElementById("databaseFileInput");
+            const uploadButton = document.getElementById("databaseUploadButton");
+            const uploadForm = document.getElementById("databaseUploadForm");
+
+            if (!fileInput || !uploadButton || !uploadForm) {
+                return;
+            }
+
+            let hasPendingDatabaseFile = false;
+
+            const updateUploadState = () => {
+                hasPendingDatabaseFile = Boolean(fileInput.files && fileInput.files.length > 0);
+                uploadButton.disabled = !hasPendingDatabaseFile;
+                uploadButton.classList.toggle("btn-secondary", !hasPendingDatabaseFile);
+                uploadButton.classList.toggle("btn-warning", hasPendingDatabaseFile);
+            };
+
+            const confirmPendingDatabaseNavigation = () => {
+                if (!hasPendingDatabaseFile) {
+                    return true;
+                }
+
+                return window.confirm("Tienes un archivo DB pendiente por subir. ¿Deseas continuar sin subirlo?");
+            };
+
+            fileInput.addEventListener("change", updateUploadState);
+            uploadForm.addEventListener("submit", () => {
+                hasPendingDatabaseFile = false;
+            });
+
+            document.addEventListener("click", (event) => {
+                const anchor = event.target.closest("a[href]");
+                if (!anchor) {
+                    return;
+                }
+
+                const href = anchor.getAttribute("href");
+                if (!href || href.startsWith("#") || href.startsWith("javascript:")) {
+                    return;
+                }
+
+                const destination = new URL(anchor.href, window.location.href);
+                const current = new URL(window.location.href);
+
+                if (destination.href === current.href) {
+                    return;
+                }
+
+                if (!confirmPendingDatabaseNavigation()) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+
+                hasPendingDatabaseFile = false;
+            }, true);
+
+            document.addEventListener("submit", (event) => {
+                const form = event.target;
+                if (!(form instanceof HTMLFormElement) || form === uploadForm) {
+                    return;
+                }
+
+                if (!confirmPendingDatabaseNavigation()) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+
+                hasPendingDatabaseFile = false;
+            }, true);
+
+            window.addEventListener("beforeunload", (event) => {
+                if (!hasPendingDatabaseFile) {
+                    return;
+                }
+
+                event.preventDefault();
+                event.returnValue = "";
+            });
+
+            document.querySelectorAll(".js-map-link").forEach((link) => {
+                link.addEventListener("click", (event) => {
+                    event.preventDefault();
+
+                    if (!confirmPendingDatabaseNavigation()) {
+                        return;
+                    }
+
+                    hasPendingDatabaseFile = false;
+                    window.open(link.href, "sotero-map");
+                });
+            });
+
+            updateUploadState();
+        })();
+    </script>
+}
 
 <div class="row g-4 mt-1">
     <div class="col-lg-5">

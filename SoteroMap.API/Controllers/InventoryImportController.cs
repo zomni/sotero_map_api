@@ -92,9 +92,13 @@ public class InventoryImportController : ControllerBase
 
     [Authorize(Roles = AppRoles.Admin)]
     [HttpPost("run")]
-    public async Task<IActionResult> Run(CancellationToken cancellationToken)
+    public async Task<IActionResult> Run(
+        [FromQuery] string? fileName,
+        [FromQuery] string? sheetName,
+        [FromQuery] bool merge = false,
+        CancellationToken cancellationToken = default)
     {
-        var result = await _importService.ImportAsync(cancellationToken);
+        var result = await _importService.ImportAsync(fileName, sheetName, merge, cancellationToken);
         return Ok(result);
     }
 
@@ -154,6 +158,7 @@ public class InventoryImportController : ControllerBase
                 i.Email,
                 i.JobTitle,
                 i.IpAddress,
+                i.MacAddress,
                 i.TicketMda,
                 i.Observation,
                 i.InferredCategory,

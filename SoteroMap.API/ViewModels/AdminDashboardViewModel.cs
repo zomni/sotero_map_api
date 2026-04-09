@@ -10,9 +10,21 @@ public class AdminDashboardViewModel
     public int SuggestedItems { get; set; }
     public int StolenItems { get; set; }
     public int DistinctImportedCategories { get; set; }
+    public string DatabaseFileName { get; set; } = string.Empty;
+    public long DatabaseFileSizeBytes { get; set; }
+    public DateTime? DatabaseLastWriteUtc { get; set; }
+    public string FrontendMapUrl { get; set; } = string.Empty;
+    public IReadOnlyList<DatabaseBackupViewModel> DatabaseBackups { get; set; } = [];
     public IReadOnlyList<DashboardCategorySummaryViewModel> CategoryBreakdown { get; set; } = [];
     public IReadOnlyList<DashboardInventoryPreviewViewModel> RecentItems { get; set; } = [];
     public IReadOnlyList<ActivityLogListItemViewModel> RecentActivity { get; set; } = [];
+}
+
+public class DatabaseBackupViewModel
+{
+    public string FileName { get; set; } = string.Empty;
+    public long SizeBytes { get; set; }
+    public DateTime LastWriteUtc { get; set; }
 }
 
 public class DashboardCategorySummaryViewModel

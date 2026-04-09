@@ -2,6 +2,10 @@
 @{
     ViewData["Title"] = "Ubicaciones";
     Layout = "~/Views/Shared/_Layout.cshtml";
+    var mapBaseUrl = "http://localhost:8080";
+    var totalPages = (int)Math.Ceiling((Model.TotalFilteredLocations <= 0 ? 1 : Model.TotalFilteredLocations) / (double)Model.PageSize);
+    var currentPage = Math.Min(Model.Page, totalPages);
+    int[] pageSizeOptions = [30, 50, 100, 200, 500];
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -72,12 +76,39 @@
                     <option value="5" selected="@(Model.Floor == "5")">Piso 5</option>
                 </select>
             </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Por pagina</label>
+                <select name="pageSize" class="form-select">
+                    @foreach (var size in pageSizeOptions)
+                    {
+                        <option value="@size" selected="@(Model.PageSize == size)">@size</option>
+                    }
+                </select>
+            </div>
             <div class="col-md-12">
+                <input type="hidden" name="page" value="1" />
                 <button type="submit" class="btn btn-outline-primary w-100">
                     <i class="bi bi-funnel me-1"></i> Filtrar
                 </button>
             </div>
         </form>
+    </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mt-3">
+    <div class="text-muted small">
+        Mostrando @Model.Locations.Count de @Model.TotalFilteredLocations edificio(s)
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-secondary @(currentPage <= 1 ? "disabled" : null)"
+           href="/admin/locations?search=@Uri.EscapeDataString(Model.Search)&campus=@Uri.EscapeDataString(Model.Campus)&floor=@Uri.EscapeDataString(Model.Floor)&page=@(currentPage - 1)&pageSize=@Model.PageSize">
+            Anterior
+        </a>
+        <span class="btn btn-sm btn-light disabled">Pagina @currentPage de @totalPages</span>
+        <a class="btn btn-sm btn-outline-secondary @(currentPage >= totalPages ? "disabled" : null)"
+           href="/admin/locations?search=@Uri.EscapeDataString(Model.Search)&campus=@Uri.EscapeDataString(Model.Campus)&floor=@Uri.EscapeDataString(Model.Floor)&page=@(currentPage + 1)&pageSize=@Model.PageSize">
+            Siguiente
+        </a>
     </div>
 </div>
 
@@ -133,6 +164,13 @@
                             </td>
                             <td class="text-muted small">@loc.Coordinates</td>
                             <td class="text-end">
+                                <a href="@($"{mapBaseUrl}/?id={Uri.EscapeDataString(loc.ExternalId)}&zoom=20&floor={loc.DefaultMapFloor}")"
+                                   class="btn btn-sm btn-outline-info"
+                                   target="sotero-map"
+                                   onclick="window.open(this.href, 'sotero-map'); return false;"
+                                   title="Ir al edificio en el mapa">
+                                    <i class="bi bi-map"></i>
+                                </a>
                                 <a href="/admin/editsyncedbuilding/@loc.ExternalId" class="btn btn-sm btn-outline-primary">
                                     Editar edificio
                                 </a>

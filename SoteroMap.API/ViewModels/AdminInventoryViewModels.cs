@@ -9,6 +9,9 @@ public class AdminInventoryListViewModel
     public string Status { get; set; } = string.Empty;
     public string AssignmentFilter { get; set; } = "pending";
     public string BuildingExternalId { get; set; } = string.Empty;
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 30;
+    public int TotalFilteredItems { get; set; }
     public IReadOnlyList<ImportedInventoryItem> Items { get; set; } = [];
     public IReadOnlyList<SyncedBuilding> Buildings { get; set; } = [];
     public int TotalItems { get; set; }
@@ -29,6 +32,9 @@ public class AdminLocationsViewModel
     public string Search { get; set; } = string.Empty;
     public string Campus { get; set; } = string.Empty;
     public string Floor { get; set; } = string.Empty;
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 30;
+    public int TotalFilteredLocations { get; set; }
     public IReadOnlyList<AdminLocationRowViewModel> Locations { get; set; } = [];
     public int TotalBuildings { get; set; }
     public int BuildingsWithInteriorMap { get; set; }
@@ -41,6 +47,7 @@ public class AdminLocationRowViewModel
     public string ExternalId { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public string Campus { get; set; } = string.Empty;
+    public int DefaultMapFloor { get; set; }
     public bool HasManualOverride { get; set; }
     public string Type { get; set; } = string.Empty;
     public bool HasInteriorMap { get; set; }

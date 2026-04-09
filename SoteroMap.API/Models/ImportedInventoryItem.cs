@@ -16,6 +16,7 @@ public class ImportedInventoryItem
     public string Email { get; set; } = string.Empty;
     public string JobTitle { get; set; } = string.Empty;
     public string IpAddress { get; set; } = string.Empty;
+    public string MacAddress { get; set; } = string.Empty;
     public string AnnexPhone { get; set; } = string.Empty;
     public string ReplacedEquipment { get; set; } = string.Empty;
     public string TicketMda { get; set; } = string.Empty;

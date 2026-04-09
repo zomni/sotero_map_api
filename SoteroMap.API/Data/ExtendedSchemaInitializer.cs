@@ -174,6 +174,7 @@ public static class ExtendedSchemaInitializer
             await EnsureColumnAsync(context, "ImportedInventoryItems", "MatchConfidence", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "ImportedInventoryItems", "MatchNotes", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "ImportedInventoryItems", "SerialNumber", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "ImportedInventoryItems", "MacAddress", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "ImportedInventoryItems", "AssignedBuildingExternalId", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "ImportedInventoryItems", "AssignedRoomExternalId", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "ImportedInventoryItems", "AssignedFloor", "INTEGER NULL");

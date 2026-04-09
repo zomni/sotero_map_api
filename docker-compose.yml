@@ -8,6 +8,7 @@ services:
       - ConnectionStrings__Default=Data Source=/app/data/soteromap.db
       - AllowedOrigins=http://localhost:3000,http://localhost:8080
       - FrontendDataRoot=/app/frontend-data
+      - ExcelImportRoot=/app/import
       - ExcelImportPath=/app/import/Inventario tns 2026.xlsx
       - SeedUsers__Admin__Username=${SEED_ADMIN_USERNAME}
       - SeedUsers__Admin__Password=${SEED_ADMIN_PASSWORD}
@@ -16,7 +17,7 @@ services:
     volumes:
       - sqlite_data:/app/data   # persiste el archivo .db entre reinicios
       - ../sotero_map/src/data:/app/frontend-data:ro
-      - "C:/Users/paolo.vilches/Downloads/Inventario tns 2026.xlsx:/app/import/Inventario tns 2026.xlsx:ro"
+      - "C:/Users/paolo.vilches/Downloads:/app/import:ro"
     restart: unless-stopped
 
 volumes:

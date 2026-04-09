@@ -141,6 +141,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Email).HasMaxLength(200);
             entity.Property(e => e.JobTitle).HasMaxLength(200);
             entity.Property(e => e.IpAddress).HasMaxLength(100);
+            entity.Property(e => e.MacAddress).HasMaxLength(100);
             entity.Property(e => e.AnnexPhone).HasMaxLength(100);
             entity.Property(e => e.ReplacedEquipment).HasMaxLength(200);
             entity.Property(e => e.TicketMda).HasMaxLength(100);
