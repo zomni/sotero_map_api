@@ -219,11 +219,12 @@
                                     {
                                         var resolvedFloor = item.AssignedFloor
                                             ?? buildingFloorLookup.GetValueOrDefault(item.AssignedBuildingExternalId, 0);
-                                        var inventoryMapUrl = $"{mapBaseUrl}/?id={Uri.EscapeDataString(item.AssignedBuildingExternalId)}&zoom=20&floor={resolvedFloor}";
-                                        if (!string.IsNullOrWhiteSpace(item.AssignedRoomExternalId))
-                                        {
-                                            inventoryMapUrl += $"&view=rooms&roomId={Uri.EscapeDataString(item.AssignedRoomExternalId)}";
-                                        }
+                                        var deviceKey = !string.IsNullOrWhiteSpace(item.SerialNumber)
+                                            ? item.SerialNumber
+                                            : (!string.IsNullOrWhiteSpace(item.ItemNumber)
+                                                ? item.ItemNumber
+                                                : $"inventory-{item.Id}");
+                                        var inventoryMapUrl = $"{mapBaseUrl}/?id={Uri.EscapeDataString(item.AssignedBuildingExternalId)}&zoom=20&floor={resolvedFloor}&view=devices&deviceKey={Uri.EscapeDataString(deviceKey)}";
 
                                         <a href="@inventoryMapUrl"
                                            class="btn btn-sm btn-outline-info"

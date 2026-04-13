@@ -6,6 +6,7 @@
     var totalPages = (int)Math.Ceiling((Model.TotalFilteredLocations <= 0 ? 1 : Model.TotalFilteredLocations) / (double)Model.PageSize);
     var currentPage = Math.Min(Model.Page, totalPages);
     int[] pageSizeOptions = [30, 50, 100, 200, 500];
+    var isAdmin = User.IsInRole(SoteroMap.API.Models.AppRoles.Admin);
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -171,9 +172,12 @@
                                    title="Ir al edificio en el mapa">
                                     <i class="bi bi-map"></i>
                                 </a>
-                                <a href="/admin/editsyncedbuilding/@loc.ExternalId" class="btn btn-sm btn-outline-primary">
-                                    Editar edificio
-                                </a>
+                                @if (isAdmin)
+                                {
+                                    <a href="/admin/editsyncedbuilding/@loc.ExternalId" class="btn btn-sm btn-outline-primary">
+                                        Editar edificio
+                                    </a>
+                                }
                                 <a href="/admin/activity?buildingExternalId=@loc.ExternalId" class="btn btn-sm btn-outline-secondary ms-2">
                                     Historial
                                 </a>

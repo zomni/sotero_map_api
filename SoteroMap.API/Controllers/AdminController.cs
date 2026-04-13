@@ -285,13 +285,14 @@ public class AdminController : Controller
 
         if (!string.IsNullOrWhiteSpace(search))
         {
+            var searchLower = search.Trim().ToLower();
             buildingsQuery = buildingsQuery.Where(b =>
-                (b.ManualDisplayName != "" ? b.ManualDisplayName : b.DisplayName).Contains(search) ||
-                b.ExternalId.Contains(search) ||
-                b.ShortName.Contains(search) ||
-                b.RealName.Contains(search) ||
-                b.Type.Contains(search) ||
-                b.ResponsibleArea.Contains(search));
+                ((b.ManualDisplayName != "" ? b.ManualDisplayName : b.DisplayName).ToLower().Contains(searchLower)) ||
+                (b.ExternalId != null && b.ExternalId.ToLower().Contains(searchLower)) ||
+                (b.ShortName != null && b.ShortName.ToLower().Contains(searchLower)) ||
+                (b.RealName != null && b.RealName.ToLower().Contains(searchLower)) ||
+                (b.Type != null && b.Type.ToLower().Contains(searchLower)) ||
+                (b.ResponsibleArea != null && b.ResponsibleArea.ToLower().Contains(searchLower)));
         }
 
         if (!string.IsNullOrEmpty(campus))
@@ -553,16 +554,21 @@ public class AdminController : Controller
 
         if (!string.IsNullOrWhiteSpace(search))
         {
+            var searchLower = search.Trim().ToLower();
             query = query.Where(i =>
-                i.Description.Contains(search) ||
-                i.ItemNumber.Contains(search) ||
-                i.SerialNumber.Contains(search) ||
-                i.UnitOrDepartment.Contains(search) ||
-                i.OrganizationalUnit.Contains(search) ||
-                i.ResponsibleUser.Contains(search) ||
-                i.Email.Contains(search) ||
-                i.IpAddress.Contains(search) ||
-                i.MacAddress.Contains(search));
+                (i.SerialNumber != null && i.SerialNumber.ToLower().Contains(searchLower)) ||
+                (i.ItemNumber != null && i.ItemNumber.ToLower().Contains(searchLower)) ||
+                (i.Lot != null && i.Lot.ToLower().Contains(searchLower)) ||
+                (i.Description != null && i.Description.ToLower().Contains(searchLower)) ||
+                (i.UnitOrDepartment != null && i.UnitOrDepartment.ToLower().Contains(searchLower)) ||
+                (i.OrganizationalUnit != null && i.OrganizationalUnit.ToLower().Contains(searchLower)) ||
+                (i.ResponsibleUser != null && i.ResponsibleUser.ToLower().Contains(searchLower)) ||
+                (i.Email != null && i.Email.ToLower().Contains(searchLower)) ||
+                (i.JobTitle != null && i.JobTitle.ToLower().Contains(searchLower)) ||
+                (i.IpAddress != null && i.IpAddress.ToLower().Contains(searchLower)) ||
+                (i.MacAddress != null && i.MacAddress.ToLower().Contains(searchLower)) ||
+                (i.TicketMda != null && i.TicketMda.ToLower().Contains(searchLower)) ||
+                (i.Observation != null && i.Observation.ToLower().Contains(searchLower)));
         }
 
         if (!string.IsNullOrWhiteSpace(category))
