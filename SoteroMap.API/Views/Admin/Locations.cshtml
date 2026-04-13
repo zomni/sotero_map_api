@@ -19,6 +19,56 @@
     </a>
 </div>
 
+<script>
+(() => {
+  const bindSuggestions = (inputSelector, listId, endpoint) => {
+    const input = document.querySelector(inputSelector);
+    const list = document.getElementById(listId);
+    if (!input || !list) {
+      return;
+    }
+
+    let timer = null;
+    input.addEventListener("input", () => {
+      const query = input.value.trim();
+      if (timer) {
+        clearTimeout(timer);
+      }
+
+      timer = window.setTimeout(async () => {
+        if (!query) {
+          list.innerHTML = "";
+          return;
+        }
+
+        try {
+          const response = await fetch(`${endpoint}?query=${encodeURIComponent(query)}`, {
+            headers: { "Accept": "application/json" },
+          });
+          if (!response.ok) {
+            return;
+          }
+
+          const data = await response.json();
+          list.innerHTML = "";
+          (data || []).forEach((value) => {
+            if (!value) return;
+            const option = document.createElement("option");
+            option.value = value;
+            list.appendChild(option);
+          });
+        } catch (error) {
+          console.warn("No se pudo cargar sugerencias de ubicaciones.", error);
+        }
+      }, 200);
+    });
+  };
+
+  bindSuggestions('input[name="search"]', "locationSearchSuggestions", "/admin/suggestions/locations");
+  bindSuggestions('input[name="campus"]', "campusSearchSuggestions", "/admin/suggestions/campus");
+})();
+</script>
+
 <div class="row g-3 mb-4">
     <div class="col-md-3">
         <div class="card border-0 shadow-sm">
@@ -57,13 +107,27 @@
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
         <form method="get" class="row g-3 align-items-end">
-            <div class="col-md-4">
+            <div class="col-md-4 position-relative js-autocomplete">
                 <label class="form-label small fw-semibold">Buscar edificio</label>
-                <input type="text" name="search" value="@Model.Search" class="form-control" placeholder="nombre, ID, tipo, area..." />
+                <input type="text"
+                       name="search"
+                       value="@Model.Search"
+                       data-autocomplete-endpoint="/admin/suggestions/locations"
+                       data-autocomplete-min="2"
+                       class="form-control"
+                       placeholder="nombre, ID, tipo, area..." />
+                <div class="list-group position-absolute w-100 shadow-sm js-autocomplete-list" style="z-index: 1050; display: none;"></div>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-6 position-relative js-autocomplete">
                 <label class="form-label small fw-semibold">Campus</label>
-                <input type="text" name="campus" value="@Model.Campus" class="form-control" placeholder="ej: sotero" />
+                <input type="text"
+                       name="campus"
+                       value="@Model.Campus"
+                       data-autocomplete-endpoint="/admin/suggestions/campus"
+                       data-autocomplete-min="1"
+                       class="form-control"
+                       placeholder="ej: sotero" />
+                <div class="list-group position-absolute w-100 shadow-sm js-autocomplete-list" style="z-index: 1050; display: none;"></div>
             </div>
             <div class="col-md-2">
                 <label class="form-label small fw-semibold">Piso</label>
@@ -189,3 +253,122 @@
         </div>
     </div>
 </div>
+
+<script>
+window.addEventListener("DOMContentLoaded", () => {
+  const createDropdownItem = (text, isMuted = false) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `list-group-item list-group-item-action${isMuted ? " text-muted" : ""}`;
+    item.textContent = text;
+    return item;
+  };
+
+  const bindSuggestions = (wrapper) => {
+    const input = wrapper.querySelector("input[data-autocomplete-endpoint]");
+    const list = wrapper.querySelector(".js-autocomplete-list");
+    if (!input || !list) {
+      return;
+    }
+
+    let timer = null;
+    let controller = null;
+
+    const hideList = () => {
+      list.style.display = "none";
+      list.innerHTML = "";
+    };
+
+    const showLoading = () => {
+      list.innerHTML = "";
+      list.appendChild(createDropdownItem("Cargando...", true));
+      list.style.display = "block";
+    };
+
+    const showEmpty = () => {
+      list.innerHTML = "";
+      list.appendChild(createDropdownItem("Sin resultados", true));
+      list.style.display = "block";
+    };
+
+    input.addEventListener("input", () => {
+      const query = input.value.trim();
+      const minChars = Number(input.dataset.autocompleteMin || "1");
+
+      if (timer) {
+        clearTimeout(timer);
+      }
+
+      if (!query || query.length < minChars) {
+        hideList();
+        return;
+      }
+
+      showLoading();
+      if (controller) {
+        controller.abort();
+      }
+      controller = new AbortController();
+
+      timer = window.setTimeout(async () => {
+        try {
+          const response = await fetch(`${input.dataset.autocompleteEndpoint}?query=${encodeURIComponent(query)}`, {
+            headers: { "Accept": "application/json" },
+            signal: controller.signal,
+          });
+
+          if (!response.ok) {
+            showEmpty();
+            return;
+          }
+
+          const data = await response.json();
+          list.innerHTML = "";
+
+          if (!data || data.length === 0) {
+            showEmpty();
+            return;
+          }
+
+          data.forEach((value) => {
+            if (!value) return;
+            const item = createDropdownItem(value);
+            item.addEventListener("click", () => {
+              input.value = value;
+              hideList();
+              input.focus();
+              const form = input.closest("form");
+              if (form) {
+                if (typeof form.requestSubmit === "function") {
+                  form.requestSubmit();
+                } else {
+                  form.submit();
+                }
+              }
+            });
+            list.appendChild(item);
+          });
+
+          list.style.display = "block";
+        } catch (error) {
+          if (error.name === "AbortError") return;
+          showEmpty();
+          console.warn("No se pudo cargar sugerencias de ubicaciones.", error);
+        }
+      }, 220);
+    });
+
+    input.addEventListener("blur", () => {
+      window.setTimeout(hideList, 150);
+    });
+
+    input.addEventListener("focus", () => {
+      if (list.children.length > 0) {
+        list.style.display = "block";
+      }
+    });
+  };
+
+  document.querySelectorAll(".js-autocomplete").forEach(bindSuggestions);
+});
+</script>

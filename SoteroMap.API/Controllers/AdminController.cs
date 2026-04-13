@@ -665,6 +665,208 @@ public class AdminController : Controller
         return View(model);
     }
 
+    [HttpGet("/admin/suggestions/inventory")]
+    public async Task<IActionResult> InventorySuggestions(string? query, int limit = 10)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return Json(Array.Empty<string>());
+        }
+
+        var trimmed = query.Trim().ToLower();
+        var candidates = await _context.ImportedInventoryItems.AsNoTracking()
+            .Where(i =>
+                (i.SerialNumber != null && i.SerialNumber.ToLower().Contains(trimmed)) ||
+                (i.ItemNumber != null && i.ItemNumber.ToLower().Contains(trimmed)) ||
+                (i.Description != null && i.Description.ToLower().Contains(trimmed)) ||
+                (i.ResponsibleUser != null && i.ResponsibleUser.ToLower().Contains(trimmed)) ||
+                (i.Email != null && i.Email.ToLower().Contains(trimmed)) ||
+                (i.IpAddress != null && i.IpAddress.ToLower().Contains(trimmed)) ||
+                (i.UnitOrDepartment != null && i.UnitOrDepartment.ToLower().Contains(trimmed)) ||
+                (i.OrganizationalUnit != null && i.OrganizationalUnit.ToLower().Contains(trimmed)) ||
+                (i.AssignedBuildingExternalId != null && i.AssignedBuildingExternalId.ToLower().Contains(trimmed)))
+            .Select(i => new
+            {
+                i.SerialNumber,
+                i.ItemNumber,
+                i.Description,
+                i.ResponsibleUser,
+                i.Email,
+                i.IpAddress,
+                i.UnitOrDepartment,
+                i.OrganizationalUnit,
+                i.AssignedBuildingExternalId
+            })
+            .Take(200)
+            .ToListAsync();
+
+        var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddIfMatch(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            var candidate = value.Trim();
+            if (!candidate.ToLower().Contains(trimmed))
+            {
+                return;
+            }
+
+            results.Add(candidate);
+        }
+
+        foreach (var item in candidates)
+        {
+            AddIfMatch(item.SerialNumber);
+            AddIfMatch(item.ItemNumber);
+            AddIfMatch(item.Description);
+            AddIfMatch(item.ResponsibleUser);
+            AddIfMatch(item.Email);
+            AddIfMatch(item.IpAddress);
+            AddIfMatch(item.UnitOrDepartment);
+            AddIfMatch(item.OrganizationalUnit);
+            AddIfMatch(item.AssignedBuildingExternalId);
+
+            if (results.Count >= limit)
+            {
+                break;
+            }
+        }
+
+        return Json(results.Take(limit).ToList());
+    }
+
+    [HttpGet("/admin/suggestions/inventory-category")]
+    public async Task<IActionResult> InventoryCategorySuggestions(string? query, int limit = 10)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return Json(Array.Empty<string>());
+        }
+
+        var trimmed = query.Trim().ToLower();
+        var categories = await _context.ImportedInventoryItems.AsNoTracking()
+            .Where(i => i.InferredCategory != null && i.InferredCategory.ToLower().Contains(trimmed))
+            .Select(i => i.InferredCategory!)
+            .Distinct()
+            .OrderBy(c => c)
+            .Take(limit)
+            .ToListAsync();
+
+        return Json(categories);
+    }
+
+    [HttpGet("/admin/suggestions/inventory-status")]
+    public async Task<IActionResult> InventoryStatusSuggestions(string? query, int limit = 10)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return Json(Array.Empty<string>());
+        }
+
+        var trimmed = query.Trim().ToLower();
+        var statuses = await _context.ImportedInventoryItems.AsNoTracking()
+            .Where(i => i.InferredStatus != null && i.InferredStatus.ToLower().Contains(trimmed))
+            .Select(i => i.InferredStatus!)
+            .Distinct()
+            .OrderBy(s => s)
+            .Take(limit)
+            .ToListAsync();
+
+        return Json(statuses);
+    }
+
+    [HttpGet("/admin/suggestions/locations")]
+    public async Task<IActionResult> LocationSuggestions(string? query, int limit = 10)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return Json(Array.Empty<string>());
+        }
+
+        var trimmed = query.Trim().ToLower();
+        var candidates = await _context.SyncedBuildings.AsNoTracking()
+            .Where(b =>
+                (b.DisplayName != null && b.DisplayName.ToLower().Contains(trimmed)) ||
+                (b.ManualDisplayName != null && b.ManualDisplayName.ToLower().Contains(trimmed)) ||
+                (b.ExternalId != null && b.ExternalId.ToLower().Contains(trimmed)) ||
+                (b.Type != null && b.Type.ToLower().Contains(trimmed)) ||
+                (b.Campus != null && b.Campus.ToLower().Contains(trimmed)) ||
+                (b.ManualCampus != null && b.ManualCampus.ToLower().Contains(trimmed)) ||
+                (b.ResponsibleArea != null && b.ResponsibleArea.ToLower().Contains(trimmed)))
+            .Select(b => new
+            {
+                b.DisplayName,
+                b.ManualDisplayName,
+                b.ExternalId,
+                b.Type,
+                b.Campus,
+                b.ManualCampus,
+                b.ResponsibleArea
+            })
+            .Take(200)
+            .ToListAsync();
+
+        var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddIfMatch(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            var candidate = value.Trim();
+            if (!candidate.ToLower().Contains(trimmed))
+            {
+                return;
+            }
+
+            results.Add(candidate);
+        }
+
+        foreach (var item in candidates)
+        {
+            AddIfMatch(item.ManualDisplayName);
+            AddIfMatch(item.DisplayName);
+            AddIfMatch(item.ExternalId);
+            AddIfMatch(item.Type);
+            AddIfMatch(item.ManualCampus);
+            AddIfMatch(item.Campus);
+            AddIfMatch(item.ResponsibleArea);
+
+            if (results.Count >= limit)
+            {
+                break;
+            }
+        }
+
+        return Json(results.Take(limit).ToList());
+    }
+
+    [HttpGet("/admin/suggestions/campus")]
+    public async Task<IActionResult> CampusSuggestions(string? query, int limit = 10)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return Json(Array.Empty<string>());
+        }
+
+        var trimmed = query.Trim().ToLower();
+        var campuses = await _context.SyncedBuildings.AsNoTracking()
+            .Select(b => string.IsNullOrWhiteSpace(b.ManualCampus) ? b.Campus : b.ManualCampus)
+            .Where(c => c != null && c.ToLower().Contains(trimmed))
+            .Distinct()
+            .OrderBy(c => c)
+            .Take(limit)
+            .ToListAsync();
+
+        return Json(campuses);
+    }
+
     [Authorize(Roles = AppRoles.Admin)]
     [HttpPost]
     [ValidateAntiForgeryToken]
