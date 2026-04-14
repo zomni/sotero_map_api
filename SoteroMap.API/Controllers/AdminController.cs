@@ -1051,6 +1051,13 @@ public class AdminController : Controller
 
     private string ResolveFrontendMapUrl()
     {
+        var requestHost = Request?.Host.Host;
+        if (!string.IsNullOrWhiteSpace(requestHost))
+        {
+            var requestScheme = string.IsNullOrWhiteSpace(Request?.Scheme) ? "http" : Request.Scheme;
+            return $"{requestScheme}://{requestHost}:8080";
+        }
+
         var configured = _configuration["FrontendAppUrl"];
         if (!string.IsNullOrWhiteSpace(configured))
             return configured;

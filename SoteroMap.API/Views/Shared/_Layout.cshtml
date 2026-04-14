@@ -1,4 +1,11 @@
 @inject IConfiguration Configuration
+@{
+    var requestScheme = string.IsNullOrWhiteSpace(Context?.Request?.Scheme) ? "http" : Context.Request.Scheme;
+    var requestHost = Context?.Request?.Host.Host;
+    var frontendMapUrl = !string.IsNullOrWhiteSpace(requestHost)
+        ? $"{requestScheme}://{requestHost}:8080"
+        : (Configuration["FrontendAppUrl"] ?? "http://localhost:8080");
+}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -54,7 +61,7 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-info" href="@(Configuration["FrontendAppUrl"] ?? "http://localhost:8080")" target="sotero-map" onclick="window.open(this.href, 'sotero-map'); return false;">
+                        <a class="nav-link text-info" href="@frontendMapUrl" target="sotero-map" onclick="window.open(this.href, 'sotero-map'); return false;">
                             <i class="bi bi-map me-2"></i>Mapa
                         </a>
                     </li>
