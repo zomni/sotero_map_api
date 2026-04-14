@@ -1,9 +1,10 @@
+@inject IConfiguration Configuration
 @model SoteroMap.API.ViewModels.AdminInventoryListViewModel
 @{
     ViewData["Title"] = "Inventario";
     Layout = "~/Views/Shared/_Layout.cshtml";
     var isAdmin = User.IsInRole(SoteroMap.API.Models.AppRoles.Admin);
-    var mapBaseUrl = "http://localhost:8080";
+    var mapBaseUrl = Configuration["FrontendAppUrl"] ?? "http://localhost:8080";
     var totalPages = (int)Math.Ceiling((Model.TotalFilteredItems <= 0 ? 1 : Model.TotalFilteredItems) / (double)Model.PageSize);
     var currentPage = Math.Min(Model.Page, totalPages);
     int[] pageSizeOptions = [30, 50, 100, 200, 500];
@@ -403,3 +404,5 @@ window.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".js-autocomplete").forEach(bindSuggestions);
 });
 </script>
+
+

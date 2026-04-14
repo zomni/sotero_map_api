@@ -54,7 +54,7 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link text-info" href="http://localhost:8080" target="sotero-map" onclick="window.open(this.href, 'sotero-map'); return false;">
+                        <a class="nav-link text-info" href="@(Configuration["FrontendAppUrl"] ?? "http://localhost:8080")" target="sotero-map" onclick="window.open(this.href, 'sotero-map'); return false;">
                             <i class="bi bi-map me-2"></i>Mapa
                         </a>
                     </li>
@@ -204,3 +204,4 @@
     @RenderSection("Scripts", required: false)
 </body>
 </html>
+

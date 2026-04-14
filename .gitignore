@@ -16,3 +16,7 @@ out/
 
 # Migrations generadas localmente (opcional dejarlo fuera)
 # **/Migrations/
+
+# SQLite locales residuales del backend
+SoteroMap.API/soteromap.db*
+

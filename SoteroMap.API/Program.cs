@@ -2,13 +2,14 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using SoteroMap.API.Infrastructure;
 using SoteroMap.API.Data;
 using SoteroMap.API.Models;
 using SoteroMap.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Controllers con Vistas Razor (MVC) + API
+// Controllers con vistas Razor (MVC) + API
 builder.Services.AddControllersWithViews();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -28,9 +29,13 @@ builder.Services
     });
 builder.Services.AddAuthorization();
 
-// SQLite local — no requiere servidor, genera un archivo .db
+// SQLite local: usa una ruta unica y portable, tambien en Docker.
+var resolvedSqliteConnectionString = SqliteDatabasePathResolver.ResolveConnectionString(
+    builder.Configuration,
+    builder.Environment.ContentRootPath);
+builder.Configuration["ConnectionStrings:Default"] = resolvedSqliteConnectionString;
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("Default")));
+    options.UseSqlite(resolvedSqliteConnectionString));
 builder.Services.AddScoped<IPasswordHasher<AuthUser>, PasswordHasher<AuthUser>>();
 builder.Services.AddScoped<BackendAuthService>();
 builder.Services.AddScoped<AuditLogService>();
@@ -59,7 +64,7 @@ using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-    // Si el proyecto aún no tiene migraciones EF, EnsureCreated permite
+    // Si el proyecto aun no tiene migraciones EF, EnsureCreated permite
     // levantar la base SQLite por primera vez sin romper el arranque.
     if (context.Database.GetMigrations().Any())
     {

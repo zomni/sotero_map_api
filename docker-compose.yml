@@ -1,24 +1,31 @@
 services:
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
     ports:
       - "5000:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__Default=Data Source=/app/data/soteromap.db
+      - DOTNET_USE_POLLING_FILE_WATCHER=1
+      - DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER=1
       - AllowedOrigins=http://localhost:3000,http://localhost:8080
-      - FrontendDataRoot=/app/frontend-data
+      - FrontendAppUrl=${FRONTEND_APP_URL:-http://localhost:8080}
       - ExcelImportRoot=/app/import
-      - ExcelImportPath=/app/import/Inventario tns 2026.xlsx
-      - SeedUsers__Admin__Username=${SEED_ADMIN_USERNAME}
-      - SeedUsers__Admin__Password=${SEED_ADMIN_PASSWORD}
-      - SeedUsers__Viewer__Username=${SEED_VIEWER_USERNAME}
-      - SeedUsers__Viewer__Password=${SEED_VIEWER_PASSWORD}
+      - SeedUsers__Admin__Username=${SEED_ADMIN_USERNAME:-admin}
+      - SeedUsers__Admin__Password=${SEED_ADMIN_PASSWORD:-Admin!Sotero2026Map}
+      - SeedUsers__Viewer__Username=${SEED_VIEWER_USERNAME:-viewer}
+      - SeedUsers__Viewer__Password=${SEED_VIEWER_PASSWORD:-Viewer!Sotero2026Map}
     volumes:
-      - sqlite_data:/app/data   # persiste el archivo .db entre reinicios
-      - ../sotero_map/src/data:/app/frontend-data:ro
-      - "C:/Users/paolo.vilches/Downloads:/app/import:ro"
+      - ./:/app
+      - sqlite_data:/app/data
+      - nuget_cache:/root/.nuget/packages
+      - ${FRONTEND_DATA_HOST_PATH:-./frontend-data}:/app/frontend-data:ro
+      - ${IMPORT_HOST_PATH:-./import}:/app/import:ro
     restart: unless-stopped
 
 volumes:
   sqlite_data:
+  nuget_cache:
+
+

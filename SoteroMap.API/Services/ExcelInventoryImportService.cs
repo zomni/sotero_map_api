@@ -176,7 +176,7 @@ public class ExcelInventoryImportService
             return configured;
         }
 
-        return @"C:\Users\paolo.vilches\Downloads\Inventario tns 2026.xlsx";
+        return string.Empty;
     }
 
     private static List<ParsedRow> ParseWorksheet(string path, string? sheetName = null)
@@ -599,3 +599,4 @@ public class ExcelInventoryImportService
         return currentValue;
     }
 }
+

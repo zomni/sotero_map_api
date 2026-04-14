@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using SoteroMap.API.Infrastructure;
 using SoteroMap.API.Data;
 using SoteroMap.API.Models;
 using SoteroMap.API.Services;
@@ -1070,19 +1071,8 @@ public class AdminController : Controller
 
     private string GetDatabaseFilePath()
     {
-        var connectionString = _configuration.GetConnectionString("Default")
-            ?? _configuration["ConnectionStrings:Default"]
-            ?? throw new InvalidOperationException("No se encontro la cadena de conexion SQLite.");
-
-        var builder = new SqliteConnectionStringBuilder(connectionString);
-        var dataSource = builder.DataSource;
-
-        if (string.IsNullOrWhiteSpace(dataSource))
-            throw new InvalidOperationException("No se encontro la ruta del archivo SQLite.");
-
-        return Path.IsPathRooted(dataSource)
-            ? dataSource
-            : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, dataSource));
+        var environment = HttpContext.RequestServices.GetRequiredService<IWebHostEnvironment>();
+        return SqliteDatabasePathResolver.ResolveDatabasePath(_configuration, environment.ContentRootPath);
     }
 
     private FileInfo? GetDatabaseFileInfo()
@@ -1212,3 +1202,8 @@ public class AdminController : Controller
         await _context.SaveChangesAsync();
     }
 }
+
+
+
+
+
