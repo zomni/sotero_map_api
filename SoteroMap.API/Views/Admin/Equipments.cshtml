@@ -305,19 +305,55 @@ window.addEventListener("DOMContentLoaded", () => {
 
     let timer = null;
     let controller = null;
+    let activeIndex = -1;
+
+    const getSelectableItems = () =>
+      Array.from(list.querySelectorAll(".list-group-item")).filter((item) => !item.classList.contains("text-muted"));
+
+    const updateActiveItem = () => {
+      const items = getSelectableItems();
+      items.forEach((item, index) => {
+        item.classList.toggle("active", index === activeIndex);
+      });
+
+      if (activeIndex >= 0 && activeIndex < items.length) {
+        items[activeIndex].scrollIntoView({ block: "nearest" });
+      }
+    };
+
+    const submitForm = () => {
+      const form = input.closest("form");
+      if (form) {
+        if (typeof form.requestSubmit === "function") {
+          form.requestSubmit();
+        } else {
+          form.submit();
+        }
+      }
+    };
 
     const hideList = () => {
+      activeIndex = -1;
       list.style.display = "none";
       list.innerHTML = "";
     };
 
+    const commitValue = (value) => {
+      input.value = value;
+      hideList();
+      input.focus();
+      submitForm();
+    };
+
     const showLoading = () => {
+      activeIndex = -1;
       list.innerHTML = "";
       list.appendChild(createDropdownItem("Cargando...", true));
       list.style.display = "block";
     };
 
     const showEmpty = () => {
+      activeIndex = -1;
       list.innerHTML = "";
       list.appendChild(createDropdownItem("Sin resultados", true));
       list.style.display = "block";
@@ -366,21 +402,12 @@ window.addEventListener("DOMContentLoaded", () => {
             if (!value) return;
             const item = createDropdownItem(value);
             item.addEventListener("click", () => {
-              input.value = value;
-              hideList();
-              input.focus();
-              const form = input.closest("form");
-              if (form) {
-                if (typeof form.requestSubmit === "function") {
-                  form.requestSubmit();
-                } else {
-                  form.submit();
-                }
-              }
+              commitValue(value);
             });
             list.appendChild(item);
           });
 
+          activeIndex = -1;
           list.style.display = "block";
         } catch (error) {
           if (error.name === "AbortError") return;
@@ -399,10 +426,49 @@ window.addEventListener("DOMContentLoaded", () => {
         list.style.display = "block";
       }
     });
+
+    input.addEventListener("keydown", (event) => {
+      const items = getSelectableItems();
+      const isListVisible = list.style.display !== "none" && items.length > 0;
+
+      if (event.key === "ArrowDown") {
+        if (!isListVisible) {
+          return;
+        }
+
+        event.preventDefault();
+        activeIndex = activeIndex < items.length - 1 ? activeIndex + 1 : 0;
+        updateActiveItem();
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        if (!isListVisible) {
+          return;
+        }
+
+        event.preventDefault();
+        activeIndex = activeIndex > 0 ? activeIndex - 1 : items.length - 1;
+        updateActiveItem();
+        return;
+      }
+
+      if (event.key === "Enter") {
+        if (!isListVisible || activeIndex < 0 || activeIndex >= items.length) {
+          return;
+        }
+
+        event.preventDefault();
+        commitValue(items[activeIndex].textContent || "");
+        return;
+      }
+
+      if (event.key === "Escape") {
+        hideList();
+      }
+    });
   };
 
   document.querySelectorAll(".js-autocomplete").forEach(bindSuggestions);
 });
 </script>
-
-
