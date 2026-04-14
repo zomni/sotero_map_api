@@ -13,10 +13,12 @@ namespace SoteroMap.API.Controllers;
 public class AuthController : Controller
 {
     private readonly BackendAuthService _authService;
+    private readonly IConfiguration _configuration;
 
-    public AuthController(BackendAuthService authService)
+    public AuthController(BackendAuthService authService, IConfiguration configuration)
     {
         _authService = authService;
+        _configuration = configuration;
     }
 
     [HttpGet]
@@ -69,6 +71,8 @@ public class AuthController : Controller
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
 
+        var sessionMinutes = _configuration.GetValue<double?>("SessionSettings:IdleMinutes") ?? 15;
+
         await HttpContext.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
             principal,
@@ -76,7 +80,7 @@ public class AuthController : Controller
             {
                 IsPersistent = model.RememberMe,
                 AllowRefresh = true,
-                ExpiresUtc = DateTimeOffset.UtcNow.AddHours(model.RememberMe ? 12 : 8)
+                ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(sessionMinutes)
             });
 
         return RedirectToLocal(model.ReturnUrl);

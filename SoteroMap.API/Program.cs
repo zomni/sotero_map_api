@@ -16,6 +16,7 @@ builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
+        var sessionMinutes = builder.Configuration.GetValue<double?>("SessionSettings:IdleMinutes") ?? 15;
         options.LoginPath = "/Auth/Login";
         options.AccessDeniedPath = "/Auth/AccessDenied";
         options.Cookie.Name = "SoteroMap.Auth";
@@ -23,7 +24,7 @@ builder.Services
         options.Cookie.SameSite = SameSiteMode.Lax;
         options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.SlidingExpiration = true;
-        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(sessionMinutes);
     });
 builder.Services.AddAuthorization();
 
