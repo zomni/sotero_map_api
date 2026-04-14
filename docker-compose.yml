@@ -9,8 +9,8 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - DOTNET_USE_POLLING_FILE_WATCHER=1
       - DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER=1
-      - AllowedOrigins=http://localhost:3000,http://localhost:8080
-      - FrontendAppUrl=${FRONTEND_APP_URL:-http://localhost:8080}
+      - AllowedOrigins=http://localhost:3000,http://localhost:8080,http://10.8.93.101:8080
+      - FrontendAppUrl=${FRONTEND_APP_URL:-http://10.8.93.101:8080}
       - ExcelImportRoot=/app/import
       - SeedUsers__Admin__Username=${SEED_ADMIN_USERNAME:-admin}
       - SeedUsers__Admin__Password=${SEED_ADMIN_PASSWORD:-Admin!Sotero2026Map}
