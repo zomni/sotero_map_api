@@ -1,0 +1,11 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0
+
+WORKDIR /app
+
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080
+ENV DOTNET_USE_POLLING_FILE_WATCHER=1
+ENV DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER=1
+
+EXPOSE 8080
+
+ENTRYPOINT ["dotnet", "watch", "--project", "SoteroMap.API/SoteroMap.API.csproj", "run", "--urls", "http://0.0.0.0:8080"]
