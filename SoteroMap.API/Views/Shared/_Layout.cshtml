@@ -22,9 +22,33 @@
         .badge-active { background: #22c55e; }
         .badge-maintenance { background: #f59e0b; }
         .badge-inactive { background: #ef4444; }
-        .session-warning { position: fixed; right: 24px; bottom: 24px; max-width: 360px; z-index: 2100; display: none; }
-        .session-expired-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: none; align-items: center; justify-content: center; z-index: 2200; padding: 16px; }
-        .session-expired-card { background: #fff; border-radius: 12px; padding: 24px; max-width: 420px; width: 100%; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.2); text-align: center; }
+        body.session-warning-open { overflow: hidden; }
+        body.session-warning-open .container-fluid { filter: blur(6px); pointer-events: none; user-select: none; }
+        .session-warning-overlay,
+        .session-expired-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.48);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .session-warning-overlay { z-index: 2150; }
+        .session-expired-overlay { z-index: 2200; }
+        .session-warning-card,
+        .session-expired-card {
+            background: #fff;
+            border-radius: 14px;
+            padding: 24px;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.22);
+            text-align: center;
+        }
+        .session-warning-card { border: 1px solid rgba(245, 158, 11, 0.25); }
     </style>
 </head>
 <body>
@@ -85,10 +109,13 @@
         </div>
     </div>
 
-    <div id="session-warning" class="alert alert-warning session-warning">
-        <div class="fw-semibold">Sesion por caducar</div>
-        <div class="small">Quedan <span id="session-warning-countdown">00:00</span> min.</div>
-        <button type="button" id="session-keep-alive" class="btn btn-sm btn-outline-warning mt-2">Seguir conectado</button>
+    <div id="session-warning-overlay" class="session-warning-overlay" aria-hidden="true">
+        <div id="session-warning" class="session-warning-card" role="dialog" aria-modal="true" aria-labelledby="session-warning-title">
+            <h5 id="session-warning-title" class="fw-bold mb-2">Sesion por caducar</h5>
+            <p class="text-muted mb-3">Tu sesion esta a punto de expirar por inactividad.</p>
+            <div class="small mb-3">Quedan <span id="session-warning-countdown">00:00</span> min.</div>
+            <button type="button" id="session-keep-alive" class="btn btn-warning px-4">Seguir conectado</button>
+        </div>
     </div>
 
     <div id="session-expired-overlay" class="session-expired-overlay">
@@ -107,8 +134,9 @@
         }
 
         const SESSION_MINUTES = @((Configuration.GetValue<double?>("SessionSettings:IdleMinutes") ?? 15).ToString(System.Globalization.CultureInfo.InvariantCulture));
-        const WARNING_MINUTES = @((Configuration.GetValue<double?>("SessionSettings:WarningMinutes") ?? 2).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        const WARNING_MINUTES = @((Configuration.GetValue<double?>("SessionSettings:WarningMinutes") ?? 14).ToString(System.Globalization.CultureInfo.InvariantCulture));
         const storageKey = "sotero-admin-last-activity";
+        const warningOverlay = document.getElementById("session-warning-overlay");
         const warningEl = document.getElementById("session-warning");
         const countdownEl = document.getElementById("session-warning-countdown");
         const expiredOverlay = document.getElementById("session-expired-overlay");
@@ -116,8 +144,11 @@
         const keepAliveBtn = document.getElementById("session-keep-alive");
 
         const sessionMs = SESSION_MINUTES * 60 * 1000;
-        const warningMs = WARNING_MINUTES * 60 * 1000;
+        const warningAtMs = Math.min(sessionMs, Math.max(0, WARNING_MINUTES * 60 * 1000));
         let lastActivityUpdate = 0;
+        let warningActive = false;
+        let sessionExpired = false;
+        let keepAliveInFlight = false;
 
         const setLastActivity = (timestamp) => {
             localStorage.setItem(storageKey, String(timestamp));
@@ -136,45 +167,107 @@
             return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
         };
 
+        const registerActivity = (timestamp = Date.now()) => {
+            lastActivityUpdate = timestamp;
+            setLastActivity(timestamp);
+        };
+
         const hideWarning = () => {
-            if (warningEl) warningEl.style.display = "none";
+            if (warningOverlay) {
+                warningOverlay.style.display = "none";
+                warningOverlay.setAttribute("aria-hidden", "true");
+            }
+            document.body.classList.remove("session-warning-open");
+            warningActive = false;
         };
 
         const showWarning = (remainingMs) => {
-            if (!warningEl) return;
+            if (!warningEl || !warningOverlay || sessionExpired) {
+                return;
+            }
+
             if (countdownEl) {
                 countdownEl.textContent = formatRemaining(remainingMs);
             }
-            warningEl.style.display = "block";
+
+            warningOverlay.style.display = "flex";
+            warningOverlay.setAttribute("aria-hidden", "false");
+            document.body.classList.add("session-warning-open");
+            warningActive = true;
+            window.setTimeout(() => keepAliveBtn?.focus(), 0);
         };
 
         const showExpired = () => {
+            sessionExpired = true;
+            hideWarning();
             if (expiredOverlay) {
                 expiredOverlay.style.display = "flex";
             }
         };
 
-        const handleActivity = () => {
+        const handlePassiveActivity = () => {
+            if (warningActive || sessionExpired) {
+                return;
+            }
+
             const now = Date.now();
-            if (now - lastActivityUpdate < 4000) return;
-            lastActivityUpdate = now;
-            setLastActivity(now);
-            hideWarning();
+            if (now - lastActivityUpdate < 4000) {
+                return;
+            }
+
+            registerActivity(now);
         };
 
-        ["click", "mousemove", "keydown", "scroll", "touchstart"].forEach((evt) => {
-            document.addEventListener(evt, handleActivity, { passive: true });
+        ["click", "keydown", "scroll", "touchstart"].forEach((evt) => {
+            document.addEventListener(evt, handlePassiveActivity, { passive: true });
         });
 
         window.addEventListener("storage", (event) => {
-            if (event.key === storageKey) {
+            if (event.key !== storageKey) {
+                return;
+            }
+
+            const parsed = Number(event.newValue);
+            if (Number.isFinite(parsed)) {
+                lastActivityUpdate = parsed;
+            }
+
+            if (!sessionExpired) {
                 hideWarning();
             }
         });
 
         if (keepAliveBtn) {
-            keepAliveBtn.addEventListener("click", () => {
-                handleActivity();
+            keepAliveBtn.addEventListener("click", async () => {
+                if (keepAliveInFlight || sessionExpired) {
+                    return;
+                }
+
+                keepAliveInFlight = true;
+                keepAliveBtn.disabled = true;
+                keepAliveBtn.textContent = "Confirmando...";
+
+                try {
+                    const response = await fetch("/Auth/KeepAlive", {
+                        method: "GET",
+                        headers: { "Accept": "application/json" },
+                        credentials: "same-origin",
+                        cache: "no-store"
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`KeepAlive fallo con estado ${response.status}`);
+                    }
+
+                    registerActivity(Date.now());
+                    hideWarning();
+                } catch (_) {
+                    showExpired();
+                } finally {
+                    keepAliveInFlight = false;
+                    keepAliveBtn.disabled = false;
+                    keepAliveBtn.textContent = "Seguir conectado";
+                }
             });
         }
 
@@ -186,24 +279,29 @@
         }
 
         const tick = () => {
+            if (sessionExpired) {
+                return;
+            }
+
             const now = Date.now();
-            const idleMs = now - getLastActivity();
+            const lastActivity = getLastActivity();
+            lastActivityUpdate = Math.max(lastActivityUpdate, lastActivity);
+            const idleMs = now - lastActivity;
             const remainingMs = sessionMs - idleMs;
 
             if (remainingMs <= 0) {
                 showExpired();
-                hideWarning();
                 return;
             }
 
-            if (remainingMs <= warningMs) {
+            if (idleMs >= warningAtMs) {
                 showWarning(remainingMs);
             } else {
                 hideWarning();
             }
         };
 
-        setLastActivity(Date.now());
+        registerActivity(Date.now());
         tick();
         window.setInterval(tick, 1000);
     });
@@ -211,4 +309,3 @@
     @RenderSection("Scripts", required: false)
 </body>
 </html>
-

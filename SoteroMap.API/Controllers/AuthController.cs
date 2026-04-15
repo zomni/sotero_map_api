@@ -95,6 +95,29 @@ public class AuthController : Controller
         return RedirectToAction(nameof(Login));
     }
 
+    [Authorize]
+    [HttpGet]
+    public async Task<IActionResult> KeepAlive()
+    {
+        var authResult = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        if (!authResult.Succeeded || authResult.Principal is null)
+        {
+            return Unauthorized();
+        }
+
+        var sessionMinutes = _configuration.GetValue<double?>("SessionSettings:IdleMinutes") ?? 15;
+        var properties = authResult.Properties ?? new AuthenticationProperties();
+        properties.AllowRefresh = true;
+        properties.ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(sessionMinutes);
+
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            authResult.Principal,
+            properties);
+
+        return NoContent();
+    }
+
     [HttpGet]
     public IActionResult AccessDenied()
     {
