@@ -82,6 +82,28 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.UseCors("FrontendPolicy");
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        var path = context.Request.Path;
+        var disableCache = path == "/"
+            || path.StartsWithSegments("/admin", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWithSegments("/Auth", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase);
+
+        if (disableCache)
+        {
+            context.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0";
+            context.Response.Headers["Pragma"] = "no-cache";
+            context.Response.Headers["Expires"] = "0";
+        }
+
+        return Task.CompletedTask;
+    });
+
+    await next();
+});
 app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
