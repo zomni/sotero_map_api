@@ -1,4 +1,4 @@
-@inject IConfiguration Configuration
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 @model SoteroMap.API.ViewModels.AdminLocationsViewModel
 @{
     ViewData["Title"] = "Ubicaciones";
@@ -10,7 +10,7 @@
         : (Configuration["FrontendAppUrl"] ?? "http://localhost:8080");
     var totalPages = (int)Math.Ceiling((Model.TotalFilteredLocations <= 0 ? 1 : Model.TotalFilteredLocations) / (double)Model.PageSize);
     var currentPage = Math.Min(Model.Page, totalPages);
-    int[] pageSizeOptions = [30, 50, 100, 200, 500];
+    var pageSizeOptions = new[] { 30, 50, 100, 200, 500 };
     var activeFilters = new List<string>();
     if (!string.IsNullOrWhiteSpace(Model.Search))
     {
@@ -24,12 +24,38 @@
     {
         activeFilters.Add($"Piso: {Model.Floor}");
     }
+    if (Context?.Request?.Query.ContainsKey("sortBy") == true && !string.IsNullOrWhiteSpace(Model.SortBy))
+    {
+        activeFilters.Add($"Orden: {Model.SortBy} ({(Model.SortDirection == "desc" ? "desc" : "asc")})");
+    }
     if (Model.PageSize != 30)
     {
         activeFilters.Add($"Por pagina: {Model.PageSize}");
     }
     var hasActiveFilters = activeFilters.Count > 0;
     var isAdmin = User.IsInRole(SoteroMap.API.Models.AppRoles.Admin);
+    string NextSortDirection(string column) => Model.SortBy == column && Model.SortDirection == "asc" ? "desc" : "asc";
+    string SortArrow(string column) => Model.SortBy != column ? "bi bi-dash-lg" : (Model.SortDirection == "asc" ? "bi bi-chevron-down" : "bi bi-chevron-up");
+    string SortUrl(string column) => Url.Action("Locations", new
+    {
+        search = Model.Search,
+        campus = Model.Campus,
+        floor = Model.Floor,
+        sortBy = column,
+        sortDirection = NextSortDirection(column),
+        page = 1,
+        pageSize = Model.PageSize
+    }) ?? "/admin/locations";
+    string PageUrl(int targetPage) => Url.Action("Locations", new
+    {
+        search = Model.Search,
+        campus = Model.Campus,
+        floor = Model.Floor,
+        sortBy = Model.SortBy,
+        sortDirection = Model.SortDirection,
+        page = targetPage,
+        pageSize = Model.PageSize
+    }) ?? "/admin/locations";
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -41,6 +67,40 @@
         <i class="bi bi-box-arrow-up-right me-1"></i> Ver API
     </a>
 </div>
+
+<style>
+  .table-sort-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: inherit;
+    text-decoration: none;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .table-sort-link:hover {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .table-sort-link .sort-icon {
+    font-size: 0.72rem;
+    line-height: 1;
+    flex: 0 0 auto;
+  }
+  .table-fixed-layout {
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  .table-fixed-layout th,
+  .table-fixed-layout td {
+    white-space: normal;
+    word-break: break-word;
+    vertical-align: top;
+  }
+</style>
 
 <script>
 (() => {
@@ -194,7 +254,7 @@
             </div>
             <div class="col-md-2">
                 <label class="form-label small fw-semibold">Por pagina</label>
-                <select name="pageSize" class="form-select">
+                <select name="pageSize" class="form-select js-page-size-select">
                     @foreach (var size in pageSizeOptions)
                     {
                         <option value="@size" selected="@(Model.PageSize == size)">@size</option>
@@ -203,6 +263,8 @@
             </div>
             <div class="col-md-12">
                 <input type="hidden" name="page" value="1" />
+                <input type="hidden" name="sortBy" value="@Model.SortBy" />
+                <input type="hidden" name="sortDirection" value="@Model.SortDirection" />
                 <div class="d-flex gap-2">
                     <button type="submit" class="btn btn-outline-primary flex-grow-1">
                         <i class="bi bi-funnel me-1"></i> Filtrar
@@ -232,38 +294,21 @@
     </div>
 </div>
 
-<div class="d-flex justify-content-between align-items-center mt-3">
-    <div class="text-muted small">
-        Mostrando @Model.Locations.Count de @Model.TotalFilteredLocations edificio(s)
-    </div>
-    <div class="d-flex gap-2">
-        <a class="btn btn-sm btn-outline-secondary @(currentPage <= 1 ? "disabled" : null)"
-           href="/admin/locations?search=@Uri.EscapeDataString(Model.Search)&campus=@Uri.EscapeDataString(Model.Campus)&floor=@Uri.EscapeDataString(Model.Floor)&page=@(currentPage - 1)&pageSize=@Model.PageSize">
-            Anterior
-        </a>
-        <span class="btn btn-sm btn-light disabled">Pagina @currentPage de @totalPages</span>
-        <a class="btn btn-sm btn-outline-secondary @(currentPage >= totalPages ? "disabled" : null)"
-           href="/admin/locations?search=@Uri.EscapeDataString(Model.Search)&campus=@Uri.EscapeDataString(Model.Campus)&floor=@Uri.EscapeDataString(Model.Floor)&page=@(currentPage + 1)&pageSize=@Model.PageSize">
-            Siguiente
-        </a>
-    </div>
-</div>
-
 <div class="card border-0 shadow-sm">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light">
+            <table class="table table-hover mb-0 align-middle table-fixed-layout">
+                                                <thead class="table-light">
                     <tr>
-                        <th>Edificio</th>
-                        <th>Campus</th>
-                        <th>Tipo</th>
-                        <th>Pisos</th>
-                        <th>Salas</th>
-                        <th>Equipos asignados</th>
-                        <th>Sugeridos</th>
-                        <th>Estado mapa</th>
-                        <th>Coordenadas</th>
+                        <th><a href='@SortUrl("building")' class="table-sort-link"><span>Edificio</span><i class='@SortArrow("building") sort-icon' aria-hidden="true"></i></a></th>
+                        <th><a href='@SortUrl("campus")' class="table-sort-link"><span>Campus</span><i class='@SortArrow("campus") sort-icon' aria-hidden="true"></i></a></th>
+                        <th><a href='@SortUrl("type")' class="table-sort-link"><span>Tipo</span><i class='@SortArrow("type") sort-icon' aria-hidden="true"></i></a></th>
+                        <th><a href='@SortUrl("floors")' class="table-sort-link"><span>Pisos</span><i class='@SortArrow("floors") sort-icon' aria-hidden="true"></i></a></th>
+                        <th><a href='@SortUrl("rooms")' class="table-sort-link"><span>Salas</span><i class='@SortArrow("rooms") sort-icon' aria-hidden="true"></i></a></th>
+                        <th><a href='@SortUrl("assigned")' class="table-sort-link"><span>Equipos asignados</span><i class='@SortArrow("assigned") sort-icon' aria-hidden="true"></i></a></th>
+                        <th><a href='@SortUrl("suggested")' class="table-sort-link"><span>Sugeridos</span><i class='@SortArrow("suggested") sort-icon' aria-hidden="true"></i></a></th>
+                        <th><a href='@SortUrl("map")' class="table-sort-link"><span>Estado mapa</span><i class='@SortArrow("map") sort-icon' aria-hidden="true"></i></a></th>
+                        <th><a href='@SortUrl("coordinates")' class="table-sort-link"><span>Coordenadas</span><i class='@SortArrow("coordinates") sort-icon' aria-hidden="true"></i></a></th>
                         <th class="text-end">Acciones</th>
                     </tr>
                 </thead>
@@ -326,8 +371,40 @@
     </div>
 </div>
 
+<div class="d-flex justify-content-between align-items-center mt-3">
+    <div class="text-muted small">
+        Mostrando @Model.Locations.Count de @Model.TotalFilteredLocations edificio(s)
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-secondary @(currentPage <= 1 ? "disabled" : null)"
+           href="@PageUrl(currentPage - 1)">
+            Anterior
+        </a>
+        <span class="btn btn-sm btn-light disabled">Pagina @currentPage de @totalPages</span>
+        <a class="btn btn-sm btn-outline-secondary @(currentPage >= totalPages ? "disabled" : null)"
+           href="@PageUrl(currentPage + 1)">
+            Siguiente
+        </a>
+    </div>
+</div>
+
 <script>
 window.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".js-page-size-select").forEach((select) => {
+    select.addEventListener("change", () => {
+      const form = select.closest("form");
+      if (!form) {
+        return;
+      }
+
+      if (typeof form.requestSubmit === "function") {
+        form.requestSubmit();
+      } else {
+        form.submit();
+      }
+    });
+  });
+
   const createDropdownItem = (text, isMuted = false) => {
     const item = document.createElement("button");
     item.type = "button";
@@ -512,3 +589,16 @@ window.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".js-autocomplete").forEach(bindSuggestions);
 });
 </script>
+
+
+
+
+
+
+
+
+
+
+
+
+

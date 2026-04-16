@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -278,10 +278,19 @@ public class AdminController : Controller
         return View(model);
     }
 
-    public async Task<IActionResult> Locations(string? search, string? campus, string? floor, int page = 1, int pageSize = 30)
+    public async Task<IActionResult> Locations(
+        string? search,
+        string? campus,
+        string? floor,
+        string? sortBy,
+        string? sortDirection,
+        int page = 1,
+        int pageSize = 30)
     {
         pageSize = NormalizePageSize(pageSize);
         page = Math.Max(page, 1);
+        sortBy = NormalizeLocationSortBy(sortBy);
+        sortDirection = NormalizeSortDirection(sortDirection);
 
         var buildingsQuery = _context.SyncedBuildings.AsNoTracking().AsQueryable();
 
@@ -306,27 +315,19 @@ public class AdminController : Controller
             buildingsQuery = buildingsQuery.Where(b => (b.ManualFloorsJson != "" ? b.ManualFloorsJson : b.FloorsJson).Contains(floorToken));
         }
 
-        var totalFilteredLocations = await buildingsQuery.CountAsync();
-        var filteredBuildingSnapshot = await buildingsQuery
+        var filteredBuildings = await buildingsQuery.ToListAsync();
+        var totalFilteredLocations = filteredBuildings.Count;
+        var filteredBuildingSnapshot = filteredBuildings
             .Select(b => new
             {
                 b.Id,
                 b.ExternalId,
                 b.HasInteriorMap
             })
-            .ToListAsync();
+            .ToList();
 
         var filteredBuildingIds = filteredBuildingSnapshot.Select(b => b.Id).ToList();
         var filteredBuildingExternalIds = filteredBuildingSnapshot.Select(b => b.ExternalId).ToList();
-
-        var buildings = await buildingsQuery
-            .OrderBy(b => b.ManualDisplayName != "" ? b.ManualDisplayName : b.DisplayName)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        var buildingIds = buildings.Select(b => b.Id).ToList();
-        var buildingExternalIds = buildings.Select(b => b.ExternalId).ToList();
 
         var roomsByBuilding = await _context.SyncedRooms
             .AsNoTracking()
@@ -361,15 +362,8 @@ public class AdminController : Controller
             })
             .ToDictionaryAsync(x => x.BuildingExternalId, x => x.Count);
 
-        var model = new AdminLocationsViewModel
-        {
-            Search = search ?? string.Empty,
-            Campus = campus ?? string.Empty,
-            Floor = floor ?? string.Empty,
-            Page = page,
-            PageSize = pageSize,
-            TotalFilteredLocations = totalFilteredLocations,
-            Locations = buildings.Select(b => new AdminLocationRowViewModel
+        var sortedRows = SortLocationRows(
+            filteredBuildings.Select(b => new AdminLocationRowViewModel
             {
                 ExternalId = b.ExternalId,
                 DisplayName = b.EffectiveDisplayName,
@@ -389,7 +383,27 @@ public class AdminController : Controller
                 Coordinates = b.CentroidLatitude.HasValue && b.CentroidLongitude.HasValue
                     ? $"{b.CentroidLatitude.Value:F4}, {b.CentroidLongitude.Value:F4}"
                     : "-"
-            }).ToList(),
+            }),
+            sortBy,
+            sortDirection)
+            .ToList();
+
+        var locations = sortedRows
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        var model = new AdminLocationsViewModel
+        {
+            Search = search ?? string.Empty,
+            Campus = campus ?? string.Empty,
+            Floor = floor ?? string.Empty,
+            SortBy = sortBy,
+            SortDirection = sortDirection,
+            Page = page,
+            PageSize = pageSize,
+            TotalFilteredLocations = totalFilteredLocations,
+            Locations = locations,
             TotalBuildings = totalFilteredLocations,
             BuildingsWithInteriorMap = filteredBuildingSnapshot.Count(b => b.HasInteriorMap),
             TotalRooms = roomsByBuilding.Values.Sum(),
@@ -546,11 +560,31 @@ public class AdminController : Controller
         string? status,
         string? assignment,
         string? buildingExternalId,
+        string? sortBy,
+        string? sortDirection,
+        string? inconsistencyType,
+        bool onlyInconsistencies = false,
         int page = 1,
         int pageSize = 30)
     {
         pageSize = NormalizePageSize(pageSize);
         page = Math.Max(page, 1);
+        assignment = string.IsNullOrWhiteSpace(assignment) ? "all" : assignment.Trim().ToLowerInvariant();
+        sortBy = NormalizeInventorySortBy(sortBy);
+        sortDirection = NormalizeSortDirection(sortDirection);
+        inconsistencyType = NormalizeInconsistencyType(inconsistencyType);
+
+        if (onlyInconsistencies && assignment == "all")
+        {
+            assignment = "inconsistent";
+        }
+
+        var inconsistencyFilterActive = onlyInconsistencies || assignment == "inconsistent";
+
+        var inconsistencySnapshot = await AnalyzeInventoryInconsistenciesAsync();
+        var inconsistentItemIds = inconsistencySnapshot.ItemIds.ToHashSet();
+        var availableCategories = await GetInventoryCategoryOptionsAsync();
+        var availableStatuses = await GetInventoryStatusOptionsAsync();
 
         var query = _context.ImportedInventoryItems.AsNoTracking().AsQueryable();
 
@@ -574,24 +608,43 @@ public class AdminController : Controller
         }
 
         if (!string.IsNullOrWhiteSpace(category))
+        {
             query = query.Where(i => i.InferredCategory == category);
+        }
 
         if (!string.IsNullOrWhiteSpace(status))
+        {
             query = query.Where(i => i.InferredStatus == status);
+        }
 
         switch (assignment)
         {
+            case "pending":
+                query = query.Where(i => i.AssignedBuildingExternalId == "");
+                break;
             case "assigned":
                 if (!string.IsNullOrWhiteSpace(buildingExternalId))
+                {
                     query = query.Where(i => i.AssignedBuildingExternalId == buildingExternalId);
+                }
 
                 query = query.Where(i => i.AssignedBuildingExternalId != "");
                 break;
             case "suggested":
                 if (!string.IsNullOrWhiteSpace(buildingExternalId))
+                {
                     query = query.Where(i => i.MatchedBuildingExternalId == buildingExternalId);
+                }
 
                 query = query.Where(i => i.AssignedBuildingExternalId == "" && i.MatchedBuildingExternalId != "");
+                break;
+            case "inconsistent":
+                if (!string.IsNullOrWhiteSpace(buildingExternalId))
+                {
+                    query = query.Where(i =>
+                        i.AssignedBuildingExternalId == buildingExternalId ||
+                        i.MatchedBuildingExternalId == buildingExternalId);
+                }
                 break;
             case "all":
                 if (!string.IsNullOrWhiteSpace(buildingExternalId))
@@ -600,50 +653,170 @@ public class AdminController : Controller
                         i.AssignedBuildingExternalId == buildingExternalId ||
                         i.MatchedBuildingExternalId == buildingExternalId);
                 }
-
                 break;
             default:
                 assignment = "all";
-                if (!string.IsNullOrWhiteSpace(buildingExternalId))
-                {
-                    query = query.Where(i =>
-                        i.AssignedBuildingExternalId == buildingExternalId ||
-                        i.MatchedBuildingExternalId == buildingExternalId);
-                }
                 break;
         }
 
-        var totalFilteredItems = await query.CountAsync();
+        if (inconsistencyFilterActive)
+        {
+            query = inconsistentItemIds.Count == 0
+                ? query.Where(i => false)
+                : query.Where(i => inconsistentItemIds.Contains(i.Id));
+        }
+
+        var inconsistencyTypeIds = string.IsNullOrWhiteSpace(inconsistencyType)
+            ? null
+            : inconsistencySnapshot.Summaries
+                .Where(entry => MatchesInconsistencyType(entry.Value, inconsistencyType))
+                .Select(entry => entry.Key)
+                .ToHashSet();
+
+        if (inconsistencyTypeIds is not null)
+        {
+            query = inconsistencyTypeIds.Count == 0
+                ? query.Where(i => false)
+                : query.Where(i => inconsistencyTypeIds.Contains(i.Id));
+        }
+
+        var filteredItems = await query.ToListAsync();
+        var totalFilteredItems = filteredItems.Count;
+        var sortedItems = SortInventoryItems(filteredItems, sortBy, sortDirection).ToList();
+        var items = sortedItems
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
 
         var model = new AdminInventoryListViewModel
         {
             Search = search ?? string.Empty,
             Category = category ?? string.Empty,
             Status = status ?? string.Empty,
-            AssignmentFilter = assignment ?? "all",
+            AssignmentFilter = assignment,
             BuildingExternalId = buildingExternalId ?? string.Empty,
+            SortBy = sortBy,
+            SortDirection = sortDirection,
+            InconsistencyType = inconsistencyType ?? string.Empty,
+            OnlyInconsistencies = inconsistencyFilterActive,
             Page = page,
             PageSize = pageSize,
             TotalFilteredItems = totalFilteredItems,
-            Items = await query
-                .OrderBy(i => i.AssignedBuildingExternalId == "" ? 0 : 1)
-                .ThenBy(i => i.Id)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync(),
+            Items = items,
             Buildings = await _context.SyncedBuildings
                 .AsNoTracking()
                 .OrderBy(b => b.ManualDisplayName != "" ? b.ManualDisplayName : b.DisplayName)
                 .ToListAsync(),
+            Categories = availableCategories,
+            Statuses = availableStatuses,
+            AvailableInconsistencyTypes = GetInventoryInconsistencyFilterOptions(),
+            InconsistencySummaries = items
+                .Where(item => inconsistencySnapshot.Summaries.ContainsKey(item.Id))
+                .ToDictionary(item => item.Id, item => inconsistencySnapshot.Summaries[item.Id]),
             TotalItems = await _context.ImportedInventoryItems.CountAsync(),
             AssignedItems = await _context.ImportedInventoryItems.CountAsync(i => i.AssignedBuildingExternalId != ""),
             PendingItems = await _context.ImportedInventoryItems.CountAsync(i => i.AssignedBuildingExternalId == ""),
-            SuggestedItems = await _context.ImportedInventoryItems.CountAsync(i => i.AssignedBuildingExternalId == "" && i.MatchedBuildingExternalId != "")
+            SuggestedItems = await _context.ImportedInventoryItems.CountAsync(i => i.AssignedBuildingExternalId == "" && i.MatchedBuildingExternalId != ""),
+            InconsistentItems = inconsistencySnapshot.ItemIds.Count
         };
 
         return View("Equipments", model);
     }
 
+    [HttpGet("/admin/inventory/inconsistency/{id:int}")]
+    public async Task<IActionResult> InventoryInconsistency(int id, string? returnUrl = null)
+    {
+        var model = await BuildInventoryInconsistencyDetailViewModelAsync(id, returnUrl);
+        if (model is null)
+            return NotFound();
+
+        return View(model);
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPost("/admin/inventory/inconsistency/{id:int}/merge")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MergeInventoryInconsistency(int id, int[]? selectedItemIds, string? returnUrl = null)
+    {
+        var normalizedReturnUrl = !string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)
+            ? returnUrl
+            : (Url.Action(nameof(InventoryInconsistency), new { id }) ?? $"/admin/inventory/inconsistency/{id}");
+
+        var primary = await _context.ImportedInventoryItems.FirstOrDefaultAsync(item => item.Id == id);
+        if (primary is null)
+            return NotFound();
+
+        var requestedIds = (selectedItemIds ?? Array.Empty<int>())
+            .Where(itemId => itemId != id)
+            .Distinct()
+            .ToList();
+
+        if (requestedIds.Count == 0)
+        {
+            TempData["ErrorMessage"] = "Selecciona al menos un equipo relacionado para fusionar.";
+            return RedirectToAction(nameof(InventoryInconsistency), new { id, returnUrl = normalizedReturnUrl });
+        }
+
+        var requestedItems = await _context.ImportedInventoryItems
+            .Where(item => requestedIds.Contains(item.Id))
+            .OrderBy(item => item.Id)
+            .ToListAsync();
+
+        var mergePlan = requestedItems
+            .Select(item => new InventoryMergePlanEntry
+            {
+                Item = item,
+                MatchingFields = GetInventoryMatchingFields(primary, item)
+            })
+            .Where(entry => entry.MatchingFields.Count > 0)
+            .OrderByDescending(entry => entry.MatchingFields.Count)
+            .ThenBy(entry => entry.Item.Id)
+            .ToList();
+
+        if (mergePlan.Count == 0)
+        {
+            TempData["ErrorMessage"] = "No se encontraron coincidencias suficientes entre el equipo base y los equipos seleccionados.";
+            return RedirectToAction(nameof(InventoryInconsistency), new { id, returnUrl = normalizedReturnUrl });
+        }
+
+        var previousBuildingExternalId = primary.AssignedBuildingExternalId;
+        var previousRoomExternalId = primary.AssignedRoomExternalId;
+        var previousFloor = primary.AssignedFloor;
+        var previousSerialNumber = primary.SerialNumber;
+        var previousAssignmentNotes = primary.AssignmentNotes;
+
+        foreach (var entry in mergePlan)
+        {
+            MergeInventoryItems(primary, entry.Item);
+        }
+
+        _context.ImportedInventoryItems.RemoveRange(mergePlan.Select(entry => entry.Item));
+        await _context.SaveChangesAsync();
+
+        var actor = User.Identity?.Name ?? "sistema";
+        var assignmentChanged = !string.Equals(previousBuildingExternalId ?? string.Empty, primary.AssignedBuildingExternalId ?? string.Empty, StringComparison.Ordinal)
+            || !string.Equals(previousRoomExternalId ?? string.Empty, primary.AssignedRoomExternalId ?? string.Empty, StringComparison.Ordinal)
+            || previousFloor != primary.AssignedFloor
+            || !string.Equals(previousSerialNumber ?? string.Empty, primary.SerialNumber ?? string.Empty, StringComparison.Ordinal)
+            || !string.Equals(previousAssignmentNotes ?? string.Empty, primary.AssignmentNotes ?? string.Empty, StringComparison.Ordinal);
+
+        if (assignmentChanged)
+        {
+            await _auditLogService.LogInventoryItemChangeAsync(
+                primary,
+                actor,
+                previousBuildingExternalId,
+                previousRoomExternalId,
+                previousFloor,
+                previousSerialNumber,
+                previousAssignmentNotes);
+        }
+
+        await LogInventoryMergeAsync(primary, mergePlan, actor);
+
+        TempData["SuccessMessage"] = $"Fusion completada. Se integraron {mergePlan.Count} registro(s) en el equipo #{primary.Id}.";
+        return RedirectToAction(nameof(InventoryInconsistency), new { id = primary.Id, returnUrl = normalizedReturnUrl });
+    }
     [Authorize(Roles = AppRoles.Admin)]
     [HttpGet("/admin/inventory/create")]
     public async Task<IActionResult> CreateInventoryItem()
@@ -1272,6 +1445,630 @@ public class AdminController : Controller
         return int.TryParse(firstToken, out var parsedFloor) ? parsedFloor : 0;
     }
 
+    private sealed class InventoryInconsistencySnapshot
+    {
+        public HashSet<int> ItemIds { get; } = [];
+        public Dictionary<int, string> Summaries { get; } = [];
+    }
+
+    private sealed class InventoryInconsistencyCandidate
+    {
+        public int Id { get; init; }
+        public string SerialKey { get; init; } = string.Empty;
+        public string SerialFamilyKey { get; init; } = string.Empty;
+        public string IpKey { get; init; } = string.Empty;
+        public string MacKey { get; init; } = string.Empty;
+        public string UnitSignature { get; init; } = string.Empty;
+    }
+
+    private sealed class InventoryMergePlanEntry
+    {
+        public ImportedInventoryItem Item { get; init; } = null!;
+        public IReadOnlyList<string> MatchingFields { get; init; } = [];
+    }
+
+    private async Task<InventoryInconsistencySnapshot> AnalyzeInventoryInconsistenciesAsync()
+    {
+        var snapshot = new InventoryInconsistencySnapshot();
+        var candidates = await _context.ImportedInventoryItems
+            .AsNoTracking()
+            .Select(item => new InventoryInconsistencyCandidate
+            {
+                Id = item.Id,
+                SerialKey = NormalizeInventoryToken(item.SerialNumber),
+                SerialFamilyKey = NormalizeInventorySerialFamily(item.SerialNumber),
+                IpKey = NormalizeInventoryToken(item.IpAddress),
+                MacKey = NormalizeInventoryToken(item.MacAddress),
+                UnitSignature = $"{NormalizeInventoryToken(item.UnitOrDepartment)}|{NormalizeInventoryToken(item.OrganizationalUnit)}"
+            })
+            .ToListAsync();
+
+        var reasons = new Dictionary<int, HashSet<string>>();
+
+        void AddReason(int id, string reason)
+        {
+            if (!reasons.TryGetValue(id, out var itemReasons))
+            {
+                itemReasons = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                reasons[id] = itemReasons;
+            }
+
+            itemReasons.Add(reason);
+        }
+
+        foreach (var group in candidates.Where(item => item.SerialKey != string.Empty).GroupBy(item => item.SerialKey).Where(group => group.Count() > 1))
+        {
+            foreach (var item in group)
+            {
+                AddReason(item.Id, "S/N duplicado");
+            }
+        }
+
+        foreach (var group in candidates.Where(item => item.SerialFamilyKey != string.Empty).GroupBy(item => item.SerialFamilyKey).Where(group => group.Count() > 1))
+        {
+            var items = group.ToList();
+            if (items.Select(item => item.SerialKey).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
+            {
+                foreach (var item in items)
+                {
+                    AddReason(item.Id, "S/N muy parecido");
+                }
+            }
+
+            if (items.Select(item => item.UnitSignature).Where(signature => signature != "|").Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
+            {
+                foreach (var item in items)
+                {
+                    AddReason(item.Id, "Unidad/org distinta en posibles duplicados");
+                }
+            }
+        }
+
+        foreach (var group in candidates.Where(item => item.IpKey != string.Empty).GroupBy(item => item.IpKey).Where(group => group.Count() > 1))
+        {
+            foreach (var item in group)
+            {
+                AddReason(item.Id, "IP repetida");
+            }
+        }
+
+        foreach (var group in candidates.Where(item => item.MacKey != string.Empty).GroupBy(item => item.MacKey).Where(group => group.Count() > 1))
+        {
+            foreach (var item in group)
+            {
+                AddReason(item.Id, "MAC repetida");
+            }
+        }
+
+        foreach (var entry in reasons)
+        {
+            snapshot.ItemIds.Add(entry.Key);
+            snapshot.Summaries[entry.Key] = string.Join("; ", entry.Value.OrderBy(value => value, StringComparer.OrdinalIgnoreCase));
+        }
+
+        return snapshot;
+    }
+
+    private async Task<InventoryInconsistencyDetailViewModel?> BuildInventoryInconsistencyDetailViewModelAsync(int id, string? returnUrl)
+    {
+        var items = await _context.ImportedInventoryItems
+            .AsNoTracking()
+            .OrderBy(item => item.Id)
+            .ToListAsync();
+
+        var current = items.FirstOrDefault(item => item.Id == id);
+        if (current is null)
+        {
+            return null;
+        }
+
+        var candidatesById = items.ToDictionary(
+            item => item.Id,
+            item => new InventoryInconsistencyCandidate
+            {
+                Id = item.Id,
+                SerialKey = NormalizeInventoryToken(item.SerialNumber),
+                SerialFamilyKey = NormalizeInventorySerialFamily(item.SerialNumber),
+                IpKey = NormalizeInventoryToken(item.IpAddress),
+                MacKey = NormalizeInventoryToken(item.MacAddress),
+                UnitSignature = $"{NormalizeInventoryToken(item.UnitOrDepartment)}|{NormalizeInventoryToken(item.OrganizationalUnit)}"
+            });
+
+        var currentCandidate = candidatesById[id];
+        var reasons = new List<InventoryInconsistencyReasonViewModel>();
+        var relatedItemsById = new Dictionary<int, InventoryInconsistencyRelatedItemViewModel>();
+
+        void AddReason(string title, string suggestedAction, IEnumerable<ImportedInventoryItem> relatedItems)
+        {
+            var related = MapInventoryRelatedItems(current, relatedItems, current.Id);
+            if (related.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var relatedItem in related)
+            {
+                relatedItemsById[relatedItem.Id] = relatedItem;
+            }
+
+            reasons.Add(new InventoryInconsistencyReasonViewModel
+            {
+                Title = title,
+                SuggestedAction = suggestedAction,
+                RelatedItems = related
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(currentCandidate.SerialKey))
+        {
+            var exactSerialItems = candidatesById.Values
+                .Where(candidate => candidate.SerialKey == currentCandidate.SerialKey)
+                .Select(candidate => items.First(item => item.Id == candidate.Id))
+                .ToList();
+
+            if (exactSerialItems.Count > 1)
+            {
+                AddReason(
+                    "S/N duplicado",
+                    "Compara ambos registros y corrige el serial o elimina el duplicado si representan el mismo equipo.",
+                    exactSerialItems);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(currentCandidate.SerialFamilyKey))
+        {
+            var familyCandidates = candidatesById.Values
+                .Where(candidate => candidate.SerialFamilyKey == currentCandidate.SerialFamilyKey)
+                .ToList();
+            var familyItems = familyCandidates
+                .Select(candidate => items.First(item => item.Id == candidate.Id))
+                .ToList();
+
+            if (familyCandidates.Count > 1 && familyCandidates.Select(candidate => candidate.SerialKey).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
+            {
+                AddReason(
+                    "S/N muy parecido",
+                    "Revisa si se trata del mismo equipo cargado con un prefijo extra o con una variacion menor del serial.",
+                    familyItems);
+            }
+
+            if (familyCandidates.Count > 1 && familyCandidates.Select(candidate => candidate.UnitSignature).Where(signature => signature != "|").Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
+            {
+                AddReason(
+                    "Unidad/org distinta en posibles duplicados",
+                    "Confirma cual es la unidad correcta y deja ambos registros consistentes o consolida el duplicado.",
+                    familyItems);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(currentCandidate.IpKey))
+        {
+            var ipItems = candidatesById.Values
+                .Where(candidate => candidate.IpKey == currentCandidate.IpKey)
+                .Select(candidate => items.First(item => item.Id == candidate.Id))
+                .ToList();
+
+            if (ipItems.Count > 1)
+            {
+                AddReason(
+                    "IP repetida",
+                    "Verifica si ambos registros apuntan al mismo equipo o si una IP quedo repetida por error u obsolescencia.",
+                    ipItems);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(currentCandidate.MacKey))
+        {
+            var macItems = candidatesById.Values
+                .Where(candidate => candidate.MacKey == currentCandidate.MacKey)
+                .Select(candidate => items.First(item => item.Id == candidate.Id))
+                .ToList();
+
+            if (macItems.Count > 1)
+            {
+                AddReason(
+                    "MAC repetida",
+                    "Revisa si la MAC pertenece realmente a mas de un registro o si un equipo fue duplicado durante la carga.",
+                    macItems);
+            }
+        }
+
+        var mergeCandidates = relatedItemsById.Values
+            .OrderByDescending(item => item.IsMergeRecommended)
+            .ThenByDescending(item => item.MatchingFieldCount)
+            .ThenBy(item => item.Id)
+            .ToList();
+
+        var defaultReturnUrl = Url.Action("Inventory", new { assignment = "inconsistent", page = 1, pageSize = 30 })
+            ?? "/admin/inventory?assignment=inconsistent";
+        var normalizedReturnUrl = !string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)
+            ? returnUrl
+            : defaultReturnUrl;
+
+        return new InventoryInconsistencyDetailViewModel
+        {
+            Item = current,
+            Summary = reasons.Count == 0
+                ? "No se detectaron incongruencias activas para este equipo."
+                : string.Join("; ", reasons.Select(reason => reason.Title).Distinct(StringComparer.OrdinalIgnoreCase)),
+            ReturnUrl = normalizedReturnUrl,
+            Reasons = reasons,
+            SuggestedActions = BuildInventoryInconsistencyActions(current, normalizedReturnUrl),
+            MergeCandidates = mergeCandidates,
+            RecommendedMergeCount = mergeCandidates.Count(item => item.IsMergeRecommended)
+        };
+    }
+
+    private List<InventoryInconsistencyActionViewModel> BuildInventoryInconsistencyActions(ImportedInventoryItem item, string returnUrl)
+    {
+        var actions = new List<InventoryInconsistencyActionViewModel>
+        {
+            new()
+            {
+                Label = "Volver al inventario",
+                Url = returnUrl,
+                IconClass = "bi bi-arrow-left",
+                ButtonClass = "btn btn-outline-secondary"
+            },
+            new()
+            {
+                Label = User.IsInRole(AppRoles.Admin) ? "Editar este equipo" : "Ver equipo",
+                Url = $"/admin/editinventoryitem/{item.Id}",
+                IconClass = "bi bi-pencil-square",
+                ButtonClass = "btn btn-primary"
+            }
+        };
+
+        void AddSearchAction(string label, string? value, string iconClass)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            var trimmed = value.Trim();
+            var url = Url.Action("Inventory", new { search = trimmed, assignment = "all", page = 1, pageSize = 30 })
+                ?? $"/admin/inventory?search={Uri.EscapeDataString(trimmed)}";
+
+            actions.Add(new InventoryInconsistencyActionViewModel
+            {
+                Label = label,
+                Url = url,
+                IconClass = iconClass,
+                ButtonClass = "btn btn-outline-primary"
+            });
+        }
+
+        AddSearchAction("Filtrar por S/N", item.SerialNumber, "bi bi-upc-scan");
+        AddSearchAction("Filtrar por IP", item.IpAddress, "bi bi-diagram-3");
+        AddSearchAction("Filtrar por MAC", item.MacAddress, "bi bi-hdd-network");
+
+        return actions;
+    }
+
+    private async Task LogInventoryMergeAsync(
+        ImportedInventoryItem primary,
+        IReadOnlyList<InventoryMergePlanEntry> mergePlan,
+        string changedByUsername,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = string.IsNullOrWhiteSpace(changedByUsername) ? "sistema" : changedByUsername.Trim();
+        var itemLabel = !string.IsNullOrWhiteSpace(primary.SerialNumber)
+            ? $"S/N {primary.SerialNumber}"
+            : $"fila #{primary.RowNumber}";
+
+        var summary = $"{itemLabel} fusionado con {mergePlan.Count} registro(s)";
+        var details = string.Join(
+            "; ",
+            mergePlan.Select(entry => $"#{entry.Item.Id}: {string.Join(", ", entry.MatchingFields)}"));
+
+        var impactedBuildings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(primary.AssignedBuildingExternalId))
+        {
+            impactedBuildings.Add(primary.AssignedBuildingExternalId);
+        }
+        if (!string.IsNullOrWhiteSpace(primary.MatchedBuildingExternalId))
+        {
+            impactedBuildings.Add(primary.MatchedBuildingExternalId);
+        }
+
+        foreach (var entry in mergePlan)
+        {
+            if (!string.IsNullOrWhiteSpace(entry.Item.AssignedBuildingExternalId))
+            {
+                impactedBuildings.Add(entry.Item.AssignedBuildingExternalId);
+            }
+            if (!string.IsNullOrWhiteSpace(entry.Item.MatchedBuildingExternalId))
+            {
+                impactedBuildings.Add(entry.Item.MatchedBuildingExternalId);
+            }
+        }
+
+        if (impactedBuildings.Count == 0)
+        {
+            impactedBuildings.Add(string.Empty);
+        }
+
+        foreach (var buildingExternalId in impactedBuildings)
+        {
+            _context.AuditLogEntries.Add(new AuditLogEntry
+            {
+                BuildingExternalId = buildingExternalId,
+                EntityType = "inventory-item",
+                EntityId = primary.Id.ToString(),
+                ActionType = "merged",
+                Summary = summary,
+                Details = details,
+                ChangedByUsername = actor,
+                CreatedAtUtc = DateTime.UtcNow
+            });
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    private static void MergeInventoryItems(ImportedInventoryItem primary, ImportedInventoryItem duplicate)
+    {
+        primary.ItemNumber = PreferInventoryValue(primary.ItemNumber, duplicate.ItemNumber);
+        primary.SerialNumber = PreferInventoryValue(primary.SerialNumber, duplicate.SerialNumber);
+        primary.Description = PreferInventoryValue(primary.Description, duplicate.Description);
+        primary.Lot = PreferInventoryValue(primary.Lot, duplicate.Lot);
+        primary.InstallDate = PreferInventoryValue(primary.InstallDate, duplicate.InstallDate);
+        primary.UnitOrDepartment = PreferInventoryValue(primary.UnitOrDepartment, duplicate.UnitOrDepartment);
+        primary.OrganizationalUnit = PreferInventoryValue(primary.OrganizationalUnit, duplicate.OrganizationalUnit);
+        primary.ResponsibleUser = PreferInventoryValue(primary.ResponsibleUser, duplicate.ResponsibleUser);
+        primary.Run = PreferInventoryValue(primary.Run, duplicate.Run);
+        primary.Email = PreferInventoryValue(primary.Email, duplicate.Email);
+        primary.JobTitle = PreferInventoryValue(primary.JobTitle, duplicate.JobTitle);
+        primary.IpAddress = PreferInventoryValue(primary.IpAddress, duplicate.IpAddress);
+        primary.MacAddress = PreferInventoryValue(primary.MacAddress, duplicate.MacAddress);
+        primary.AnnexPhone = PreferInventoryValue(primary.AnnexPhone, duplicate.AnnexPhone);
+        primary.ReplacedEquipment = PreferInventoryValue(primary.ReplacedEquipment, duplicate.ReplacedEquipment);
+        primary.TicketMda = PreferInventoryValue(primary.TicketMda, duplicate.TicketMda);
+        primary.Installer = PreferInventoryValue(primary.Installer, duplicate.Installer);
+        primary.Rut = PreferInventoryValue(primary.Rut, duplicate.Rut);
+        primary.InventoryDate = PreferInventoryValue(primary.InventoryDate, duplicate.InventoryDate);
+        primary.SourceFile = PreferInventoryValue(primary.SourceFile, duplicate.SourceFile);
+
+        if (IsWeakInventoryCategory(primary.InferredCategory) && !string.IsNullOrWhiteSpace(duplicate.InferredCategory))
+        {
+            primary.InferredCategory = duplicate.InferredCategory.Trim().ToLowerInvariant();
+        }
+
+        if (string.IsNullOrWhiteSpace(primary.InferredStatus) && !string.IsNullOrWhiteSpace(duplicate.InferredStatus))
+        {
+            primary.InferredStatus = duplicate.InferredStatus.Trim().ToLowerInvariant();
+        }
+
+        if (string.IsNullOrWhiteSpace(primary.AssignedBuildingExternalId) && !string.IsNullOrWhiteSpace(duplicate.AssignedBuildingExternalId))
+        {
+            primary.AssignedBuildingExternalId = duplicate.AssignedBuildingExternalId;
+            primary.AssignedRoomExternalId = PreferInventoryValue(primary.AssignedRoomExternalId, duplicate.AssignedRoomExternalId);
+            primary.AssignedFloor = primary.AssignedFloor ?? duplicate.AssignedFloor;
+            primary.AssignmentUpdatedAtUtc = duplicate.AssignmentUpdatedAtUtc ?? DateTime.UtcNow;
+        }
+
+        if (string.IsNullOrWhiteSpace(primary.MatchedBuildingExternalId) && !string.IsNullOrWhiteSpace(duplicate.MatchedBuildingExternalId))
+        {
+            primary.MatchedBuildingExternalId = duplicate.MatchedBuildingExternalId;
+            primary.MatchedRoomExternalId = PreferInventoryValue(primary.MatchedRoomExternalId, duplicate.MatchedRoomExternalId);
+            primary.MatchConfidence = PreferInventoryValue(primary.MatchConfidence, duplicate.MatchConfidence);
+            primary.MatchNotes = AppendInventoryUnique(primary.MatchNotes, duplicate.MatchNotes);
+            primary.MatchedSyncedBuildingId ??= duplicate.MatchedSyncedBuildingId;
+            primary.MatchedSyncedRoomId ??= duplicate.MatchedSyncedRoomId;
+        }
+        else
+        {
+            primary.MatchNotes = AppendInventoryUnique(primary.MatchNotes, duplicate.MatchNotes);
+        }
+
+        primary.AssignmentNotes = AppendInventoryUnique(primary.AssignmentNotes, duplicate.AssignmentNotes);
+        primary.Observation = AppendInventoryUnique(primary.Observation, duplicate.Observation);
+
+        if (duplicate.ImportedAtUtc < primary.ImportedAtUtc)
+        {
+            primary.ImportedAtUtc = duplicate.ImportedAtUtc;
+        }
+
+        if (!primary.AssignmentUpdatedAtUtc.HasValue || (duplicate.AssignmentUpdatedAtUtc.HasValue && duplicate.AssignmentUpdatedAtUtc > primary.AssignmentUpdatedAtUtc))
+        {
+            primary.AssignmentUpdatedAtUtc = duplicate.AssignmentUpdatedAtUtc ?? primary.AssignmentUpdatedAtUtc;
+        }
+    }
+
+    private static IReadOnlyList<InventoryInconsistencyRelatedItemViewModel> MapInventoryRelatedItems(
+        ImportedInventoryItem currentItem,
+        IEnumerable<ImportedInventoryItem> items,
+        int currentItemId)
+    {
+        return items
+            .Where(item => item.Id != currentItemId)
+            .GroupBy(item => item.Id)
+            .Select(group => group.First())
+            .Select(item =>
+            {
+                var matchingFields = GetInventoryMatchingFields(currentItem, item);
+                return new InventoryInconsistencyRelatedItemViewModel
+                {
+                    Id = item.Id,
+                    SerialNumber = string.IsNullOrWhiteSpace(item.SerialNumber) ? "Sin S/N" : item.SerialNumber,
+                    ItemNumber = item.ItemNumber,
+                    Description = item.Description,
+                    UnitOrDepartment = item.UnitOrDepartment,
+                    OrganizationalUnit = item.OrganizationalUnit,
+                    ResponsibleUser = item.ResponsibleUser,
+                    Email = item.Email,
+                    IpAddress = item.IpAddress,
+                    MacAddress = item.MacAddress,
+                    AssignmentLabel = FormatInventoryAssignmentLabel(item),
+                    MatchingFields = matchingFields,
+                    MatchingFieldCount = matchingFields.Count,
+                    IsMergeRecommended = matchingFields.Count >= 3
+                };
+            })
+            .Where(item => item.MatchingFieldCount > 0)
+            .OrderByDescending(item => item.IsMergeRecommended)
+            .ThenByDescending(item => item.MatchingFieldCount)
+            .ThenBy(item => item.Id)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> GetInventoryMatchingFields(ImportedInventoryItem currentItem, ImportedInventoryItem otherItem)
+    {
+        var matchingFields = new List<string>();
+
+        var currentSerialKey = NormalizeInventoryToken(currentItem.SerialNumber);
+        var otherSerialKey = NormalizeInventoryToken(otherItem.SerialNumber);
+        var currentSerialFamily = NormalizeInventorySerialFamily(currentItem.SerialNumber);
+        var otherSerialFamily = NormalizeInventorySerialFamily(otherItem.SerialNumber);
+
+        if (!string.IsNullOrWhiteSpace(currentSerialKey) && !string.IsNullOrWhiteSpace(otherSerialKey)
+            && (string.Equals(currentSerialKey, otherSerialKey, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(currentSerialFamily, otherSerialFamily, StringComparison.OrdinalIgnoreCase)))
+        {
+            matchingFields.Add("S/N");
+        }
+
+        void AddIfSame(string label, string? currentValue, string? otherValue)
+        {
+            var normalizedCurrent = NormalizeInventoryToken(currentValue);
+            var normalizedOther = NormalizeInventoryToken(otherValue);
+            if (!string.IsNullOrWhiteSpace(normalizedCurrent)
+                && string.Equals(normalizedCurrent, normalizedOther, StringComparison.OrdinalIgnoreCase))
+            {
+                matchingFields.Add(label);
+            }
+        }
+
+        AddIfSame("IP", currentItem.IpAddress, otherItem.IpAddress);
+        AddIfSame("MAC", currentItem.MacAddress, otherItem.MacAddress);
+        AddIfSame("Unidad", currentItem.UnitOrDepartment, otherItem.UnitOrDepartment);
+        AddIfSame("Org", currentItem.OrganizationalUnit, otherItem.OrganizationalUnit);
+        AddIfSame("Usuario", currentItem.ResponsibleUser, otherItem.ResponsibleUser);
+        AddIfSame("Email", currentItem.Email, otherItem.Email);
+
+        return matchingFields
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static bool IsWeakInventoryCategory(string? category)
+    {
+        return string.IsNullOrWhiteSpace(category)
+            || string.Equals(category.Trim(), "other", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string PreferInventoryValue(string? currentValue, string? incomingValue)
+    {
+        return string.IsNullOrWhiteSpace(currentValue)
+            ? (incomingValue?.Trim() ?? string.Empty)
+            : currentValue.Trim();
+    }
+
+    private static string AppendInventoryUnique(string? currentValue, string? incomingValue)
+    {
+        var current = currentValue?.Trim() ?? string.Empty;
+        var incoming = incomingValue?.Trim() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(incoming))
+        {
+            return current;
+        }
+
+        if (string.IsNullOrWhiteSpace(current))
+        {
+            return incoming;
+        }
+
+        return current.Contains(incoming, StringComparison.OrdinalIgnoreCase)
+            ? current
+            : $"{current} | {incoming}";
+    }
+
+    private static string FormatInventoryAssignmentLabel(ImportedInventoryItem item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.AssignedBuildingExternalId))
+        {
+            var parts = new List<string> { item.AssignedBuildingExternalId };
+            if (!string.IsNullOrWhiteSpace(item.AssignedRoomExternalId))
+            {
+                parts.Add(item.AssignedRoomExternalId);
+            }
+            if (item.AssignedFloor.HasValue)
+            {
+                parts.Add($"Piso {item.AssignedFloor.Value}");
+            }
+
+            return string.Join(" / ", parts);
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.MatchedBuildingExternalId))
+        {
+            return $"Sugerido: {item.MatchedBuildingExternalId}";
+        }
+
+        return "Pendiente";
+    }
+
+    private static string NormalizeInventorySerialFamily(string? value)
+    {
+        var normalized = NormalizeInventoryToken(value);
+        if (normalized.Length > 5 && normalized.StartsWith('S'))
+        {
+            return normalized[1..];
+        }
+
+        return normalized;
+    }
+
+    private static bool IsInventoryPlaceholderToken(string value)
+    {
+        return value switch
+        {
+            "ND" => true,
+            "NA" => true,
+            "NODISPONIBLE" => true,
+            "SINDATO" => true,
+            "SINDATOS" => true,
+            "NOINFORMADO" => true,
+            "NOREGISTRA" => true,
+            "NULL" => true,
+            "NULO" => true,
+            "VACIO" => true,
+            "NONE" => true,
+            _ => false
+        };
+    }
+
+    private static string NormalizeInventoryToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var decomposed = value.Normalize(System.Text.NormalizationForm.FormD);
+        var builder = new System.Text.StringBuilder(decomposed.Length);
+
+        foreach (var character in decomposed)
+        {
+            var category = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(character);
+            if (category == System.Globalization.UnicodeCategory.NonSpacingMark)
+            {
+                continue;
+            }
+
+            if (char.IsLetterOrDigit(character))
+            {
+                builder.Append(char.ToUpperInvariant(character));
+            }
+        }
+
+        var normalized = builder.ToString();
+        return IsInventoryPlaceholderToken(normalized) ? string.Empty : normalized;
+    }
+
     private async Task<IReadOnlyList<string>> GetInventoryCategoryOptionsAsync()
     {
         var defaults = new[] { "pc", "printer", "scanner", "other" };
@@ -1344,6 +2141,205 @@ public class AdminController : Controller
             Categories = await GetInventoryCategoryOptionsAsync(),
             Statuses = await GetInventoryStatusOptionsAsync()
         };
+    }
+
+    private static string NormalizeSortDirection(string? sortDirection)
+    {
+        return string.Equals(sortDirection, "desc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc";
+    }
+
+    private static string NormalizeInventorySortBy(string? sortBy)
+    {
+        return sortBy?.Trim().ToLowerInvariant() switch
+        {
+            "equipment" => "equipment",
+            "unit" => "unit",
+            "user" => "user",
+            "ip" => "ip",
+            "category" => "category",
+            "status" => "status",
+            "suggestion" => "suggestion",
+            "assignment" => "assignment",
+            _ => "row"
+        };
+    }
+
+    private static string NormalizeLocationSortBy(string? sortBy)
+    {
+        return sortBy?.Trim().ToLowerInvariant() switch
+        {
+            "campus" => "campus",
+            "type" => "type",
+            "floors" => "floors",
+            "rooms" => "rooms",
+            "assigned" => "assigned",
+            "suggested" => "suggested",
+            "map" => "map",
+            "coordinates" => "coordinates",
+            _ => "building"
+        };
+    }
+
+    private static string NormalizeInconsistencyType(string? inconsistencyType)
+    {
+        return inconsistencyType?.Trim().ToLowerInvariant() switch
+        {
+            "serial-duplicate" => "serial-duplicate",
+            "serial-similar" => "serial-similar",
+            "ip" => "ip",
+            "mac" => "mac",
+            "unit-org" => "unit-org",
+            "multi" => "multi",
+            _ => string.Empty
+        };
+    }
+
+    private static IReadOnlyList<FilterOptionViewModel> GetInventoryInconsistencyFilterOptions()
+    {
+        return
+        [
+            new() { Value = string.Empty, Label = "Todas" },
+            new() { Value = "serial-duplicate", Label = "S/N duplicado" },
+            new() { Value = "serial-similar", Label = "S/N muy parecido" },
+            new() { Value = "ip", Label = "IP repetida" },
+            new() { Value = "mac", Label = "MAC repetida" },
+            new() { Value = "unit-org", Label = "Unidad/org distinta" },
+            new() { Value = "multi", Label = "2 o mas tipos" }
+        ];
+    }
+
+    private static bool MatchesInconsistencyType(string summary, string inconsistencyType)
+    {
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            return false;
+        }
+
+        return inconsistencyType switch
+        {
+            "serial-duplicate" => summary.Contains("S/N duplicado", StringComparison.OrdinalIgnoreCase),
+            "serial-similar" => summary.Contains("S/N muy parecido", StringComparison.OrdinalIgnoreCase),
+            "ip" => summary.Contains("IP repetida", StringComparison.OrdinalIgnoreCase),
+            "mac" => summary.Contains("MAC repetida", StringComparison.OrdinalIgnoreCase),
+            "unit-org" => summary.Contains("Unidad/org distinta", StringComparison.OrdinalIgnoreCase),
+            "multi" => summary.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length >= 2,
+            _ => true
+        };
+    }
+
+    private static IEnumerable<ImportedInventoryItem> SortInventoryItems(
+        IEnumerable<ImportedInventoryItem> items,
+        string sortBy,
+        string sortDirection)
+    {
+        IOrderedEnumerable<ImportedInventoryItem> ordered = sortBy switch
+        {
+            "equipment" => sortDirection == "desc"
+                ? items.OrderByDescending(item => NormalizeSortableText(item.SerialNumber))
+                    .ThenByDescending(item => NormalizeSortableText(item.Description))
+                    .ThenByDescending(item => NormalizeSortableText(item.ItemNumber))
+                : items.OrderBy(item => NormalizeSortableText(item.SerialNumber))
+                    .ThenBy(item => NormalizeSortableText(item.Description))
+                    .ThenBy(item => NormalizeSortableText(item.ItemNumber)),
+            "unit" => sortDirection == "desc"
+                ? items.OrderByDescending(item => NormalizeSortableText(item.UnitOrDepartment))
+                    .ThenByDescending(item => NormalizeSortableText(item.OrganizationalUnit))
+                : items.OrderBy(item => NormalizeSortableText(item.UnitOrDepartment))
+                    .ThenBy(item => NormalizeSortableText(item.OrganizationalUnit)),
+            "user" => sortDirection == "desc"
+                ? items.OrderByDescending(item => NormalizeSortableText(item.ResponsibleUser))
+                    .ThenByDescending(item => NormalizeSortableText(item.Email))
+                : items.OrderBy(item => NormalizeSortableText(item.ResponsibleUser))
+                    .ThenBy(item => NormalizeSortableText(item.Email)),
+            "ip" => sortDirection == "desc"
+                ? items.OrderByDescending(item => NormalizeSortableText(item.IpAddress))
+                : items.OrderBy(item => NormalizeSortableText(item.IpAddress)),
+            "category" => sortDirection == "desc"
+                ? items.OrderByDescending(item => NormalizeSortableText(item.InferredCategory))
+                : items.OrderBy(item => NormalizeSortableText(item.InferredCategory)),
+            "status" => sortDirection == "desc"
+                ? items.OrderByDescending(item => NormalizeSortableText(item.InferredStatus))
+                : items.OrderBy(item => NormalizeSortableText(item.InferredStatus)),
+            "suggestion" => sortDirection == "desc"
+                ? items.OrderByDescending(item => NormalizeSortableText(BuildInventorySuggestionLabel(item)))
+                : items.OrderBy(item => NormalizeSortableText(BuildInventorySuggestionLabel(item))),
+            "assignment" => sortDirection == "desc"
+                ? items.OrderByDescending(item => NormalizeSortableText(FormatInventoryAssignmentLabel(item)))
+                : items.OrderBy(item => NormalizeSortableText(FormatInventoryAssignmentLabel(item))),
+            _ => sortDirection == "desc"
+                ? items.OrderByDescending(item => item.Id)
+                : items.OrderBy(item => item.Id)
+        };
+
+        return ordered.ThenBy(item => item.Id);
+    }
+
+    private static IEnumerable<AdminLocationRowViewModel> SortLocationRows(
+        IEnumerable<AdminLocationRowViewModel> rows,
+        string sortBy,
+        string sortDirection)
+    {
+        IOrderedEnumerable<AdminLocationRowViewModel> ordered = sortBy switch
+        {
+            "campus" => sortDirection == "desc"
+                ? rows.OrderByDescending(row => NormalizeSortableText(row.Campus))
+                    .ThenByDescending(row => NormalizeSortableText(row.DisplayName))
+                : rows.OrderBy(row => NormalizeSortableText(row.Campus))
+                    .ThenBy(row => NormalizeSortableText(row.DisplayName)),
+            "type" => sortDirection == "desc"
+                ? rows.OrderByDescending(row => NormalizeSortableText(row.Type))
+                    .ThenByDescending(row => NormalizeSortableText(row.DisplayName))
+                : rows.OrderBy(row => NormalizeSortableText(row.Type))
+                    .ThenBy(row => NormalizeSortableText(row.DisplayName)),
+            "floors" => sortDirection == "desc"
+                ? rows.OrderByDescending(row => NormalizeSortableText(row.AvailableFloors))
+                : rows.OrderBy(row => NormalizeSortableText(row.AvailableFloors)),
+            "rooms" => sortDirection == "desc"
+                ? rows.OrderByDescending(row => row.RoomsCount)
+                : rows.OrderBy(row => row.RoomsCount),
+            "assigned" => sortDirection == "desc"
+                ? rows.OrderByDescending(row => row.AssignedInventoryCount)
+                : rows.OrderBy(row => row.AssignedInventoryCount),
+            "suggested" => sortDirection == "desc"
+                ? rows.OrderByDescending(row => row.SuggestedInventoryCount)
+                : rows.OrderBy(row => row.SuggestedInventoryCount),
+            "map" => sortDirection == "desc"
+                ? rows.OrderByDescending(row => NormalizeSortableText($"{row.MappingStatus} {row.InventoryStatus}"))
+                : rows.OrderBy(row => NormalizeSortableText($"{row.MappingStatus} {row.InventoryStatus}")),
+            "coordinates" => sortDirection == "desc"
+                ? rows.OrderByDescending(row => NormalizeSortableText(row.Coordinates))
+                : rows.OrderBy(row => NormalizeSortableText(row.Coordinates)),
+            _ => sortDirection == "desc"
+                ? rows.OrderByDescending(row => NormalizeSortableText(row.DisplayName))
+                : rows.OrderBy(row => NormalizeSortableText(row.DisplayName))
+        };
+
+        return ordered.ThenBy(row => NormalizeSortableText(row.ExternalId));
+    }
+
+    private static string BuildInventorySuggestionLabel(ImportedInventoryItem item)
+    {
+        if (string.IsNullOrWhiteSpace(item.MatchedBuildingExternalId))
+        {
+            return string.Empty;
+        }
+
+        var parts = new List<string> { item.MatchedBuildingExternalId };
+        if (!string.IsNullOrWhiteSpace(item.MatchedRoomExternalId))
+        {
+            parts.Add(item.MatchedRoomExternalId);
+        }
+        if (!string.IsNullOrWhiteSpace(item.MatchConfidence))
+        {
+            parts.Add(item.MatchConfidence);
+        }
+
+        return string.Join(" / ", parts);
+    }
+
+    private static string NormalizeSortableText(string? value)
+    {
+        return NormalizeInventoryToken(value);
     }
 
     private static int NormalizePageSize(int pageSize)
@@ -1528,6 +2524,17 @@ public class AdminController : Controller
         await _context.SaveChangesAsync();
     }
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 

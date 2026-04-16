@@ -1,0 +1,272 @@
+﻿@model SoteroMap.API.ViewModels.InventoryInconsistencyDetailViewModel
+@{
+    ViewData["Title"] = "Detalle de incongruencia";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var isAdmin = User.IsInRole(SoteroMap.API.Models.AppRoles.Admin);
+}
+
+<div class="mb-4">
+    <h2 class="fw-bold mb-1">Detalle de incongruencia</h2>
+    <div class="text-muted">Revisa el equipo, sus posibles conflictos y las acciones recomendadas para corregir el inventario.</div>
+</div>
+
+@if (TempData["SuccessMessage"] is string successMessage)
+{
+    <div class="alert alert-success">@successMessage</div>
+}
+
+@if (TempData["ErrorMessage"] is string errorMessage)
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="bg-danger bg-opacity-10 rounded-3 p-3">
+                        <i class="bi bi-exclamation-triangle text-danger fs-4"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">Resumen</div>
+                        <div class="fw-semibold">@Model.Summary</div>
+                    </div>
+                </div>
+                <div class="row g-3 small">
+                    <div class="col-md-6">
+                        <div class="text-muted">S/N</div>
+                        <div class="fw-semibold">@(string.IsNullOrWhiteSpace(Model.Item.SerialNumber) ? "Sin S/N" : Model.Item.SerialNumber)</div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="text-muted">Numero item</div>
+                        <div class="fw-semibold">@Model.Item.ItemNumber</div>
+                    </div>
+                    <div class="col-md-12">
+                        <div class="text-muted">Descripcion</div>
+                        <div class="fw-semibold">@Model.Item.Description</div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="text-muted">Unidad</div>
+                        <div>@Model.Item.UnitOrDepartment</div>
+                        <div class="text-muted">@Model.Item.OrganizationalUnit</div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="text-muted">Usuario responsable</div>
+                        <div>@Model.Item.ResponsibleUser</div>
+                        <div class="text-muted">@Model.Item.Email</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted">IP</div>
+                        <div class="font-monospace">@Model.Item.IpAddress</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted">MAC</div>
+                        <div class="font-monospace">@Model.Item.MacAddress</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted">Asignacion</div>
+                        @if (string.IsNullOrWhiteSpace(Model.Item.AssignedBuildingExternalId))
+                        {
+                            <div class="fw-semibold">Pendiente</div>
+                        }
+                        else
+                        {
+                            <div class="fw-semibold">@Model.Item.AssignedBuildingExternalId</div>
+                            @if (!string.IsNullOrWhiteSpace(Model.Item.AssignedRoomExternalId))
+                            {
+                                <div class="text-muted">@Model.Item.AssignedRoomExternalId</div>
+                            }
+                            @if (Model.Item.AssignedFloor.HasValue)
+                            {
+                                <div class="text-muted">Piso @Model.Item.AssignedFloor</div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3">Posibles acciones para remediarlo</h5>
+                <div class="d-flex flex-column gap-2">
+                    @foreach (var action in Model.SuggestedActions)
+                    {
+                        <a href="@action.Url" class="@action.ButtonClass">
+                            <i class="@action.IconClass me-1"></i>@action.Label
+                        </a>
+                    }
+                </div>
+                <div class="small text-muted mt-3">
+                    Lo recomendado es comparar este registro con los relacionados, corregir serial/IP/MAC si hay error y luego volver al inventario para validar que desaparezca la incongruencia.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (isAdmin && Model.MergeCandidates.Count > 0)
+{
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-3">
+                <div>
+                    <h5 class="fw-bold mb-1">Fusionar equipos relacionados</h5>
+                    <div class="text-muted small">La fusion siempre esta disponible. Se marca como recomendada cuando el equipo relacionado coincide en 3 o mas campos con este registro.</div>
+                </div>
+                <div class="text-lg-end">
+                    <div class="badge text-bg-light border">@Model.MergeCandidates.Count candidato(s)</div>
+                    @if (Model.RecommendedMergeCount > 0)
+                    {
+                        <div class="small text-danger mt-2">@Model.RecommendedMergeCount recomendado(s) para fusion</div>
+                    }
+                </div>
+            </div>
+
+            <form method="post" action="/admin/inventory/inconsistency/@Model.Item.Id/merge" onsubmit="return confirm('Se fusionaran los equipos seleccionados dentro de este registro principal. Deseas continuar?');">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-3">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 48px;"></th>
+                                <th>Equipo</th>
+                                <th>Coincidencias</th>
+                                <th>Asignacion</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var candidate in Model.MergeCandidates)
+                            {
+                                <tr>
+                                    <td>
+                                        <input class="form-check-input" type="checkbox" name="selectedItemIds" value="@candidate.Id" />
+                                    </td>
+                                    <td>
+                                        <div class="fw-semibold">@candidate.SerialNumber</div>
+                                        <div class="small text-muted">@candidate.Description</div>
+                                        <div class="small text-muted">Item @candidate.ItemNumber</div>
+                                        <div class="small text-muted">@candidate.UnitOrDepartment @(!string.IsNullOrWhiteSpace(candidate.OrganizationalUnit) ? $"/ {candidate.OrganizationalUnit}" : string.Empty)</div>
+                                    </td>
+                                    <td class="small">
+                                        <div class="fw-semibold">@candidate.MatchingFieldCount campo(s)</div>
+                                        <div class="d-flex flex-wrap gap-1 mt-1">
+                                            @foreach (var field in candidate.MatchingFields)
+                                            {
+                                                <span class="badge rounded-pill text-bg-light border">@field</span>
+                                            }
+                                        </div>
+                                        @if (candidate.IsMergeRecommended)
+                                        {
+                                            <div class="small text-danger mt-2">
+                                                <i class="bi bi-stars me-1"></i>Fusion recomendada
+                                            </div>
+                                        }
+                                    </td>
+                                    <td class="small">@candidate.AssignmentLabel</td>
+                                    <td class="text-end">
+                                        <a href="/admin/editinventoryitem/@candidate.Id" class="btn btn-sm btn-outline-primary">
+                                            Editar
+                                        </a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+                    <div class="small text-muted">Selecciona uno o mas equipos relacionados para fusionarlos dentro del equipo principal mostrado arriba.</div>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-intersect me-1"></i>Fusionar seleccionados en este equipo
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+
+@if (Model.Reasons.Count == 0)
+{
+    <div class="alert alert-info border-0 shadow-sm">
+        No se detectaron incongruencias activas para este equipo en este momento.
+    </div>
+}
+else
+{
+    <div class="d-flex flex-column gap-3">
+        @foreach (var reason in Model.Reasons)
+        {
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+                        <div>
+                            <h5 class="fw-bold mb-1">
+                                <i class="bi bi-exclamation-circle text-danger me-2"></i>@reason.Title
+                            </h5>
+                            <div class="text-muted small">@reason.SuggestedAction</div>
+                        </div>
+                        <span class="badge text-bg-light border">@reason.RelatedItems.Count relacionado(s)</span>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Equipo</th>
+                                    <th>Coincidencias</th>
+                                    <th>Red</th>
+                                    <th>Asignacion</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var related in reason.RelatedItems)
+                                {
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">@related.SerialNumber</div>
+                                            <div class="small text-muted">@related.Description</div>
+                                            <div class="small text-muted">Item @related.ItemNumber</div>
+                                            <div class="small text-muted">@related.UnitOrDepartment @(!string.IsNullOrWhiteSpace(related.OrganizationalUnit) ? $"/ {related.OrganizationalUnit}" : string.Empty)</div>
+                                        </td>
+                                        <td class="small">
+                                            <div class="fw-semibold">@related.MatchingFieldCount campo(s)</div>
+                                            <div class="d-flex flex-wrap gap-1 mt-1">
+                                                @foreach (var field in related.MatchingFields)
+                                                {
+                                                    <span class="badge rounded-pill text-bg-light border">@field</span>
+                                                }
+                                            </div>
+                                            @if (related.IsMergeRecommended)
+                                            {
+                                                <div class="small text-danger mt-2">
+                                                    <i class="bi bi-stars me-1"></i>Fusion recomendada
+                                                </div>
+                                            }
+                                        </td>
+                                        <td class="small font-monospace">
+                                            <div>@related.IpAddress</div>
+                                            <div class="text-muted">@related.MacAddress</div>
+                                        </td>
+                                        <td class="small">@related.AssignmentLabel</td>
+                                        <td class="text-end">
+                                            <a href="/admin/editinventoryitem/@related.Id" class="btn btn-sm btn-outline-primary">
+                                                @(isAdmin ? "Editar" : "Ver")
+                                            </a>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}

@@ -8,4 +8,4 @@ ENV DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER=1
 
 EXPOSE 8080
 
-ENTRYPOINT ["dotnet", "watch", "run", "--urls", "http://0.0.0.0:8080"]
+ENTRYPOINT ["dotnet", "watch", "--project", "/app/SoteroMap.API/SoteroMap.API.csproj", "run", "--", "--urls", "http://0.0.0.0:8080", "--contentRoot", "/app/SoteroMap.API"]
