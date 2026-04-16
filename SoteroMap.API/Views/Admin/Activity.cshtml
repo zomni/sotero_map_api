@@ -2,6 +2,16 @@
 @{
     ViewData["Title"] = "Actividad";
     Layout = "~/Views/Shared/_Layout.cshtml";
+    var activeFilters = new List<string>();
+    if (!string.IsNullOrWhiteSpace(Model.BuildingExternalId))
+    {
+        activeFilters.Add($"Edificio: {Model.BuildingExternalId}");
+    }
+    if (!string.IsNullOrWhiteSpace(Model.ChangedByUsername))
+    {
+        activeFilters.Add($"Usuario: {Model.ChangedByUsername}");
+    }
+    var hasActiveFilters = activeFilters.Count > 0;
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -22,10 +32,33 @@
                 <label class="form-label small fw-semibold">Usuario</label>
                 <input type="text" name="changedByUsername" value="@Model.ChangedByUsername" class="form-control" placeholder="Ej: admin" />
             </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-outline-primary w-100">Filtrar</button>
+            <div class="col-md-12">
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-outline-primary flex-grow-1">
+                        <i class="bi bi-funnel me-1"></i> Filtrar
+                    </button>
+                    <a href="/admin/activity" class="btn btn-outline-secondary">
+                        <i class="bi bi-x-circle me-1"></i> Limpiar filtros
+                    </a>
+                </div>
             </div>
         </form>
+        <div class="mt-3">
+            <div class="small text-muted mb-2">Filtros aplicados (@activeFilters.Count)</div>
+            @if (hasActiveFilters)
+            {
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach (var filter in activeFilters)
+                    {
+                        <span class="badge rounded-pill text-bg-light border">@filter</span>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="small text-muted">Sin filtros adicionales aplicados.</div>
+            }
+        </div>
     </div>
 </div>
 
