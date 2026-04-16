@@ -46,6 +46,7 @@ builder.Services.AddScoped<AuditLogService>();
 builder.Services.AddScoped<FrontendSyncService>();
 builder.Services.AddScoped<ExcelInventoryImportService>();
 builder.Services.AddScoped<InventoryReconciliationService>();
+builder.Services.AddScoped<EquipmentDeliveryDocumentService>();
 
 // CORS para que el frontend (sotero_map) pueda consumir la API
 builder.Services.AddCors(options =>

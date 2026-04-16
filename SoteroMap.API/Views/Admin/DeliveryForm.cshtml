@@ -1,0 +1,283 @@
+﻿@model SoteroMap.API.ViewModels.EquipmentDeliveryFormViewModel
+@{
+    ViewData["Title"] = "Formulario de entrega";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="fw-bold mb-1">Formulario de entrega de equipo</h2>
+        <div class="text-muted">Completa los datos y descarga el mismo Word del formulario ya rellenado.</div>
+    </div>
+    <a href="/admin" class="btn btn-secondary shadow-sm fw-semibold px-3">
+        <i class="bi bi-arrow-left me-1"></i> Volver
+    </a>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body">
+        @if (!ViewData.ModelState.IsValid)
+        {
+            <div asp-validation-summary="All" class="alert alert-danger"></div>
+        }
+
+        <form method="post" action="/admin/delivery-form" class="row g-4">
+            @Html.AntiForgeryToken()
+
+            <div class="col-12">
+                <div class="card border-0 bg-light-subtle">
+                    <div class="card-body">
+                        <h5 class="fw-semibold mb-3">Datos principales</h5>
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label asp-for="DocumentDate" class="form-label"></label>
+                                <input asp-for="DocumentDate" class="form-control" />
+                            </div>
+                            <div class="col-md-5">
+                                <label asp-for="Institution" class="form-label"></label>
+                                <input asp-for="Institution" class="form-control" />
+                            </div>
+                            <div class="col-md-4">
+                                <label asp-for="ReceptionType" class="form-label"></label>
+                                <select asp-for="ReceptionType" class="form-select">
+                                    <option value="Nueva">Nueva</option>
+                                    <option value="Reemplazo">Reemplazo</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="UnitOrDepartment" class="form-label"></label>
+                                <input asp-for="UnitOrDepartment" class="form-control" />
+                            </div>
+                            <div class="col-md-3">
+                                <label asp-for="SerialNumber" class="form-label"></label>
+                                <input asp-for="SerialNumber" class="form-control font-monospace" />
+                            </div>
+                            <div class="col-md-3">
+                                <label asp-for="MdaTicket" class="form-label"></label>
+                                <input asp-for="MdaTicket" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="ResponsibleUser" class="form-label"></label>
+                                <input asp-for="ResponsibleUser" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Email" class="form-label"></label>
+                                <input asp-for="Email" class="form-control" />
+                            </div>
+                            <div class="col-md-4">
+                                <label asp-for="IpAddress" class="form-label"></label>
+                                <input asp-for="IpAddress" class="form-control" />
+                            </div>
+                            <div class="col-md-4">
+                                <label asp-for="MacAddress" class="form-label"></label>
+                                <input asp-for="MacAddress" class="form-control font-monospace" />
+                            </div>
+                            <div class="col-md-4">
+                                <label asp-for="Annex" class="form-label"></label>
+                                <input asp-for="Annex" class="form-control" />
+                            </div>
+                            <div class="col-md-4">
+                                <label asp-for="JobTitle" class="form-label"></label>
+                                <input asp-for="JobTitle" class="form-control" />
+                            </div>
+                            <div class="col-md-4">
+                                <label asp-for="ActiveDirectoryUser" class="form-label"></label>
+                                <input asp-for="ActiveDirectoryUser" class="form-control" />
+                            </div>
+                            <div class="col-md-4">
+                                <label asp-for="OfficeActivationEmail" class="form-label"></label>
+                                <input asp-for="OfficeActivationEmail" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="ReplacedEquipmentSerial" class="form-label"></label>
+                                <input asp-for="ReplacedEquipmentSerial" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="ReplacedEquipmentModel" class="form-label"></label>
+                                <input asp-for="ReplacedEquipmentModel" class="form-control" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="card border-0 bg-light-subtle h-100">
+                    <div class="card-body">
+                        <h5 class="fw-semibold mb-3">Caracteristicas del computador</h5>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label asp-for="ComputerBrand" class="form-label"></label>
+                                <input asp-for="ComputerBrand" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="ComputerModel" class="form-label"></label>
+                                <input asp-for="ComputerModel" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="OperatingSystem" class="form-label"></label>
+                                <input asp-for="OperatingSystem" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="OfficeSuite" class="form-label"></label>
+                                <input asp-for="OfficeSuite" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Processor" class="form-label"></label>
+                                <input asp-for="Processor" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="SecurityLock" class="form-label"></label>
+                                <select asp-for="SecurityLock" class="form-select">
+                                    <option value="Si">Si</option>
+                                    <option value="No">No</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Ram" class="form-label"></label>
+                                <input asp-for="Ram" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Disk" class="form-label"></label>
+                                <input asp-for="Disk" class="form-control" />
+                            </div>
+                        </div>
+
+                        <hr class="my-4" />
+                        <h6 class="fw-semibold mb-3">Impresoras / otros</h6>
+                        <div class="row g-2">
+                            <div class="col-sm-6 form-check">
+                                <input asp-for="Lexmark" class="form-check-input" />
+                                <label asp-for="Lexmark" class="form-check-label"></label>
+                            </div>
+                            <div class="col-sm-6 form-check">
+                                <input asp-for="Zebra" class="form-check-input" />
+                                <label asp-for="Zebra" class="form-check-label"></label>
+                            </div>
+                            <div class="col-sm-6 form-check">
+                                <input asp-for="FingerprintReader" class="form-check-input" />
+                                <label asp-for="FingerprintReader" class="form-check-label"></label>
+                            </div>
+                            <div class="col-sm-6 form-check">
+                                <input asp-for="OtherDevices" class="form-check-input" />
+                                <label asp-for="OtherDevices" class="form-check-label"></label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="card border-0 bg-light-subtle h-100">
+                    <div class="card-body">
+                        <h5 class="fw-semibold mb-3">Validaciones del sistema</h5>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label asp-for="ValidationSerialName" class="form-label"></label>
+                                <input asp-for="ValidationSerialName" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="ValidationDescriptionChange" class="form-label"></label>
+                                <input asp-for="ValidationDescriptionChange" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="ValidationOfficeSuite" class="form-label"></label>
+                                <input asp-for="ValidationOfficeSuite" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="ValidationAdAccount" class="form-label"></label>
+                                <input asp-for="ValidationAdAccount" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="AntivirusInstalledVersion" class="form-label"></label>
+                                <input asp-for="AntivirusInstalledVersion" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="AntivirusConnectionState" class="form-label"></label>
+                                <input asp-for="AntivirusConnectionState" class="form-control" />
+                            </div>
+                        </div>
+
+                        <hr class="my-4" />
+                        <h6 class="fw-semibold mb-3">Firma impresa</h6>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label asp-for="SignedUserName" class="form-label"></label>
+                                <input asp-for="SignedUserName" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="SignedUserRut" class="form-label"></label>
+                                <input asp-for="SignedUserRut" class="form-control" placeholder="Ej: 12.345.678-9" />
+                            </div>
+                            <div class="col-12">
+                                <label asp-for="TechnicianName" class="form-label"></label>
+                                <input asp-for="TechnicianName" class="form-control" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <div class="card border-0 bg-light-subtle">
+                    <div class="card-body">
+                        <h5 class="fw-semibold mb-3">Aplicaciones institucionales</h5>
+                        <div class="row g-4">
+                            <div class="col-lg-4">
+                                <div class="fw-semibold mb-2">Medicas</div>
+                                <div class="d-grid gap-2">
+                                    <div class="form-check"><input asp-for="AppRcePulso" class="form-check-input" /><label asp-for="AppRcePulso" class="form-check-label"></label></div>
+                                    <div class="form-check"><input asp-for="AppRce" class="form-check-input" /><label asp-for="AppRce" class="form-check-label">RCE</label></div>
+                                    <div class="form-check"><input asp-for="AppAnatPatologica" class="form-check-input" /><label asp-for="AppAnatPatologica" class="form-check-label">Anat. patologica</label></div>
+                                    <div class="form-check"><input asp-for="AppHospitalizados" class="form-check-input" /><label asp-for="AppHospitalizados" class="form-check-label">Hospitalizados</label></div>
+                                    <div class="form-check"><input asp-for="AppDauAdulto" class="form-check-input" /><label asp-for="AppDauAdulto" class="form-check-label">DAU adulto</label></div>
+                                    <div class="form-check"><input asp-for="AppDauMujer" class="form-check-input" /><label asp-for="AppDauMujer" class="form-check-label">DAU mujer</label></div>
+                                    <div class="form-check"><input asp-for="AppDauInfantil" class="form-check-input" /><label asp-for="AppDauInfantil" class="form-check-label">DAU infantil</label></div>
+                                    <div class="form-check"><input asp-for="AppIq" class="form-check-input" /><label asp-for="AppIq" class="form-check-label">IQ</label></div>
+                                    <div class="form-check"><input asp-for="AppInterconsultas" class="form-check-input" /><label asp-for="AppInterconsultas" class="form-check-label">Interconsultas</label></div>
+                                    <div class="form-check"><input asp-for="AppSga" class="form-check-input" /><label asp-for="AppSga" class="form-check-label">SGA</label></div>
+                                    <div class="form-check"><input asp-for="AppSgde" class="form-check-input" /><label asp-for="AppSgde" class="form-check-label">SGDE</label></div>
+                                    <div class="form-check"><input asp-for="AppRpecRni" class="form-check-input" /><label asp-for="AppRpecRni" class="form-check-label">RPEC RNI</label></div>
+                                    <div class="form-check"><input asp-for="AppHistorialClinico" class="form-check-input" /><label asp-for="AppHistorialClinico" class="form-check-label">Historial clinico</label></div>
+                                </div>
+                            </div>
+                            <div class="col-lg-4">
+                                <div class="fw-semibold mb-2">Administrativas</div>
+                                <div class="d-grid gap-2">
+                                    <div class="form-check"><input asp-for="AdminSgd" class="form-check-input" /><label asp-for="AdminSgd" class="form-check-label">SGD</label></div>
+                                    <div class="form-check"><input asp-for="AdminSirh" class="form-check-input" /><label asp-for="AdminSirh" class="form-check-label">SIRH</label></div>
+                                    <div class="form-check"><input asp-for="AdminAbastecimiento1" class="form-check-input" /><label asp-for="AdminAbastecimiento1" class="form-check-label">Abastecimiento 1</label></div>
+                                    <div class="form-check"><input asp-for="AdminAbastecimiento2" class="form-check-input" /><label asp-for="AdminAbastecimiento2" class="form-check-label">Abastecimiento 2</label></div>
+                                    <div class="form-check"><input asp-for="AdminMsAccess" class="form-check-input" /><label asp-for="AdminMsAccess" class="form-check-label">MS Access 2010</label></div>
+                                    <div class="form-check"><input asp-for="AdminTeams" class="form-check-input" /><label asp-for="AdminTeams" class="form-check-label">Microsoft Teams</label></div>
+                                    <div class="form-check"><input asp-for="AdminAbastSsmso" class="form-check-input" /><label asp-for="AdminAbastSsmso" class="form-check-label">Abast. SSMSO</label></div>
+                                    <div class="form-check"><input asp-for="AdminToadModeler" class="form-check-input" /><label asp-for="AdminToadModeler" class="form-check-label">Toad Modeler</label></div>
+                                    <div class="form-check"><input asp-for="AdminZoom" class="form-check-input" /><label asp-for="AdminZoom" class="form-check-label">Zoom</label></div>
+                                    <div class="form-check"><input asp-for="AdminBizagi" class="form-check-input" /><label asp-for="AdminBizagi" class="form-check-label">Bizagi</label></div>
+                                    <div class="form-check"><input asp-for="AdminMsProject" class="form-check-input" /><label asp-for="AdminMsProject" class="form-check-label">MS Project 2010</label></div>
+                                    <div class="form-check"><input asp-for="AdminPowerBi" class="form-check-input" /><label asp-for="AdminPowerBi" class="form-check-label">Power BI</label></div>
+                                    <div class="form-check"><input asp-for="AdminTableauReader" class="form-check-input" /><label asp-for="AdminTableauReader" class="form-check-label">Tableau Reader</label></div>
+                                </div>
+                            </div>
+                            <div class="col-lg-4">
+                                <div class="alert alert-info mb-0 h-100 d-flex align-items-center">
+                                    <div>
+                                        <div class="fw-semibold mb-2">Resultado</div>
+                                        <div>Al presionar <strong>Crear formulario</strong>, el sistema genera el mismo Word del formulario y te lo devuelve listo para descargar.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-file-earmark-word me-1"></i> Crear formulario
+                </button>
+                <a href="/admin" class="btn btn-secondary shadow-sm fw-semibold px-3">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>

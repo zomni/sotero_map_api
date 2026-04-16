@@ -102,6 +102,11 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString()?.Contains("DeliveryForm") == true ? "active" : "")" href="/admin/delivery-form">
+                            <i class="bi bi-file-earmark-text me-2"></i>Formulario
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link text-info" href="@frontendMapUrl" target="sotero-map" onclick="window.open(this.href, 'sotero-map'); return false;">
                             <i class="bi bi-map me-2"></i>Mapa
                         </a>

@@ -17,13 +17,15 @@ public class AdminController : Controller
     private readonly AppDbContext _context;
     private readonly AuditLogService _auditLogService;
     private readonly IConfiguration _configuration;
+    private readonly EquipmentDeliveryDocumentService _equipmentDeliveryDocumentService;
     private const string ManualInventorySourceFile = "manual-admin";
 
-    public AdminController(AppDbContext context, AuditLogService auditLogService, IConfiguration configuration)
+    public AdminController(AppDbContext context, AuditLogService auditLogService, IConfiguration configuration, EquipmentDeliveryDocumentService equipmentDeliveryDocumentService)
     {
         _context = context;
         _auditLogService = auditLogService;
         _configuration = configuration;
+        _equipmentDeliveryDocumentService = equipmentDeliveryDocumentService;
     }
 
     public async Task<IActionResult> Index()
@@ -276,6 +278,46 @@ public class AdminController : Controller
         };
 
         return View(model);
+    }
+
+    [HttpGet("/admin/delivery-form")]
+    public IActionResult DeliveryForm()
+    {
+        return View(BuildDefaultDeliveryFormViewModel());
+    }
+
+    [HttpPost("/admin/delivery-form")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeliveryForm(EquipmentDeliveryFormViewModel model)
+    {
+        model.Institution = string.IsNullOrWhiteSpace(model.Institution)
+            ? "HOSPITAL DR. SOTERO DEL RIO"
+            : model.Institution.Trim();
+
+        model.DocumentDate = string.IsNullOrWhiteSpace(model.DocumentDate)
+            ? DateTime.Today.ToString("dd/MM/yyyy")
+            : model.DocumentDate.Trim();
+
+        model.AntivirusConnectionState = string.IsNullOrWhiteSpace(model.AntivirusConnectionState)
+            ? "Activo"
+            : model.AntivirusConnectionState.Trim();
+
+        model.TechnicianName = string.IsNullOrWhiteSpace(model.TechnicianName)
+            ? (User.Identity?.Name ?? string.Empty)
+            : model.TechnicianName.Trim();
+
+        model.ValidationSerialName = string.IsNullOrWhiteSpace(model.ValidationSerialName) ? model.SerialNumber : model.ValidationSerialName;
+        model.ValidationDescriptionChange = string.IsNullOrWhiteSpace(model.ValidationDescriptionChange) ? model.UnitOrDepartment : model.ValidationDescriptionChange;
+        model.ValidationAdAccount = string.IsNullOrWhiteSpace(model.ValidationAdAccount) ? model.ActiveDirectoryUser : model.ValidationAdAccount;
+        model.SignedUserName = string.IsNullOrWhiteSpace(model.SignedUserName) ? model.ResponsibleUser : model.SignedUserName;
+
+        if (!ModelState.IsValid)
+        {
+            return View(model);
+        }
+
+        var generated = await _equipmentDeliveryDocumentService.GenerateAsync(model);
+        return File(generated.Content, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", generated.FileName);
     }
 
     public async Task<IActionResult> Locations(
@@ -2122,6 +2164,22 @@ public class AdminController : Controller
         }
 
         return results;
+    }
+
+
+    private EquipmentDeliveryFormViewModel BuildDefaultDeliveryFormViewModel()
+    {
+        return new EquipmentDeliveryFormViewModel
+        {
+            DocumentDate = DateTime.Today.ToString("dd/MM/yyyy"),
+            Institution = "HOSPITAL DR. SOTERO DEL RIO",
+            ReceptionType = "Nueva",
+            OperatingSystem = "WINDOWS 10",
+            OfficeSuite = "OFFICE 2021",
+            SecurityLock = "Si",
+            AntivirusConnectionState = "Activo",
+            TechnicianName = User.Identity?.Name ?? string.Empty
+        };
     }
 
     private async Task<CreateInventoryItemViewModel> BuildCreateInventoryItemViewModelAsync(InventoryItemFormModel form)
