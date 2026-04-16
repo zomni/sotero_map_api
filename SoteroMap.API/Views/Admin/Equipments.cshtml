@@ -66,9 +66,17 @@
         <h2 class="fw-bold mb-1">Inventario importado</h2>
         <div class="text-muted">Los equipos viven en el backend. El mapa y las salas siguen viniendo del frontend.</div>
     </div>
-    <a href="/api/inventory-import/status" class="btn btn-outline-secondary" target="_blank">
-        <i class="bi bi-activity me-1"></i> Estado importacion
-    </a>
+    <div class="d-flex gap-2">
+        @if (isAdmin)
+        {
+            <a href="/admin/inventory/create" class="btn btn-primary">
+                <i class="bi bi-plus-lg me-1"></i> Agregar equipo
+            </a>
+        }
+        <a href="/api/inventory-import/status" class="btn btn-outline-secondary" target="_blank">
+            <i class="bi bi-activity me-1"></i> Estado importacion
+        </a>
+    </div>
 </div>
 
 @if (TempData["SuccessMessage"] is string successMessage)
@@ -346,6 +354,18 @@
                                     <a href="/admin/editinventoryitem/@item.Id" class="btn btn-sm btn-outline-primary">
                                         @(isAdmin ? "Editar" : "Ver")
                                     </a>
+                                    @if (isAdmin)
+                                    {
+                                        <form method="post"
+                                              action="/admin/deleteinventoryitem/@item.Id"
+                                              class="d-inline"
+                                              onsubmit="return confirm('Estas seguro de eliminar este equipo?');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-sm btn-danger" title="Eliminar equipo">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    }
                                 </div>
                             </td>
                         </tr>

@@ -25,6 +25,42 @@ public class EditInventoryItemViewModel
     public ImportedInventoryItem Item { get; set; } = null!;
     public IReadOnlyList<SyncedBuilding> Buildings { get; set; } = [];
     public IReadOnlyList<SyncedRoom> Rooms { get; set; } = [];
+    public IReadOnlyList<string> Categories { get; set; } = [];
+    public IReadOnlyList<string> Statuses { get; set; } = [];
+}
+
+public class InventoryItemFormModel
+{
+    public string? ItemNumber { get; set; }
+    public string? SerialNumber { get; set; }
+    public string? Description { get; set; }
+    public string? Lot { get; set; }
+    public string? ResponsibleUser { get; set; }
+    public string? Email { get; set; }
+    public string? UnitOrDepartment { get; set; }
+    public string? OrganizationalUnit { get; set; }
+    public string? JobTitle { get; set; }
+    public string? Installer { get; set; }
+    public string? IpAddress { get; set; }
+    public string? MacAddress { get; set; }
+    public string? AnnexPhone { get; set; }
+    public string? Observation { get; set; }
+    public string? TicketMda { get; set; }
+    public string? InferredCategory { get; set; }
+    public string? InferredStatus { get; set; }
+    public string? AssignedBuildingExternalId { get; set; }
+    public string? AssignedRoomExternalId { get; set; }
+    public int? AssignedFloor { get; set; }
+    public string? AssignmentNotes { get; set; }
+}
+
+public class CreateInventoryItemViewModel
+{
+    public InventoryItemFormModel Form { get; set; } = new();
+    public IReadOnlyList<SyncedBuilding> Buildings { get; set; } = [];
+    public IReadOnlyList<SyncedRoom> Rooms { get; set; } = [];
+    public IReadOnlyList<string> Categories { get; set; } = [];
+    public IReadOnlyList<string> Statuses { get; set; } = [];
 }
 
 public class AdminLocationsViewModel

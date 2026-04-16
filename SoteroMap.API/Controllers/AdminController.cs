@@ -17,6 +17,7 @@ public class AdminController : Controller
     private readonly AppDbContext _context;
     private readonly AuditLogService _auditLogService;
     private readonly IConfiguration _configuration;
+    private const string ManualInventorySourceFile = "manual-admin";
 
     public AdminController(AppDbContext context, AuditLogService auditLogService, IConfiguration configuration)
     {
@@ -643,6 +644,156 @@ public class AdminController : Controller
         return View("Equipments", model);
     }
 
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpGet("/admin/inventory/create")]
+    public async Task<IActionResult> CreateInventoryItem()
+    {
+        var form = new InventoryItemFormModel
+        {
+            InferredCategory = "other",
+            InferredStatus = "active"
+        };
+
+        return View(await BuildCreateInventoryItemViewModelAsync(form));
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPost("/admin/inventory/create")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateInventoryItem(CreateInventoryItemViewModel model)
+    {
+        var form = model.Form ?? new InventoryItemFormModel();
+        var categories = await GetInventoryCategoryOptionsAsync();
+        var statuses = await GetInventoryStatusOptionsAsync();
+
+        var normalizedCategory = string.IsNullOrWhiteSpace(form.InferredCategory)
+            ? "other"
+            : form.InferredCategory.Trim().ToLowerInvariant();
+        var normalizedStatus = string.IsNullOrWhiteSpace(form.InferredStatus)
+            ? "active"
+            : form.InferredStatus.Trim().ToLowerInvariant();
+
+        if (!categories.Contains(normalizedCategory, StringComparer.OrdinalIgnoreCase))
+        {
+            ModelState.AddModelError("Form.InferredCategory", "Selecciona una categoria valida de la lista.");
+        }
+
+        if (!statuses.Contains(normalizedStatus, StringComparer.OrdinalIgnoreCase))
+        {
+            ModelState.AddModelError("Form.InferredStatus", "Selecciona un estado valido de la lista.");
+        }
+
+        if (string.IsNullOrWhiteSpace(form.SerialNumber) && string.IsNullOrWhiteSpace(form.Description))
+        {
+            ModelState.AddModelError("Form.SerialNumber", "Ingresa al menos un S/N o una descripcion para identificar el equipo.");
+        }
+
+        var assignedBuildingExternalId = form.AssignedBuildingExternalId?.Trim() ?? string.Empty;
+        var assignedRoomExternalId = form.AssignedRoomExternalId?.Trim() ?? string.Empty;
+        var assignedFloor = form.AssignedFloor;
+
+        SyncedRoom? assignedRoom = null;
+        if (!string.IsNullOrWhiteSpace(assignedRoomExternalId))
+        {
+            assignedRoom = await _context.SyncedRooms
+                .AsNoTracking()
+                .FirstOrDefaultAsync(room => room.ExternalId == assignedRoomExternalId);
+
+            if (assignedRoom == null)
+            {
+                ModelState.AddModelError("Form.AssignedRoomExternalId", "La sala seleccionada ya no existe en la sincronizacion actual.");
+            }
+            else
+            {
+                assignedRoomExternalId = assignedRoom.ExternalId;
+                assignedBuildingExternalId = assignedRoom.BuildingExternalId;
+                assignedFloor = assignedRoom.ManualFloor ?? assignedRoom.Floor;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(assignedBuildingExternalId))
+        {
+            var buildingExists = await _context.SyncedBuildings
+                .AsNoTracking()
+                .AnyAsync(building => building.ExternalId == assignedBuildingExternalId);
+
+            if (!buildingExists)
+            {
+                ModelState.AddModelError("Form.AssignedBuildingExternalId", "El edificio seleccionado ya no existe en la sincronizacion actual.");
+            }
+        }
+        else
+        {
+            assignedRoomExternalId = string.Empty;
+            assignedFloor = null;
+        }
+
+        form.InferredCategory = normalizedCategory;
+        form.InferredStatus = normalizedStatus;
+        form.AssignedBuildingExternalId = assignedBuildingExternalId;
+        form.AssignedRoomExternalId = assignedRoomExternalId;
+        form.AssignedFloor = assignedFloor;
+
+        if (!ModelState.IsValid)
+        {
+            return View(await BuildCreateInventoryItemViewModelAsync(form));
+        }
+
+        var nextRowNumber = (await _context.ImportedInventoryItems.MaxAsync(i => (int?)i.RowNumber) ?? 0) + 1;
+        var item = new ImportedInventoryItem
+        {
+            RowNumber = nextRowNumber,
+            ItemNumber = string.IsNullOrWhiteSpace(form.ItemNumber) ? $"MANUAL-{nextRowNumber:D5}" : form.ItemNumber.Trim(),
+            SerialNumber = form.SerialNumber?.Trim() ?? string.Empty,
+            Description = form.Description?.Trim() ?? string.Empty,
+            Lot = form.Lot?.Trim() ?? string.Empty,
+            UnitOrDepartment = form.UnitOrDepartment?.Trim() ?? string.Empty,
+            OrganizationalUnit = form.OrganizationalUnit?.Trim() ?? string.Empty,
+            ResponsibleUser = form.ResponsibleUser?.Trim() ?? string.Empty,
+            Email = form.Email?.Trim() ?? string.Empty,
+            JobTitle = form.JobTitle?.Trim() ?? string.Empty,
+            IpAddress = form.IpAddress?.Trim() ?? string.Empty,
+            MacAddress = form.MacAddress?.Trim() ?? string.Empty,
+            AnnexPhone = form.AnnexPhone?.Trim() ?? string.Empty,
+            TicketMda = form.TicketMda?.Trim() ?? string.Empty,
+            Installer = form.Installer?.Trim() ?? string.Empty,
+            Observation = form.Observation?.Trim() ?? string.Empty,
+            InferredCategory = normalizedCategory,
+            InferredStatus = normalizedStatus,
+            AssignedBuildingExternalId = assignedBuildingExternalId,
+            AssignedRoomExternalId = assignedRoomExternalId,
+            AssignedFloor = assignedFloor,
+            AssignmentNotes = form.AssignmentNotes?.Trim() ?? string.Empty,
+            SourceFile = ManualInventorySourceFile,
+            ImportedAtUtc = DateTime.UtcNow,
+            AssignmentUpdatedAtUtc = string.IsNullOrWhiteSpace(assignedBuildingExternalId) ? null : DateTime.UtcNow,
+            MatchedSyncedBuildingId = null,
+            MatchedSyncedRoomId = null,
+            MatchedBuildingExternalId = string.Empty,
+            MatchedRoomExternalId = string.Empty,
+            MatchConfidence = string.Empty,
+            MatchNotes = string.Empty
+        };
+
+        _context.ImportedInventoryItems.Add(item);
+        await _context.SaveChangesAsync();
+
+        if (!string.IsNullOrWhiteSpace(item.AssignedBuildingExternalId))
+        {
+            await _auditLogService.LogInventoryItemChangeAsync(
+                item,
+                User.Identity?.Name ?? "sistema",
+                string.Empty,
+                string.Empty,
+                null,
+                string.Empty,
+                string.Empty);
+        }
+
+        TempData["SuccessMessage"] = "Equipo creado correctamente.";
+        return RedirectToAction(nameof(EditInventoryItem), new { id = item.Id });
+    }
+
     public async Task<IActionResult> EditInventoryItem(int id)
     {
         var item = await _context.ImportedInventoryItems.FindAsync(id);
@@ -660,7 +811,9 @@ public class AdminController : Controller
                 .AsNoTracking()
                 .OrderBy(r => r.ManualFloor ?? r.Floor)
                 .ThenBy(r => r.ManualName != "" ? r.ManualName : r.Name)
-                .ToListAsync()
+                .ToListAsync(),
+            Categories = await GetInventoryCategoryOptionsAsync(),
+            Statuses = await GetInventoryStatusOptionsAsync()
         };
 
         return View(model);
@@ -874,6 +1027,8 @@ public class AdminController : Controller
     public async Task<IActionResult> EditInventoryItem(
         int id,
         string? serialNumber,
+        string? inferredCategory,
+        string? inferredStatus,
         string? assignedBuildingExternalId,
         string? assignedRoomExternalId,
         int? assignedFloor,
@@ -883,24 +1038,67 @@ public class AdminController : Controller
         if (item == null)
             return NotFound();
 
+        var categories = await GetInventoryCategoryOptionsAsync();
+        var statuses = await GetInventoryStatusOptionsAsync();
         var previousBuildingExternalId = item.AssignedBuildingExternalId;
         var previousRoomExternalId = item.AssignedRoomExternalId;
         var previousFloor = item.AssignedFloor;
         var previousSerialNumber = item.SerialNumber;
         var previousAssignmentNotes = item.AssignmentNotes;
 
+        var normalizedCategory = string.IsNullOrWhiteSpace(inferredCategory)
+            ? "other"
+            : inferredCategory.Trim().ToLowerInvariant();
+        var normalizedStatus = string.IsNullOrWhiteSpace(inferredStatus)
+            ? "active"
+            : inferredStatus.Trim().ToLowerInvariant();
+
+        if (!categories.Contains(normalizedCategory, StringComparer.OrdinalIgnoreCase))
+        {
+            normalizedCategory = "other";
+        }
+
+        if (!statuses.Contains(normalizedStatus, StringComparer.OrdinalIgnoreCase))
+        {
+            normalizedStatus = "active";
+        }
+
+        var resolvedBuildingExternalId = assignedBuildingExternalId?.Trim() ?? string.Empty;
+        var resolvedRoomExternalId = assignedRoomExternalId?.Trim() ?? string.Empty;
+        var resolvedFloor = assignedFloor;
+
+        if (!string.IsNullOrWhiteSpace(resolvedRoomExternalId))
+        {
+            var room = await _context.SyncedRooms
+                .AsNoTracking()
+                .FirstOrDefaultAsync(candidate => candidate.ExternalId == resolvedRoomExternalId);
+
+            if (room != null)
+            {
+                resolvedRoomExternalId = room.ExternalId;
+                resolvedBuildingExternalId = room.BuildingExternalId;
+                resolvedFloor = room.ManualFloor ?? room.Floor;
+            }
+            else
+            {
+                resolvedRoomExternalId = string.Empty;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(resolvedBuildingExternalId))
+        {
+            resolvedRoomExternalId = string.Empty;
+            resolvedFloor = null;
+        }
+
         item.SerialNumber = serialNumber?.Trim() ?? string.Empty;
-        item.AssignedBuildingExternalId = assignedBuildingExternalId?.Trim() ?? string.Empty;
-        item.AssignedRoomExternalId = assignedRoomExternalId?.Trim() ?? string.Empty;
-        item.AssignedFloor = assignedFloor;
+        item.InferredCategory = normalizedCategory;
+        item.InferredStatus = normalizedStatus;
+        item.AssignedBuildingExternalId = resolvedBuildingExternalId;
+        item.AssignedRoomExternalId = resolvedRoomExternalId;
+        item.AssignedFloor = resolvedFloor;
         item.AssignmentNotes = assignmentNotes?.Trim() ?? string.Empty;
         item.AssignmentUpdatedAtUtc = DateTime.UtcNow;
-
-        if (string.IsNullOrWhiteSpace(item.AssignedBuildingExternalId))
-        {
-            item.AssignedRoomExternalId = string.Empty;
-            item.AssignedFloor = null;
-        }
 
         await _context.SaveChangesAsync();
         await _auditLogService.LogInventoryItemChangeAsync(
@@ -911,7 +1109,7 @@ public class AdminController : Controller
             previousFloor,
             previousSerialNumber,
             previousAssignmentNotes);
-        TempData["SuccessMessage"] = "Asignacion guardada correctamente.";
+        TempData["SuccessMessage"] = "Equipo actualizado correctamente.";
         return RedirectToAction(nameof(EditInventoryItem), new { id });
     }
 
@@ -947,6 +1145,53 @@ public class AdminController : Controller
             previousAssignmentNotes);
         TempData["SuccessMessage"] = "Asignacion limpiada. El equipo quedo pendiente.";
         return RedirectToAction(nameof(EditInventoryItem), new { id });
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteInventoryItem(int id)
+    {
+        var item = await _context.ImportedInventoryItems.FindAsync(id);
+        if (item == null)
+            return NotFound();
+
+        var actor = User.Identity?.Name ?? "sistema";
+        var itemLabel = !string.IsNullOrWhiteSpace(item.SerialNumber)
+            ? $"S/N {item.SerialNumber}"
+            : $"fila #{item.RowNumber}";
+        var impactedBuildings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(item.AssignedBuildingExternalId))
+        {
+            impactedBuildings.Add(item.AssignedBuildingExternalId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.MatchedBuildingExternalId))
+        {
+            impactedBuildings.Add(item.MatchedBuildingExternalId);
+        }
+
+        foreach (var buildingExternalId in impactedBuildings)
+        {
+            _context.AuditLogEntries.Add(new AuditLogEntry
+            {
+                BuildingExternalId = buildingExternalId,
+                EntityType = "inventory-item",
+                EntityId = item.Id.ToString(),
+                ActionType = "deleted",
+                Summary = $"{itemLabel} eliminado",
+                Details = "Equipo eliminado manualmente desde el dashboard.",
+                ChangedByUsername = actor,
+                CreatedAtUtc = DateTime.UtcNow
+            });
+        }
+
+        _context.ImportedInventoryItems.Remove(item);
+        await _context.SaveChangesAsync();
+
+        TempData["SuccessMessage"] = "Equipo eliminado correctamente.";
+        return RedirectToAction(nameof(Inventory));
     }
 
     [Authorize(Roles = AppRoles.Admin)]
@@ -1025,6 +1270,80 @@ public class AdminController : Controller
             .FirstOrDefault();
 
         return int.TryParse(firstToken, out var parsedFloor) ? parsedFloor : 0;
+    }
+
+    private async Task<IReadOnlyList<string>> GetInventoryCategoryOptionsAsync()
+    {
+        var defaults = new[] { "pc", "printer", "scanner", "other" };
+        var values = await _context.ImportedInventoryItems
+            .AsNoTracking()
+            .Where(item => item.InferredCategory != "")
+            .Select(item => item.InferredCategory)
+            .ToListAsync();
+
+        return MergeInventoryOptionLists(defaults, values);
+    }
+
+    private async Task<IReadOnlyList<string>> GetInventoryStatusOptionsAsync()
+    {
+        var defaults = new[] { "active", "maintenance", "inactive", "stolen" };
+        var values = await _context.ImportedInventoryItems
+            .AsNoTracking()
+            .Where(item => item.InferredStatus != "")
+            .Select(item => item.InferredStatus)
+            .ToListAsync();
+
+        return MergeInventoryOptionLists(defaults, values);
+    }
+
+    private static IReadOnlyList<string> MergeInventoryOptionLists(IEnumerable<string> defaults, IEnumerable<string> values)
+    {
+        var results = new List<string>();
+
+        void AddOption(string? rawValue)
+        {
+            var normalizedValue = rawValue?.Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(normalizedValue))
+            {
+                return;
+            }
+
+            if (!results.Contains(normalizedValue, StringComparer.OrdinalIgnoreCase))
+            {
+                results.Add(normalizedValue);
+            }
+        }
+
+        foreach (var value in defaults)
+        {
+            AddOption(value);
+        }
+
+        foreach (var value in values.OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+        {
+            AddOption(value);
+        }
+
+        return results;
+    }
+
+    private async Task<CreateInventoryItemViewModel> BuildCreateInventoryItemViewModelAsync(InventoryItemFormModel form)
+    {
+        return new CreateInventoryItemViewModel
+        {
+            Form = form,
+            Buildings = await _context.SyncedBuildings
+                .AsNoTracking()
+                .OrderBy(building => building.ManualDisplayName != "" ? building.ManualDisplayName : building.DisplayName)
+                .ToListAsync(),
+            Rooms = await _context.SyncedRooms
+                .AsNoTracking()
+                .OrderBy(room => room.ManualFloor ?? room.Floor)
+                .ThenBy(room => room.ManualName != "" ? room.ManualName : room.Name)
+                .ToListAsync(),
+            Categories = await GetInventoryCategoryOptionsAsync(),
+            Statuses = await GetInventoryStatusOptionsAsync()
+        };
     }
 
     private static int NormalizePageSize(int pageSize)
