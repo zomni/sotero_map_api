@@ -136,6 +136,8 @@ public class EquipmentDeliveryDocumentService
             }
 
             ConvertTechnicalDataLabelForPdf(document);
+            CompactFirstPageTablesForPdf(document);
+            NormalizeChecklistCheckboxesForPdf(document);
 
             documentEntry.Delete();
             var newEntry = archive.CreateEntry("word/document.xml", CompressionLevel.Optimal);
@@ -172,6 +174,219 @@ public class EquipmentDeliveryDocumentService
         targetCell.RemoveNodes();
         targetCell.Add(preservedProperties);
         targetCell.Add(CreatePdfVerticalLabelParagraph("DATOS TECNICOS"));
+    }
+
+    private static void CompactFirstPageTablesForPdf(XDocument document)
+    {
+        var firstPageTables = document.Descendants(W + "tbl").Take(3).ToList();
+        foreach (var table in firstPageTables)
+        {
+            ReduceTableFontSizesForPdf(table, 2);
+            TightenTableParagraphSpacing(table);
+            TightenTableCellMargins(table);
+        }
+    }
+
+
+    private static void NormalizeChecklistCheckboxesForPdf(XDocument document)
+    {
+        var paragraphs = document.Descendants(W + "p").ToList();
+        if (paragraphs.Count == 0)
+        {
+            return;
+        }
+
+        var declarationParagraph = paragraphs.FirstOrDefault(p =>
+            GetParagraphText(p).Contains("Declaro recibir con esta fecha el equipo descrito", StringComparison.OrdinalIgnoreCase));
+        var commitmentParagraph = paragraphs.FirstOrDefault(p =>
+            GetParagraphText(p).Contains("Me comprometo a:", StringComparison.OrdinalIgnoreCase));
+        var cap01Paragraph = paragraphs.FirstOrDefault(p =>
+            GetParagraphText(p).Contains("CAP01", StringComparison.OrdinalIgnoreCase));
+
+        var declarationCheckboxRun = declarationParagraph?.Elements(W + "r").FirstOrDefault(ContainsChecklistShape);
+        var cap01CheckboxRun = cap01Paragraph?.Elements(W + "r").FirstOrDefault(ContainsChecklistShape);
+
+        if (declarationCheckboxRun != null && commitmentParagraph != null)
+        {
+            var movedRun = new XElement(declarationCheckboxRun);
+            declarationCheckboxRun.Remove();
+            InsertRunAtParagraphStart(commitmentParagraph, movedRun);
+            NormalizeChecklistCheckboxRun(movedRun);
+        }
+
+        if (cap01CheckboxRun != null)
+        {
+            NormalizeChecklistCheckboxRun(cap01CheckboxRun);
+        }
+    }
+
+    private static void ReduceTableFontSizesForPdf(XElement table, int decrement)
+    {
+        if (decrement <= 0)
+        {
+            return;
+        }
+
+        foreach (var sizeElement in table.Descendants().Where(x => x.Name == W + "sz" || x.Name == W + "szCs"))
+        {
+            var valueAttribute = sizeElement.Attribute(W + "val");
+            if (valueAttribute == null)
+            {
+                continue;
+            }
+
+            if (!int.TryParse(valueAttribute.Value, out var fontSize))
+            {
+                continue;
+            }
+
+            var reduced = Math.Max(12, fontSize - decrement);
+            valueAttribute.Value = reduced.ToString();
+        }
+    }
+
+    private static void TightenTableParagraphSpacing(XElement table)
+    {
+        foreach (var paragraph in table.Descendants(W + "p"))
+        {
+            var paragraphProperties = paragraph.Element(W + "pPr");
+            if (paragraphProperties == null)
+            {
+                paragraphProperties = new XElement(W + "pPr");
+                paragraph.AddFirst(paragraphProperties);
+            }
+
+            var spacing = paragraphProperties.Element(W + "spacing");
+            if (spacing == null)
+            {
+                spacing = new XElement(W + "spacing");
+                paragraphProperties.Add(spacing);
+            }
+
+            spacing.SetAttributeValue(W + "before", "0");
+            spacing.SetAttributeValue(W + "after", "0");
+            spacing.SetAttributeValue(W + "line", "220");
+            spacing.SetAttributeValue(W + "lineRule", "auto");
+        }
+    }
+
+    private static void TightenTableCellMargins(XElement table)
+    {
+        foreach (var cell in table.Descendants(W + "tc"))
+        {
+            var cellProperties = cell.Element(W + "tcPr");
+            if (cellProperties == null)
+            {
+                cellProperties = new XElement(W + "tcPr");
+                cell.AddFirst(cellProperties);
+            }
+
+            var cellMargins = cellProperties.Element(W + "tcMar");
+            if (cellMargins == null)
+            {
+                cellMargins = new XElement(W + "tcMar");
+                cellProperties.Add(cellMargins);
+            }
+
+            SetCellMargin(cellMargins, "top", "10");
+            SetCellMargin(cellMargins, "bottom", "10");
+        }
+    }
+
+    private static void SetCellMargin(XElement cellMargins, string side, string value)
+    {
+        var margin = cellMargins.Element(W + side);
+        if (margin == null)
+        {
+            margin = new XElement(W + side);
+            cellMargins.Add(margin);
+        }
+
+        margin.SetAttributeValue(W + "w", value);
+        margin.SetAttributeValue(W + "type", "dxa");
+    }
+
+
+    private static string GetParagraphText(XElement paragraph)
+        => string.Join(string.Empty, paragraph.Descendants(W + "t").Select(t => t.Value));
+
+    private static bool ContainsChecklistShape(XElement run)
+        => run.Descendants().Any(e =>
+            string.Equals(e.Name.LocalName, "AlternateContent", StringComparison.OrdinalIgnoreCase)
+            || e.Name == W + "pict");
+
+    private static void InsertRunAtParagraphStart(XElement paragraph, XElement run)
+    {
+        var paragraphProperties = paragraph.Element(W + "pPr");
+        if (paragraphProperties != null)
+        {
+            paragraphProperties.AddAfterSelf(run);
+            return;
+        }
+
+        paragraph.AddFirst(run);
+    }
+
+    private static void NormalizeChecklistCheckboxRun(XElement run)
+    {
+        foreach (var positionH in run.Descendants().Where(e => e.Name.LocalName == "positionH"))
+        {
+            var posOffset = positionH.Elements().FirstOrDefault(e => e.Name.LocalName == "posOffset");
+            if (posOffset != null)
+            {
+                posOffset.Value = "-270510";
+            }
+        }
+
+        foreach (var positionV in run.Descendants().Where(e => e.Name.LocalName == "positionV"))
+        {
+            var posOffset = positionV.Elements().FirstOrDefault(e => e.Name.LocalName == "posOffset");
+            if (posOffset != null)
+            {
+                posOffset.Value = "6985";
+            }
+        }
+
+        foreach (var rect in run.Descendants().Where(e =>
+                     string.Equals(e.Name.LocalName, "rect", StringComparison.OrdinalIgnoreCase)))
+        {
+            var style = (string?)rect.Attribute("style");
+            if (string.IsNullOrWhiteSpace(style))
+            {
+                continue;
+            }
+
+            style = ReplaceStyleValue(style, "margin-left", "-21.3pt");
+            style = ReplaceStyleValue(style, "margin-top", ".55pt");
+            rect.SetAttributeValue("style", style);
+        }
+    }
+
+    private static string ReplaceStyleValue(string style, string propertyName, string propertyValue)
+    {
+        var parts = style.Split(';', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Trim())
+            .ToList();
+
+        var replaced = false;
+        for (var i = 0; i < parts.Count; i++)
+        {
+            if (!parts[i].StartsWith(propertyName + ":", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            parts[i] = $"{propertyName}:{propertyValue}";
+            replaced = true;
+            break;
+        }
+
+        if (!replaced)
+        {
+            parts.Add($"{propertyName}:{propertyValue}");
+        }
+
+        return string.Join(";", parts) + ";";
     }
 
     private static XElement CreatePdfVerticalLabelParagraph(string value)
