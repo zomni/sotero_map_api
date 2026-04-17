@@ -16,6 +16,7 @@ if (builder.Environment.IsDevelopment())
     mvcBuilder.AddRazorRuntimeCompilation();
 }
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddMemoryCache();
 builder.Services.AddSwaggerGen();
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

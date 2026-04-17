@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using SoteroMap.API.Infrastructure;
 using SoteroMap.API.Data;
 using SoteroMap.API.Models;
@@ -17,14 +18,17 @@ public class AdminController : Controller
     private readonly AppDbContext _context;
     private readonly AuditLogService _auditLogService;
     private readonly IConfiguration _configuration;
+    private readonly IMemoryCache _memoryCache;
     private readonly EquipmentDeliveryDocumentService _equipmentDeliveryDocumentService;
     private const string ManualInventorySourceFile = "manual-admin";
+    private const string DeliveryFormPreviewCachePrefix = "delivery-form-preview:";
 
-    public AdminController(AppDbContext context, AuditLogService auditLogService, IConfiguration configuration, EquipmentDeliveryDocumentService equipmentDeliveryDocumentService)
+    public AdminController(AppDbContext context, AuditLogService auditLogService, IConfiguration configuration, IMemoryCache memoryCache, EquipmentDeliveryDocumentService equipmentDeliveryDocumentService)
     {
         _context = context;
         _auditLogService = auditLogService;
         _configuration = configuration;
+        _memoryCache = memoryCache;
         _equipmentDeliveryDocumentService = equipmentDeliveryDocumentService;
     }
 
@@ -302,22 +306,75 @@ public class AdminController : Controller
             ? "Activo"
             : model.AntivirusConnectionState.Trim();
 
-        model.TechnicianName = string.IsNullOrWhiteSpace(model.TechnicianName)
-            ? (User.Identity?.Name ?? string.Empty)
-            : model.TechnicianName.Trim();
+        model.ReceptionType = model.ReceptionType?.Trim() ?? string.Empty;
+        if (!string.Equals(model.ReceptionType, "Nueva", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(model.ReceptionType, "Reemplazo", StringComparison.OrdinalIgnoreCase))
+        {
+            ModelState.AddModelError(nameof(model.ReceptionType), "Selecciona si el equipo es nuevo o reemplazo.");
+        }
+
+        if (!string.Equals(model.ReceptionType, "Reemplazo", StringComparison.OrdinalIgnoreCase))
+        {
+            model.ReplacedEquipmentSerial = string.Empty;
+            model.ReplacedEquipmentModel = string.Empty;
+        }
 
         model.ValidationSerialName = string.IsNullOrWhiteSpace(model.ValidationSerialName) ? model.SerialNumber : model.ValidationSerialName;
         model.ValidationDescriptionChange = string.IsNullOrWhiteSpace(model.ValidationDescriptionChange) ? model.UnitOrDepartment : model.ValidationDescriptionChange;
         model.ValidationAdAccount = string.IsNullOrWhiteSpace(model.ValidationAdAccount) ? model.ActiveDirectoryUser : model.ValidationAdAccount;
-        model.SignedUserName = string.IsNullOrWhiteSpace(model.SignedUserName) ? model.ResponsibleUser : model.SignedUserName;
-
         if (!ModelState.IsValid)
         {
             return View(model);
         }
 
-        var generated = await _equipmentDeliveryDocumentService.GenerateAsync(model);
-        return File(generated.Content, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", generated.FileName);
+        try
+        {
+            var generatedPdf = await _equipmentDeliveryDocumentService.GeneratePdfAsync(model, HttpContext.RequestAborted);
+            var previewId = Guid.NewGuid().ToString("N");
+            var preview = new DeliveryFormPreviewFile
+            {
+                Content = generatedPdf.Content,
+                FileName = generatedPdf.FileName
+            };
+            _memoryCache.Set(GetDeliveryFormPreviewCacheKey(previewId), preview, TimeSpan.FromMinutes(30));
+            SaveDeliveryFormPreviewToDisk(previewId, preview);
+
+            TempData["SuccessMessage"] = "Formulario creado exitosamente.";
+            return RedirectToAction(nameof(DeliveryFormPreview), new { id = previewId });
+        }
+        catch (Exception ex)
+        {
+            ModelState.AddModelError(string.Empty, $"No se pudo generar la vista previa PDF: {ex.Message}");
+            return View(model);
+        }
+    }
+
+    [HttpGet("/admin/delivery-form/preview/{id}")]
+    public IActionResult DeliveryFormPreview(string id)
+    {
+        if (!TryGetDeliveryFormPreview(id, out var preview) || preview is null)
+        {
+            TempData["ErrorMessage"] = "La vista previa del formulario ya no esta disponible. Genera el formulario nuevamente.";
+            return RedirectToAction(nameof(DeliveryForm));
+        }
+
+        return View(new DeliveryFormPreviewViewModel
+        {
+            PreviewId = id,
+            FileName = preview.FileName
+        });
+    }
+
+    [HttpGet("/admin/delivery-form/preview/{id}/file")]
+    public IActionResult DeliveryFormPreviewFile(string id)
+    {
+        if (!TryGetDeliveryFormPreview(id, out var preview) || preview is null)
+        {
+            return NotFound("La vista previa PDF ya no esta disponible.");
+        }
+
+        Response.Headers["Content-Disposition"] = $"inline; filename=\"{preview.FileName}\"";
+        return File(preview.Content, "application/pdf");
     }
 
     public async Task<IActionResult> Locations(
@@ -2167,18 +2224,119 @@ public class AdminController : Controller
     }
 
 
+    private static string GetDeliveryFormPreviewCacheKey(string id)
+    {
+        return $"{DeliveryFormPreviewCachePrefix}{id}";
+    }
+
+    private static string GetDeliveryFormPreviewDirectory()
+    {
+        return Path.Combine(Path.GetTempPath(), "soteromap-delivery-preview-cache");
+    }
+
+    private static string GetDeliveryFormPreviewPdfPath(string id)
+    {
+        return Path.Combine(GetDeliveryFormPreviewDirectory(), $"{id}.pdf");
+    }
+
+    private static string GetDeliveryFormPreviewMetadataPath(string id)
+    {
+        return Path.Combine(GetDeliveryFormPreviewDirectory(), $"{id}.json");
+    }
+
+    private void SaveDeliveryFormPreviewToDisk(string id, DeliveryFormPreviewFile preview)
+    {
+        CleanupExpiredDeliveryFormPreviews();
+
+        var directory = GetDeliveryFormPreviewDirectory();
+        Directory.CreateDirectory(directory);
+
+        System.IO.File.WriteAllBytes(GetDeliveryFormPreviewPdfPath(id), preview.Content);
+        var metadataJson = JsonSerializer.Serialize(new DeliveryFormPreviewViewModel
+        {
+            PreviewId = id,
+            FileName = preview.FileName
+        });
+        System.IO.File.WriteAllText(GetDeliveryFormPreviewMetadataPath(id), metadataJson);
+    }
+
+    private bool TryGetDeliveryFormPreview(string id, out DeliveryFormPreviewFile? preview)
+    {
+        if (_memoryCache.TryGetValue(GetDeliveryFormPreviewCacheKey(id), out DeliveryFormPreviewFile? cachedPreview) && cachedPreview is not null)
+        {
+            preview = cachedPreview;
+            return true;
+        }
+
+        var pdfPath = GetDeliveryFormPreviewPdfPath(id);
+        var metadataPath = GetDeliveryFormPreviewMetadataPath(id);
+        if (!System.IO.File.Exists(pdfPath) || !System.IO.File.Exists(metadataPath))
+        {
+            preview = null;
+            return false;
+        }
+
+        try
+        {
+            var metadataJson = System.IO.File.ReadAllText(metadataPath);
+            var metadata = JsonSerializer.Deserialize<DeliveryFormPreviewViewModel>(metadataJson);
+            if (metadata is null)
+            {
+                preview = null;
+                return false;
+            }
+
+            preview = new DeliveryFormPreviewFile
+            {
+                Content = System.IO.File.ReadAllBytes(pdfPath),
+                FileName = metadata.FileName
+            };
+
+            _memoryCache.Set(GetDeliveryFormPreviewCacheKey(id), preview, TimeSpan.FromMinutes(30));
+            return true;
+        }
+        catch
+        {
+            preview = null;
+            return false;
+        }
+    }
+
+    private void CleanupExpiredDeliveryFormPreviews()
+    {
+        var directory = GetDeliveryFormPreviewDirectory();
+        if (!Directory.Exists(directory))
+        {
+            return;
+        }
+
+        var thresholdUtc = DateTime.UtcNow.AddMinutes(-30);
+        foreach (var filePath in Directory.EnumerateFiles(directory))
+        {
+            try
+            {
+                if (System.IO.File.GetLastWriteTimeUtc(filePath) < thresholdUtc)
+                {
+                    System.IO.File.Delete(filePath);
+                }
+            }
+            catch
+            {
+            }
+        }
+    }
+
     private EquipmentDeliveryFormViewModel BuildDefaultDeliveryFormViewModel()
     {
         return new EquipmentDeliveryFormViewModel
         {
             DocumentDate = DateTime.Today.ToString("dd/MM/yyyy"),
             Institution = "HOSPITAL DR. SOTERO DEL RIO",
-            ReceptionType = "Nueva",
+            ReceptionType = string.Empty,
             OperatingSystem = "WINDOWS 10",
             OfficeSuite = "OFFICE 2021",
             SecurityLock = "Si",
-            AntivirusConnectionState = "Activo",
-            TechnicianName = User.Identity?.Name ?? string.Empty
+            AntivirusConnectionState = "Activo"
         };
     }
 

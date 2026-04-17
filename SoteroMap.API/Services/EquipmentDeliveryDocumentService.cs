@@ -1,4 +1,5 @@
-﻿using System.IO.Compression;
+﻿using System.Diagnostics;
+using System.IO.Compression;
 using System.Xml.Linq;
 using SoteroMap.API.ViewModels;
 
@@ -56,8 +57,165 @@ public class EquipmentDeliveryDocumentService
             document.Save(newStream);
         }
 
-        var fileName = BuildFileName(model);
-        return (outputStream.ToArray(), fileName);
+        return (outputStream.ToArray(), BuildFileName(model));
+    }
+
+    public async Task<(byte[] Content, string FileName)> GeneratePdfAsync(EquipmentDeliveryFormViewModel model, CancellationToken cancellationToken = default)
+    {
+        var generatedWord = await GenerateAsync(model);
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "soteromap-delivery-preview", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        var docxPath = Path.Combine(tempDirectory, generatedWord.FileName);
+        var pdfFileName = Path.GetFileNameWithoutExtension(generatedWord.FileName) + ".pdf";
+        var pdfPath = Path.Combine(tempDirectory, pdfFileName);
+
+        try
+        {
+            var pdfCompatibleWord = PreparePdfCompatibleWord(generatedWord.Content);
+
+            await File.WriteAllBytesAsync(docxPath, pdfCompatibleWord, cancellationToken);
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "soffice",
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("--headless");
+            startInfo.ArgumentList.Add("--convert-to");
+            startInfo.ArgumentList.Add("pdf");
+            startInfo.ArgumentList.Add("--outdir");
+            startInfo.ArgumentList.Add(tempDirectory);
+            startInfo.ArgumentList.Add(docxPath);
+
+            using var process = Process.Start(startInfo)
+                ?? throw new InvalidOperationException("No se pudo iniciar LibreOffice para convertir el formulario a PDF.");
+
+            await process.WaitForExitAsync(cancellationToken);
+            var standardOutput = await process.StandardOutput.ReadToEndAsync(cancellationToken);
+            var standardError = await process.StandardError.ReadToEndAsync(cancellationToken);
+
+            if (process.ExitCode != 0 || !File.Exists(pdfPath))
+            {
+                var details = string.Join(" ", new[] { standardOutput, standardError }.Where(x => !string.IsNullOrWhiteSpace(x))).Trim();
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(details)
+                    ? "No se pudo convertir el formulario a PDF."
+                    : $"No se pudo convertir el formulario a PDF: {details}");
+            }
+
+            var pdfBytes = await File.ReadAllBytesAsync(pdfPath, cancellationToken);
+            return (pdfBytes, pdfFileName);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDirectory))
+            {
+                Directory.Delete(tempDirectory, true);
+            }
+        }
+    }
+
+    private static byte[] PreparePdfCompatibleWord(byte[] wordContent)
+    {
+        using var outputStream = new MemoryStream();
+        outputStream.Write(wordContent, 0, wordContent.Length);
+        outputStream.Position = 0;
+
+        using (var archive = new ZipArchive(outputStream, ZipArchiveMode.Update, true))
+        {
+            var documentEntry = archive.GetEntry("word/document.xml")
+                ?? throw new InvalidOperationException("La plantilla no contiene word/document.xml");
+
+            XDocument document;
+            using (var entryStream = documentEntry.Open())
+            {
+                document = XDocument.Load(entryStream, LoadOptions.PreserveWhitespace);
+            }
+
+            ConvertTechnicalDataLabelForPdf(document);
+
+            documentEntry.Delete();
+            var newEntry = archive.CreateEntry("word/document.xml", CompressionLevel.Optimal);
+            using var newStream = newEntry.Open();
+            document.Save(newStream);
+        }
+
+        return outputStream.ToArray();
+    }
+
+    private static void ConvertTechnicalDataLabelForPdf(XDocument document)
+    {
+        var targetCell = document
+            .Descendants(W + "tc")
+            .FirstOrDefault(cell => string.Join(" ", cell.Descendants(W + "t").Select(t => t.Value))
+                .Contains("DATOS T", StringComparison.OrdinalIgnoreCase));
+
+        if (targetCell == null)
+        {
+            return;
+        }
+
+        var cellProperties = targetCell.Element(W + "tcPr");
+        if (cellProperties == null)
+        {
+            cellProperties = new XElement(W + "tcPr");
+            targetCell.AddFirst(cellProperties);
+        }
+
+        cellProperties.Elements(W + "textDirection").Remove();
+        cellProperties.Add(new XElement(W + "textDirection", new XAttribute(W + "val", "btLr")));
+
+        var preservedProperties = new XElement(cellProperties);
+        targetCell.RemoveNodes();
+        targetCell.Add(preservedProperties);
+        targetCell.Add(CreatePdfVerticalLabelParagraph("DATOS TECNICOS"));
+    }
+
+    private static XElement CreatePdfVerticalLabelParagraph(string value)
+    {
+        return new XElement(W + "p",
+            new XElement(W + "pPr",
+                new XElement(W + "jc", new XAttribute(W + "val", "center")),
+                new XElement(W + "spacing",
+                    new XAttribute(W + "before", "0"),
+                    new XAttribute(W + "after", "0"),
+                    new XAttribute(W + "line", "240"),
+                    new XAttribute(W + "lineRule", "auto")),
+                new XElement(W + "rPr",
+                    new XElement(W + "rFonts",
+                        new XAttribute(W + "ascii", "Calibri"),
+                        new XAttribute(W + "hAnsi", "Calibri")),
+                    new XElement(W + "b"),
+                    new XElement(W + "bCs"),
+                    new XElement(W + "sz", new XAttribute(W + "val", "20")),
+                    new XElement(W + "szCs", new XAttribute(W + "val", "20")))),
+            CreateStyledTextRun(value, "Calibri", 20, true));
+    }
+
+    private static XElement CreateStyledTextRun(string? value, string fontName, int fontSize, bool bold = false)
+    {
+        var runProperties = new XElement(W + "rPr",
+            new XElement(W + "rFonts",
+                new XAttribute(W + "ascii", fontName),
+                new XAttribute(W + "hAnsi", fontName)));
+
+        if (bold)
+        {
+            runProperties.Add(new XElement(W + "b"));
+            runProperties.Add(new XElement(W + "bCs"));
+        }
+
+        runProperties.Add(new XElement(W + "sz", new XAttribute(W + "val", fontSize)));
+        runProperties.Add(new XElement(W + "szCs", new XAttribute(W + "val", fontSize)));
+
+        return new XElement(W + "r",
+            runProperties,
+            new XElement(W + "t",
+                new XAttribute(XNamespace.Xml + "space", "preserve"),
+                Normalize(value)));
     }
 
     private static void FillHeaderTable(XElement table, EquipmentDeliveryFormViewModel model)
@@ -103,49 +261,53 @@ public class EquipmentDeliveryDocumentService
     private static void FillApplicationsTable(XElement table, EquipmentDeliveryFormViewModel model)
     {
         SetCellText(table, 1, 1, ToMark(model.AppRcePulso));
-        SetCellText(table, 1, 3, ToMark(model.AdminSgd));
-        SetCellText(table, 1, 7, model.ValidationSerialName);
+        SetCellText(table, 1, 4, ToMark(model.AdminSgd));
+        SetCellText(table, 1, 7, EffectiveValue(model.ValidationSerialName, model.SerialNumber));
 
         SetCellText(table, 2, 1, ToMark(model.AppRce));
-        SetCellText(table, 2, 3, ToMark(model.AdminSirh));
-        SetCellText(table, 2, 7, model.ValidationDescriptionChange);
+        SetCellText(table, 2, 4, ToMark(model.AdminSirh));
+        SetCellText(table, 2, 7, EffectiveValue(model.ValidationDescriptionChange, model.UnitOrDepartment));
 
         SetCellText(table, 3, 1, ToMark(model.AppAnatPatologica));
-        SetCellText(table, 3, 3, ToMark(model.AdminAbastecimiento1));
+        SetCellText(table, 3, 4, ToMark(model.AdminAbastecimiento1));
         SetCellText(table, 3, 7, model.ValidationOfficeSuite);
 
         SetCellText(table, 4, 1, ToMark(model.AppHospitalizados));
-        SetCellText(table, 4, 3, ToMark(model.AdminAbastecimiento2));
-        SetCellText(table, 4, 7, model.ValidationAdAccount);
+        SetCellText(table, 4, 4, ToMark(model.AdminAbastecimiento2));
+        SetCellText(table, 4, 7, EffectiveValue(model.ValidationAdAccount, model.ActiveDirectoryUser));
 
         SetCellText(table, 5, 1, ToMark(model.AppDauAdulto));
-        SetCellText(table, 5, 3, ToMark(model.AdminMsAccess));
+        SetCellText(table, 5, 4, ToMark(model.AdminMsAccess));
+        SetCellText(table, 5, 7, string.Empty);
 
         SetCellText(table, 6, 1, ToMark(model.AppDauMujer));
-        SetCellText(table, 6, 3, ToMark(model.AdminTeams));
-        SetCellText(table, 6, 7, model.AntivirusInstalledVersion);
+        SetCellText(table, 6, 4, ToMark(model.AdminTeams));
+        SetCellText(table, 6, 7, string.Empty);
 
         SetCellText(table, 7, 1, ToMark(model.AppDauInfantil));
-        SetCellText(table, 7, 3, ToMark(model.AdminAbastSsmso));
-        SetCellText(table, 7, 7, model.AntivirusConnectionState);
+        SetCellText(table, 7, 4, ToMark(model.AdminAbastSsmso));
+        SetCellText(table, 7, 7, model.AntivirusInstalledVersion);
 
         SetCellText(table, 8, 1, ToMark(model.AppIq));
-        SetCellText(table, 8, 3, ToMark(model.AdminToadModeler));
+        SetCellText(table, 8, 4, ToMark(model.AdminToadModeler));
+        SetCellText(table, 8, 7, model.AntivirusConnectionState);
 
         SetCellText(table, 9, 1, ToMark(model.AppInterconsultas));
-        SetCellText(table, 9, 3, ToMark(model.AdminZoom));
+        SetCellText(table, 9, 4, ToMark(model.AdminZoom));
 
         SetCellText(table, 10, 1, ToMark(model.AppSga));
-        SetCellText(table, 10, 3, ToMark(model.AdminBizagi));
+        SetCellText(table, 10, 4, ToMark(model.AdminBizagi));
 
         SetCellText(table, 11, 1, ToMark(model.AppSgde));
-        SetCellText(table, 11, 3, ToMark(model.AdminMsProject));
+        SetCellText(table, 11, 4, ToMark(model.AdminMsProject));
 
         SetCellText(table, 12, 1, ToMark(model.AppRpecRni));
-        SetCellText(table, 12, 3, ToMark(model.AdminPowerBi));
+        SetCellText(table, 12, 4, ToMark(model.AdminPowerBi));
+        SetCellText(table, 12, 7, string.Empty);
 
         SetCellText(table, 13, 1, ToMark(model.AppHistorialClinico));
-        SetCellText(table, 13, 3, ToMark(model.AdminTableauReader));
+        SetCellText(table, 13, 4, ToMark(model.AdminTableauReader));
+        SetCellText(table, 13, 7, string.Empty);
     }
 
     private static void FillSignatureLine(XDocument document, EquipmentDeliveryFormViewModel model)
@@ -160,14 +322,24 @@ public class EquipmentDeliveryDocumentService
             return;
         }
 
-        paragraph.Elements().Remove();
+        var preservedElements = paragraph.Elements()
+            .Where(e => e.Name == W + "pPr" || e.Name == W + "bookmarkStart" || e.Name == W + "bookmarkEnd")
+            .Select(e => new XElement(e))
+            .ToList();
+
+        paragraph.RemoveNodes();
+        foreach (var element in preservedElements)
+        {
+            paragraph.Add(element);
+        }
+
         paragraph.Add(
-            new XElement(W + "r", new XElement(W + "t", Normalize(model.SignedUserName))),
+            CreateTextRun(string.Empty),
             new XElement(W + "r", new XElement(W + "tab")),
-            new XElement(W + "r", new XElement(W + "t", Normalize(model.SignedUserRut))),
+            CreateTextRun(string.Empty),
             new XElement(W + "r", new XElement(W + "tab")),
             new XElement(W + "r", new XElement(W + "tab")),
-            new XElement(W + "r", new XElement(W + "t", Normalize(model.TechnicianName))));
+            CreateTextRun(string.Empty));
     }
 
     private static void SetCellText(XElement table, int rowIndex, int cellIndex, string? value)
@@ -179,23 +351,51 @@ public class EquipmentDeliveryDocumentService
             return;
         }
 
-        var properties = cell.Element(W + "tcPr");
-        cell.RemoveNodes();
-        if (properties != null)
+        SetCellText(cell, value);
+    }
+
+    private static void SetCellText(XElement cell, string? value)
+    {
+        var paragraph = cell.Elements(W + "p").FirstOrDefault();
+        if (paragraph == null)
         {
-            cell.Add(properties);
+            paragraph = new XElement(W + "p");
+            cell.Add(paragraph);
         }
 
-        cell.Add(
-            new XElement(W + "p",
-                new XElement(W + "r",
-                    new XElement(W + "t", new XAttribute(XNamespace.Xml + "space", "preserve"), Normalize(value)))));
+        var paragraphProperties = paragraph.Element(W + "pPr");
+        paragraph.Elements().Where(e => e.Name != W + "pPr").Remove();
+
+        if (paragraphProperties == null)
+        {
+            paragraph.AddFirst(new XElement(W + "pPr"));
+            paragraphProperties = paragraph.Element(W + "pPr");
+        }
+
+        paragraph.Add(CreateTextRun(value));
+
+        var additionalParagraphs = cell.Elements(W + "p").Skip(1).ToList();
+        foreach (var extraParagraph in additionalParagraphs)
+        {
+            extraParagraph.Remove();
+        }
+    }
+
+    private static XElement CreateTextRun(string? value)
+    {
+        return new XElement(W + "r",
+            new XElement(W + "t",
+                new XAttribute(XNamespace.Xml + "space", "preserve"),
+                Normalize(value)));
     }
 
     private static string Normalize(string? value)
         => string.IsNullOrWhiteSpace(value) ? " " : value.Trim();
 
     private static string ToMark(bool enabled) => enabled ? "X" : string.Empty;
+
+    private static string EffectiveValue(string? preferred, string? fallback)
+        => string.IsNullOrWhiteSpace(preferred) ? (fallback ?? string.Empty) : preferred;
 
     private static string BuildFileName(EquipmentDeliveryFormViewModel model)
     {

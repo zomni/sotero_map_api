@@ -7,7 +7,7 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h2 class="fw-bold mb-1">Formulario de entrega de equipo</h2>
-        <div class="text-muted">Completa los datos y descarga el mismo Word del formulario ya rellenado.</div>
+        <div class="text-muted">Completa los datos y descarga el mismo Word del formulario original, ya rellenado.</div>
     </div>
     <a href="/admin" class="btn btn-secondary shadow-sm fw-semibold px-3">
         <i class="bi bi-arrow-left me-1"></i> Volver
@@ -25,6 +25,13 @@
             @Html.AntiForgeryToken()
 
             <div class="col-12">
+                <div class="alert alert-info mb-0">
+                    Solo son obligatorios: <strong>S/N</strong>, <strong>usuario responsable</strong>, <strong>IP</strong>, <strong>MAC</strong> y <strong>brecha</strong>.
+                    Los datos del equipo anterior se completan solo cuando la brecha es <strong>Reemplazo</strong>.
+                </div>
+            </div>
+
+            <div class="col-12">
                 <div class="card border-0 bg-light-subtle">
                     <div class="card-body">
                         <h5 class="fw-semibold mb-3">Datos principales</h5>
@@ -39,10 +46,12 @@
                             </div>
                             <div class="col-md-4">
                                 <label asp-for="ReceptionType" class="form-label"></label>
-                                <select asp-for="ReceptionType" class="form-select">
+                                <select asp-for="ReceptionType" class="form-select" id="receptionType">
+                                    <option value="">Selecciona...</option>
                                     <option value="Nueva">Nueva</option>
                                     <option value="Reemplazo">Reemplazo</option>
                                 </select>
+                                <span asp-validation-for="ReceptionType" class="text-danger small"></span>
                             </div>
                             <div class="col-md-6">
                                 <label asp-for="UnitOrDepartment" class="form-label"></label>
@@ -51,6 +60,7 @@
                             <div class="col-md-3">
                                 <label asp-for="SerialNumber" class="form-label"></label>
                                 <input asp-for="SerialNumber" class="form-control font-monospace" />
+                                <span asp-validation-for="SerialNumber" class="text-danger small"></span>
                             </div>
                             <div class="col-md-3">
                                 <label asp-for="MdaTicket" class="form-label"></label>
@@ -59,6 +69,7 @@
                             <div class="col-md-6">
                                 <label asp-for="ResponsibleUser" class="form-label"></label>
                                 <input asp-for="ResponsibleUser" class="form-control" />
+                                <span asp-validation-for="ResponsibleUser" class="text-danger small"></span>
                             </div>
                             <div class="col-md-6">
                                 <label asp-for="Email" class="form-label"></label>
@@ -67,10 +78,12 @@
                             <div class="col-md-4">
                                 <label asp-for="IpAddress" class="form-label"></label>
                                 <input asp-for="IpAddress" class="form-control" />
+                                <span asp-validation-for="IpAddress" class="text-danger small"></span>
                             </div>
                             <div class="col-md-4">
                                 <label asp-for="MacAddress" class="form-label"></label>
                                 <input asp-for="MacAddress" class="form-control font-monospace" />
+                                <span asp-validation-for="MacAddress" class="text-danger small"></span>
                             </div>
                             <div class="col-md-4">
                                 <label asp-for="Annex" class="form-label"></label>
@@ -88,13 +101,19 @@
                                 <label asp-for="OfficeActivationEmail" class="form-label"></label>
                                 <input asp-for="OfficeActivationEmail" class="form-control" />
                             </div>
-                            <div class="col-md-6">
-                                <label asp-for="ReplacedEquipmentSerial" class="form-label"></label>
-                                <input asp-for="ReplacedEquipmentSerial" class="form-control" />
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="ReplacedEquipmentModel" class="form-label"></label>
-                                <input asp-for="ReplacedEquipmentModel" class="form-control" />
+                        </div>
+
+                        <div id="replacement-section" class="mt-4 pt-3 border-top">
+                            <h6 class="fw-semibold mb-3">Datos del equipo anterior</h6>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label asp-for="ReplacedEquipmentSerial" class="form-label"></label>
+                                    <input asp-for="ReplacedEquipmentSerial" class="form-control replacement-field" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label asp-for="ReplacedEquipmentModel" class="form-label"></label>
+                                    <input asp-for="ReplacedEquipmentModel" class="form-control replacement-field" />
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -106,62 +125,23 @@
                     <div class="card-body">
                         <h5 class="fw-semibold mb-3">Caracteristicas del computador</h5>
                         <div class="row g-3">
-                            <div class="col-md-6">
-                                <label asp-for="ComputerBrand" class="form-label"></label>
-                                <input asp-for="ComputerBrand" class="form-control" />
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="ComputerModel" class="form-label"></label>
-                                <input asp-for="ComputerModel" class="form-control" />
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="OperatingSystem" class="form-label"></label>
-                                <input asp-for="OperatingSystem" class="form-control" />
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="OfficeSuite" class="form-label"></label>
-                                <input asp-for="OfficeSuite" class="form-control" />
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="Processor" class="form-label"></label>
-                                <input asp-for="Processor" class="form-control" />
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="SecurityLock" class="form-label"></label>
-                                <select asp-for="SecurityLock" class="form-select">
-                                    <option value="Si">Si</option>
-                                    <option value="No">No</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="Ram" class="form-label"></label>
-                                <input asp-for="Ram" class="form-control" />
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="Disk" class="form-label"></label>
-                                <input asp-for="Disk" class="form-control" />
-                            </div>
+                            <div class="col-md-6"><label asp-for="ComputerBrand" class="form-label"></label><input asp-for="ComputerBrand" class="form-control" /></div>
+                            <div class="col-md-6"><label asp-for="ComputerModel" class="form-label"></label><input asp-for="ComputerModel" class="form-control" /></div>
+                            <div class="col-md-6"><label asp-for="OperatingSystem" class="form-label"></label><input asp-for="OperatingSystem" class="form-control" /></div>
+                            <div class="col-md-6"><label asp-for="OfficeSuite" class="form-label"></label><input asp-for="OfficeSuite" class="form-control" /></div>
+                            <div class="col-md-6"><label asp-for="Processor" class="form-label"></label><input asp-for="Processor" class="form-control" /></div>
+                            <div class="col-md-6"><label asp-for="SecurityLock" class="form-label"></label><select asp-for="SecurityLock" class="form-select"><option value="Si">Si</option><option value="No">No</option></select></div>
+                            <div class="col-md-6"><label asp-for="Ram" class="form-label"></label><input asp-for="Ram" class="form-control" /></div>
+                            <div class="col-md-6"><label asp-for="Disk" class="form-label"></label><input asp-for="Disk" class="form-control" /></div>
                         </div>
 
                         <hr class="my-4" />
                         <h6 class="fw-semibold mb-3">Impresoras / otros</h6>
                         <div class="row g-2">
-                            <div class="col-sm-6 form-check">
-                                <input asp-for="Lexmark" class="form-check-input" />
-                                <label asp-for="Lexmark" class="form-check-label"></label>
-                            </div>
-                            <div class="col-sm-6 form-check">
-                                <input asp-for="Zebra" class="form-check-input" />
-                                <label asp-for="Zebra" class="form-check-label"></label>
-                            </div>
-                            <div class="col-sm-6 form-check">
-                                <input asp-for="FingerprintReader" class="form-check-input" />
-                                <label asp-for="FingerprintReader" class="form-check-label"></label>
-                            </div>
-                            <div class="col-sm-6 form-check">
-                                <input asp-for="OtherDevices" class="form-check-input" />
-                                <label asp-for="OtherDevices" class="form-check-label"></label>
-                            </div>
+                            <div class="col-sm-6 form-check"><input asp-for="Lexmark" class="form-check-input" /><label asp-for="Lexmark" class="form-check-label"></label></div>
+                            <div class="col-sm-6 form-check"><input asp-for="Zebra" class="form-check-input" /><label asp-for="Zebra" class="form-check-label"></label></div>
+                            <div class="col-sm-6 form-check"><input asp-for="FingerprintReader" class="form-check-input" /><label asp-for="FingerprintReader" class="form-check-label"></label></div>
+                            <div class="col-sm-6 form-check"><input asp-for="OtherDevices" class="form-check-input" /><label asp-for="OtherDevices" class="form-check-label"></label></div>
                         </div>
                     </div>
                 </div>
@@ -172,48 +152,14 @@
                     <div class="card-body">
                         <h5 class="fw-semibold mb-3">Validaciones del sistema</h5>
                         <div class="row g-3">
-                            <div class="col-md-6">
-                                <label asp-for="ValidationSerialName" class="form-label"></label>
-                                <input asp-for="ValidationSerialName" class="form-control" />
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="ValidationDescriptionChange" class="form-label"></label>
-                                <input asp-for="ValidationDescriptionChange" class="form-control" />
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="ValidationOfficeSuite" class="form-label"></label>
-                                <input asp-for="ValidationOfficeSuite" class="form-control" />
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="ValidationAdAccount" class="form-label"></label>
-                                <input asp-for="ValidationAdAccount" class="form-control" />
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="AntivirusInstalledVersion" class="form-label"></label>
-                                <input asp-for="AntivirusInstalledVersion" class="form-control" />
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="AntivirusConnectionState" class="form-label"></label>
-                                <input asp-for="AntivirusConnectionState" class="form-control" />
-                            </div>
+                            <div class="col-md-6"><label asp-for="ValidationSerialName" class="form-label"></label><input asp-for="ValidationSerialName" class="form-control" /></div>
+                            <div class="col-md-6"><label asp-for="ValidationDescriptionChange" class="form-label"></label><input asp-for="ValidationDescriptionChange" class="form-control" /></div>
+                            <div class="col-md-6"><label asp-for="ValidationOfficeSuite" class="form-label"></label><input asp-for="ValidationOfficeSuite" class="form-control" /></div>
+                            <div class="col-md-6"><label asp-for="ValidationAdAccount" class="form-label"></label><input asp-for="ValidationAdAccount" class="form-control" /></div>
+                            <div class="col-md-6"><label asp-for="AntivirusInstalledVersion" class="form-label"></label><input asp-for="AntivirusInstalledVersion" class="form-control" /></div>
+                            <div class="col-md-6"><label asp-for="AntivirusConnectionState" class="form-label"></label><input asp-for="AntivirusConnectionState" class="form-control" /></div>
                         </div>
 
-                        <hr class="my-4" />
-                        <h6 class="fw-semibold mb-3">Firma impresa</h6>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label asp-for="SignedUserName" class="form-label"></label>
-                                <input asp-for="SignedUserName" class="form-control" />
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="SignedUserRut" class="form-label"></label>
-                                <input asp-for="SignedUserRut" class="form-control" placeholder="Ej: 12.345.678-9" />
-                            </div>
-                            <div class="col-12">
-                                <label asp-for="TechnicianName" class="form-label"></label>
-                                <input asp-for="TechnicianName" class="form-control" />
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -263,7 +209,7 @@
                                 <div class="alert alert-info mb-0 h-100 d-flex align-items-center">
                                     <div>
                                         <div class="fw-semibold mb-2">Resultado</div>
-                                        <div>Al presionar <strong>Crear formulario</strong>, el sistema genera el mismo Word del formulario y te lo devuelve listo para descargar.</div>
+                                        <div>Al presionar <strong>Crear formulario</strong>, el sistema descarga el <strong>mismo Word original</strong> con los campos ya llenados.</div>
                                     </div>
                                 </div>
                             </div>
@@ -281,3 +227,28 @@
         </form>
     </div>
 </div>
+
+@section Scripts {
+<script>
+    (function () {
+        const receptionType = document.getElementById('receptionType');
+        const replacementSection = document.getElementById('replacement-section');
+        const replacementFields = Array.from(document.querySelectorAll('.replacement-field'));
+
+        function syncReplacementSection() {
+            const isReplacement = receptionType && receptionType.value === 'Reemplazo';
+            replacementSection.style.display = isReplacement ? '' : 'none';
+
+            replacementFields.forEach(field => {
+                field.disabled = !isReplacement;
+                if (!isReplacement) {
+                    field.value = '';
+                }
+            });
+        }
+
+        receptionType?.addEventListener('change', syncReplacementSection);
+        syncReplacementSection();
+    })();
+</script>
+}
