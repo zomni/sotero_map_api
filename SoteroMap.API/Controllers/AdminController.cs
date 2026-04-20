@@ -334,7 +334,8 @@ public class AdminController : Controller
             var preview = new DeliveryFormPreviewFile
             {
                 Content = generatedPdf.Content,
-                FileName = generatedPdf.FileName
+                FileName = generatedPdf.FileName,
+                SourceForm = model
             };
             _memoryCache.Set(GetDeliveryFormPreviewCacheKey(previewId), preview, TimeSpan.FromMinutes(30));
             SaveDeliveryFormPreviewToDisk(previewId, preview);
@@ -350,7 +351,7 @@ public class AdminController : Controller
     }
 
     [HttpGet("/admin/delivery-form/preview/{id}")]
-    public IActionResult DeliveryFormPreview(string id)
+    public async Task<IActionResult> DeliveryFormPreview(string id, string? assignedBuildingExternalId = null)
     {
         if (!TryGetDeliveryFormPreview(id, out var preview) || preview is null)
         {
@@ -358,11 +359,87 @@ public class AdminController : Controller
             return RedirectToAction(nameof(DeliveryForm));
         }
 
+        var selectedBuildingExternalId = assignedBuildingExternalId?.Trim() ?? string.Empty;
+        var buildings = User.IsInRole(AppRoles.Admin)
+            ? await _context.SyncedBuildings
+                .AsNoTracking()
+                .OrderBy(building => building.ManualDisplayName != "" ? building.ManualDisplayName : building.DisplayName)
+                .ToListAsync()
+            : new List<SyncedBuilding>();
+
+        if (!string.IsNullOrWhiteSpace(selectedBuildingExternalId)
+            && !buildings.Any(building => string.Equals(building.ExternalId, selectedBuildingExternalId, StringComparison.OrdinalIgnoreCase)))
+        {
+            selectedBuildingExternalId = string.Empty;
+        }
+
         return View(new DeliveryFormPreviewViewModel
         {
             PreviewId = id,
-            FileName = preview.FileName
+            FileName = preview.FileName,
+            SourceForm = preview.SourceForm,
+            Buildings = buildings,
+            AssignedBuildingExternalId = selectedBuildingExternalId,
+            CreatedInventoryItemId = preview.CreatedInventoryItemId
         });
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPost("/admin/delivery-form/preview/{id}/inventory")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddDeliveryFormToInventory(string id, string? assignedBuildingExternalId)
+    {
+        if (!TryGetDeliveryFormPreview(id, out var preview) || preview is null)
+        {
+            TempData["ErrorMessage"] = "La vista previa del formulario ya no esta disponible. Genera el formulario nuevamente.";
+            return RedirectToAction(nameof(DeliveryForm));
+        }
+
+        if (preview.SourceForm is null)
+        {
+            TempData["ErrorMessage"] = "Esta vista previa no conserva los datos del formulario. Genera el formulario nuevamente para agregar el equipo al inventario.";
+            return RedirectToAction(nameof(DeliveryFormPreview), new { id });
+        }
+
+        var normalizedBuildingExternalId = assignedBuildingExternalId?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(normalizedBuildingExternalId))
+        {
+            var buildingExists = await _context.SyncedBuildings
+                .AsNoTracking()
+                .AnyAsync(building => building.ExternalId == normalizedBuildingExternalId);
+
+            if (!buildingExists)
+            {
+                TempData["ErrorMessage"] = "El edificio seleccionado ya no existe en la sincronizacion actual.";
+                return RedirectToAction(nameof(DeliveryFormPreview), new { id, assignedBuildingExternalId = normalizedBuildingExternalId });
+            }
+        }
+
+        if (preview.CreatedInventoryItemId.HasValue)
+        {
+            var existingItem = await _context.ImportedInventoryItems
+                .AsNoTracking()
+                .FirstOrDefaultAsync(item => item.Id == preview.CreatedInventoryItemId.Value);
+
+            if (existingItem is not null)
+            {
+                TempData["SuccessMessage"] = $"Este formulario ya fue agregado al inventario como equipo #{existingItem.Id}.";
+                return RedirectToAction(nameof(DeliveryFormPreview), new { id, assignedBuildingExternalId = normalizedBuildingExternalId });
+            }
+
+            preview.CreatedInventoryItemId = null;
+        }
+
+        var createdItem = await CreateInventoryItemFromDeliveryFormAsync(preview.SourceForm, normalizedBuildingExternalId);
+        preview.CreatedInventoryItemId = createdItem.Id;
+        _memoryCache.Set(GetDeliveryFormPreviewCacheKey(id), preview, TimeSpan.FromMinutes(30));
+        SaveDeliveryFormPreviewToDisk(id, preview);
+
+        TempData["SuccessMessage"] = string.IsNullOrWhiteSpace(normalizedBuildingExternalId)
+            ? "Equipo agregado al inventario y dejado pendiente de asignacion."
+            : $"Equipo agregado al inventario y asignado inicialmente al edificio {normalizedBuildingExternalId}.";
+
+        return RedirectToAction(nameof(DeliveryFormPreview), new { id, assignedBuildingExternalId = normalizedBuildingExternalId });
     }
 
     [HttpGet("/admin/delivery-form/preview/{id}/file")]
@@ -2252,10 +2329,12 @@ public class AdminController : Controller
         Directory.CreateDirectory(directory);
 
         System.IO.File.WriteAllBytes(GetDeliveryFormPreviewPdfPath(id), preview.Content);
-        var metadataJson = JsonSerializer.Serialize(new DeliveryFormPreviewViewModel
+        var metadataJson = JsonSerializer.Serialize(new DeliveryFormPreviewMetadata
         {
             PreviewId = id,
-            FileName = preview.FileName
+            FileName = preview.FileName,
+            SourceForm = preview.SourceForm,
+            CreatedInventoryItemId = preview.CreatedInventoryItemId
         });
         System.IO.File.WriteAllText(GetDeliveryFormPreviewMetadataPath(id), metadataJson);
     }
@@ -2279,7 +2358,7 @@ public class AdminController : Controller
         try
         {
             var metadataJson = System.IO.File.ReadAllText(metadataPath);
-            var metadata = JsonSerializer.Deserialize<DeliveryFormPreviewViewModel>(metadataJson);
+            var metadata = JsonSerializer.Deserialize<DeliveryFormPreviewMetadata>(metadataJson);
             if (metadata is null)
             {
                 preview = null;
@@ -2289,7 +2368,9 @@ public class AdminController : Controller
             preview = new DeliveryFormPreviewFile
             {
                 Content = System.IO.File.ReadAllBytes(pdfPath),
-                FileName = metadata.FileName
+                FileName = metadata.FileName,
+                SourceForm = metadata.SourceForm,
+                CreatedInventoryItemId = metadata.CreatedInventoryItemId
             };
 
             _memoryCache.Set(GetDeliveryFormPreviewCacheKey(id), preview, TimeSpan.FromMinutes(30));
@@ -2324,6 +2405,145 @@ public class AdminController : Controller
             {
             }
         }
+    }
+
+    private async Task<ImportedInventoryItem> CreateInventoryItemFromDeliveryFormAsync(EquipmentDeliveryFormViewModel form, string assignedBuildingExternalId)
+    {
+        var normalizedBuildingExternalId = assignedBuildingExternalId?.Trim() ?? string.Empty;
+        var nextRowNumber = (await _context.ImportedInventoryItems.MaxAsync(item => (int?)item.RowNumber) ?? 0) + 1;
+        var description = BuildInventoryDescriptionFromDeliveryForm(form);
+        var replacedEquipment = BuildDeliveryFormReplacedEquipment(form);
+
+        var item = new ImportedInventoryItem
+        {
+            RowNumber = nextRowNumber,
+            ItemNumber = $"MANUAL-{nextRowNumber:D5}",
+            SerialNumber = form.SerialNumber?.Trim() ?? string.Empty,
+            Description = description,
+            Lot = string.Empty,
+            InstallDate = form.DocumentDate?.Trim() ?? string.Empty,
+            UnitOrDepartment = form.UnitOrDepartment?.Trim() ?? string.Empty,
+            OrganizationalUnit = string.Empty,
+            ResponsibleUser = form.ResponsibleUser?.Trim() ?? string.Empty,
+            Run = form.SignedUserRut?.Trim() ?? string.Empty,
+            Email = form.Email?.Trim() ?? string.Empty,
+            JobTitle = form.JobTitle?.Trim() ?? string.Empty,
+            IpAddress = form.IpAddress?.Trim() ?? string.Empty,
+            MacAddress = form.MacAddress?.Trim() ?? string.Empty,
+            AnnexPhone = form.Annex?.Trim() ?? string.Empty,
+            ReplacedEquipment = replacedEquipment,
+            TicketMda = form.MdaTicket?.Trim() ?? string.Empty,
+            Installer = form.TechnicianName?.Trim() ?? string.Empty,
+            Observation = BuildDeliveryFormObservation(form),
+            Rut = form.SignedUserRut?.Trim() ?? string.Empty,
+            InventoryDate = form.DocumentDate?.Trim() ?? string.Empty,
+            InferredCategory = "pc",
+            InferredStatus = "active",
+            AssignedBuildingExternalId = normalizedBuildingExternalId,
+            AssignedRoomExternalId = string.Empty,
+            AssignedFloor = null,
+            AssignmentNotes = BuildDeliveryFormAssignmentNotes(form, !string.IsNullOrWhiteSpace(normalizedBuildingExternalId)),
+            AssignmentUpdatedAtUtc = string.IsNullOrWhiteSpace(normalizedBuildingExternalId) ? null : DateTime.UtcNow,
+            SourceFile = $"{ManualInventorySourceFile}:delivery-form",
+            ImportedAtUtc = DateTime.UtcNow,
+            MatchedSyncedBuildingId = null,
+            MatchedSyncedRoomId = null,
+            MatchedBuildingExternalId = string.Empty,
+            MatchedRoomExternalId = string.Empty,
+            MatchConfidence = string.Empty,
+            MatchNotes = string.Empty
+        };
+
+        _context.ImportedInventoryItems.Add(item);
+        await _context.SaveChangesAsync();
+
+        if (!string.IsNullOrWhiteSpace(item.AssignedBuildingExternalId))
+        {
+            await _auditLogService.LogInventoryItemChangeAsync(
+                item,
+                User.Identity?.Name ?? "sistema",
+                string.Empty,
+                string.Empty,
+                null,
+                string.Empty,
+                string.Empty);
+        }
+
+        return item;
+    }
+
+    private static string BuildInventoryDescriptionFromDeliveryForm(EquipmentDeliveryFormViewModel form)
+    {
+        var parts = new[]
+        {
+            form.ComputerBrand?.Trim(),
+            form.ComputerModel?.Trim(),
+            form.Processor?.Trim()
+        };
+
+        var description = string.Join(" ", parts.Where(value => !string.IsNullOrWhiteSpace(value)));
+        return string.IsNullOrWhiteSpace(description)
+            ? "Equipo creado desde formulario de entrega"
+            : description;
+    }
+
+    private static string BuildDeliveryFormReplacedEquipment(EquipmentDeliveryFormViewModel form)
+    {
+        var parts = new[]
+        {
+            form.ReplacedEquipmentSerial?.Trim(),
+            form.ReplacedEquipmentModel?.Trim()
+        }
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .ToList();
+
+        return parts.Count == 0 ? string.Empty : string.Join(" | ", parts);
+    }
+
+    private static string BuildDeliveryFormObservation(EquipmentDeliveryFormViewModel form)
+    {
+        var notes = new List<string>
+        {
+            "Creado desde formulario de entrega"
+        };
+
+        if (!string.IsNullOrWhiteSpace(form.DocumentDate))
+        {
+            notes.Add($"fecha {form.DocumentDate.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(form.ReceptionType))
+        {
+            notes.Add($"brecha: {form.ReceptionType.Trim()}");
+        }
+
+        var replacedEquipment = BuildDeliveryFormReplacedEquipment(form);
+        if (!string.IsNullOrWhiteSpace(replacedEquipment))
+        {
+            notes.Add($"equipo anterior: {replacedEquipment}");
+        }
+
+        return string.Join(". ", notes) + ".";
+    }
+
+    private static string BuildDeliveryFormAssignmentNotes(EquipmentDeliveryFormViewModel form, bool hasAssignedBuilding)
+    {
+        var notes = new List<string>
+        {
+            "Creado desde formulario de entrega"
+        };
+
+        if (!string.IsNullOrWhiteSpace(form.ReceptionType))
+        {
+            notes.Add($"Brecha: {form.ReceptionType.Trim()}");
+        }
+
+        if (!hasAssignedBuilding)
+        {
+            notes.Add("Pendiente de asignar edificio");
+        }
+
+        return string.Join(". ", notes) + ".";
     }
 
     private EquipmentDeliveryFormViewModel BuildDefaultDeliveryFormViewModel()

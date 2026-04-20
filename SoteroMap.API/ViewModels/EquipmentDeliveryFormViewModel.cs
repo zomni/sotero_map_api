@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using SoteroMap.API.Models;
 
 namespace SoteroMap.API.ViewModels;
 
@@ -154,10 +155,25 @@ public class DeliveryFormPreviewViewModel
 {
     public string PreviewId { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
+    public EquipmentDeliveryFormViewModel? SourceForm { get; set; }
+    public IReadOnlyList<SyncedBuilding> Buildings { get; set; } = [];
+    public string AssignedBuildingExternalId { get; set; } = string.Empty;
+    public int? CreatedInventoryItemId { get; set; }
+    public bool CanAddToInventory => SourceForm is not null && CreatedInventoryItemId is null;
 }
 
 public class DeliveryFormPreviewFile
 {
     public byte[] Content { get; set; } = Array.Empty<byte>();
     public string FileName { get; set; } = string.Empty;
+    public EquipmentDeliveryFormViewModel? SourceForm { get; set; }
+    public int? CreatedInventoryItemId { get; set; }
+}
+
+public class DeliveryFormPreviewMetadata
+{
+    public string PreviewId { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public EquipmentDeliveryFormViewModel? SourceForm { get; set; }
+    public int? CreatedInventoryItemId { get; set; }
 }
