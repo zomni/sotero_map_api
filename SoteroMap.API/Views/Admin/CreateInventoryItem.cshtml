@@ -21,7 +21,7 @@
             <div asp-validation-summary="All" class="alert alert-danger"></div>
         }
 
-        <form method="post" action="/admin/inventory/create" class="row g-4">
+        <form method="post" action="/admin/inventory/create" class="row g-4" enctype="multipart/form-data">
             @Html.AntiForgeryToken()
 
             <div class="col-lg-7">
@@ -158,6 +158,12 @@
                         <div class="mb-3">
                             <label asp-for="Form.TicketMda" class="form-label">Ticket MDA</label>
                             <input asp-for="Form.TicketMda" class="form-control" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Formulario PDF</label>
+                            <input type="file" name="deliveryFormPdf" class="form-control" accept=".pdf,application/pdf" />
+                            <div class="form-text">Opcional. Si este equipo tiene formulario firmado, puedes adjuntarlo aqui.</div>
                         </div>
                     </div>
                 </div>

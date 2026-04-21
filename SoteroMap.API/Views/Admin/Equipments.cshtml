@@ -546,7 +546,7 @@
                                 }
                             </td>
                             <td>
-                                <div class="d-flex gap-2 justify-content-end">
+                                <div class="d-flex gap-2 justify-content-end flex-nowrap align-items-center">
                                     @if (!string.IsNullOrWhiteSpace(item.AssignedBuildingExternalId))
                                     {
                                         var resolvedFloor = item.AssignedFloor
@@ -566,7 +566,17 @@
                                             <i class="bi bi-map"></i>
                                         </a>
                                     }
-                                    <a href="/admin/editinventoryitem/@item.Id" class="btn btn-sm btn-outline-primary">
+                                    @if (!string.IsNullOrWhiteSpace(item.DeliveryFormPdfFileName))
+                                    {
+                                        <a href="/admin/inventory/@item.Id/form-pdf"
+                                           class="btn btn-sm btn-outline-danger"
+                                           target="_blank"
+                                           title="Ver formulario PDF"
+                                           aria-label="Ver formulario PDF">
+                                            <i class="bi bi-file-earmark-pdf"></i>
+                                        </a>
+                                    }
+                                    <a href="/admin/editinventoryitem/@item.Id" class="btn btn-sm btn-outline-primary text-nowrap">
                                         @(isAdmin ? "Editar" : "Ver")
                                     </a>
                                     @if (isAdmin)

@@ -37,6 +37,7 @@ public class ImportedInventoryItem
     public int? AssignedFloor { get; set; }
     public string AssignmentNotes { get; set; } = string.Empty;
     public DateTime? AssignmentUpdatedAtUtc { get; set; }
+    public string DeliveryFormPdfFileName { get; set; } = string.Empty;
     public string SourceFile { get; set; } = string.Empty;
     public DateTime ImportedAtUtc { get; set; } = DateTime.UtcNow;
 }

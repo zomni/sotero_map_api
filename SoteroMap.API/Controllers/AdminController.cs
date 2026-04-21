@@ -8,6 +8,7 @@ using SoteroMap.API.Data;
 using SoteroMap.API.Models;
 using SoteroMap.API.Services;
 using SoteroMap.API.ViewModels;
+using System.Text;
 using System.Text.Json;
 
 namespace SoteroMap.API.Controllers;
@@ -430,7 +431,7 @@ public class AdminController : Controller
             preview.CreatedInventoryItemId = null;
         }
 
-        var createdItem = await CreateInventoryItemFromDeliveryFormAsync(preview.SourceForm, normalizedBuildingExternalId);
+        var createdItem = await CreateInventoryItemFromDeliveryFormAsync(preview.SourceForm, normalizedBuildingExternalId, preview.Content, HttpContext.RequestAborted);
         preview.CreatedInventoryItemId = createdItem.Id;
         _memoryCache.Set(GetDeliveryFormPreviewCacheKey(id), preview, TimeSpan.FromMinutes(30));
         SaveDeliveryFormPreviewToDisk(id, preview);
@@ -453,6 +454,27 @@ public class AdminController : Controller
         Response.Headers["Content-Disposition"] = $"inline; filename=\"{preview.FileName}\"";
         return File(preview.Content, "application/pdf");
     }
+
+    [HttpGet("/admin/inventory/{id:int}/form-pdf")]
+    public async Task<IActionResult> InventoryItemFormPdf(int id)
+    {
+        var item = await _context.ImportedInventoryItems.AsNoTracking().FirstOrDefaultAsync(candidate => candidate.Id == id);
+
+        if (item is null)
+            return NotFound();
+
+        if (string.IsNullOrWhiteSpace(item.DeliveryFormPdfFileName))
+            return NotFound("Este equipo no tiene formulario PDF cargado.");
+
+        var pdfPath = GetInventoryFormPdfPath(item.DeliveryFormPdfFileName);
+        if (!System.IO.File.Exists(pdfPath))
+            return NotFound("El formulario PDF asociado ya no esta disponible.");
+
+        var downloadFileName = BuildInventoryFormPdfDownloadName(item);
+        Response.Headers["Content-Disposition"] = $"inline; filename=\"{downloadFileName}\"";
+        return File(System.IO.File.ReadAllBytes(pdfPath), "application/pdf");
+    }
+
 
     public async Task<IActionResult> Locations(
         string? search,
@@ -1009,7 +1031,8 @@ public class AdminController : Controller
     [Authorize(Roles = AppRoles.Admin)]
     [HttpPost("/admin/inventory/create")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> CreateInventoryItem(CreateInventoryItemViewModel model)
+    [RequestSizeLimit(25_000_000)]
+    public async Task<IActionResult> CreateInventoryItem(CreateInventoryItemViewModel model, IFormFile? deliveryFormPdf, CancellationToken cancellationToken)
     {
         var form = model.Form ?? new InventoryItemFormModel();
         var categories = await GetInventoryCategoryOptionsAsync();
@@ -1037,6 +1060,12 @@ public class AdminController : Controller
             ModelState.AddModelError("Form.SerialNumber", "Ingresa al menos un S/N o una descripcion para identificar el equipo.");
         }
 
+        var pdfValidationError = await ValidateInventoryFormPdfAsync(deliveryFormPdf, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(pdfValidationError))
+        {
+            ModelState.AddModelError(string.Empty, pdfValidationError);
+        }
+
         var assignedBuildingExternalId = form.AssignedBuildingExternalId?.Trim() ?? string.Empty;
         var assignedRoomExternalId = form.AssignedRoomExternalId?.Trim() ?? string.Empty;
         var assignedFloor = form.AssignedFloor;
@@ -1046,7 +1075,7 @@ public class AdminController : Controller
         {
             assignedRoom = await _context.SyncedRooms
                 .AsNoTracking()
-                .FirstOrDefaultAsync(room => room.ExternalId == assignedRoomExternalId);
+                .FirstOrDefaultAsync(room => room.ExternalId == assignedRoomExternalId, cancellationToken);
 
             if (assignedRoom == null)
             {
@@ -1064,7 +1093,7 @@ public class AdminController : Controller
         {
             var buildingExists = await _context.SyncedBuildings
                 .AsNoTracking()
-                .AnyAsync(building => building.ExternalId == assignedBuildingExternalId);
+                .AnyAsync(building => building.ExternalId == assignedBuildingExternalId, cancellationToken);
 
             if (!buildingExists)
             {
@@ -1088,59 +1117,80 @@ public class AdminController : Controller
             return View(await BuildCreateInventoryItemViewModelAsync(form));
         }
 
-        var nextRowNumber = (await _context.ImportedInventoryItems.MaxAsync(i => (int?)i.RowNumber) ?? 0) + 1;
-        var item = new ImportedInventoryItem
-        {
-            RowNumber = nextRowNumber,
-            ItemNumber = string.IsNullOrWhiteSpace(form.ItemNumber) ? $"MANUAL-{nextRowNumber:D5}" : form.ItemNumber.Trim(),
-            SerialNumber = form.SerialNumber?.Trim() ?? string.Empty,
-            Description = form.Description?.Trim() ?? string.Empty,
-            Lot = form.Lot?.Trim() ?? string.Empty,
-            UnitOrDepartment = form.UnitOrDepartment?.Trim() ?? string.Empty,
-            OrganizationalUnit = form.OrganizationalUnit?.Trim() ?? string.Empty,
-            ResponsibleUser = form.ResponsibleUser?.Trim() ?? string.Empty,
-            Email = form.Email?.Trim() ?? string.Empty,
-            JobTitle = form.JobTitle?.Trim() ?? string.Empty,
-            IpAddress = form.IpAddress?.Trim() ?? string.Empty,
-            MacAddress = form.MacAddress?.Trim() ?? string.Empty,
-            AnnexPhone = form.AnnexPhone?.Trim() ?? string.Empty,
-            TicketMda = form.TicketMda?.Trim() ?? string.Empty,
-            Installer = form.Installer?.Trim() ?? string.Empty,
-            Observation = form.Observation?.Trim() ?? string.Empty,
-            InferredCategory = normalizedCategory,
-            InferredStatus = normalizedStatus,
-            AssignedBuildingExternalId = assignedBuildingExternalId,
-            AssignedRoomExternalId = assignedRoomExternalId,
-            AssignedFloor = assignedFloor,
-            AssignmentNotes = form.AssignmentNotes?.Trim() ?? string.Empty,
-            SourceFile = ManualInventorySourceFile,
-            ImportedAtUtc = DateTime.UtcNow,
-            AssignmentUpdatedAtUtc = string.IsNullOrWhiteSpace(assignedBuildingExternalId) ? null : DateTime.UtcNow,
-            MatchedSyncedBuildingId = null,
-            MatchedSyncedRoomId = null,
-            MatchedBuildingExternalId = string.Empty,
-            MatchedRoomExternalId = string.Empty,
-            MatchConfidence = string.Empty,
-            MatchNotes = string.Empty
-        };
+        string storedPdfFileName = string.Empty;
 
-        _context.ImportedInventoryItems.Add(item);
-        await _context.SaveChangesAsync();
-
-        if (!string.IsNullOrWhiteSpace(item.AssignedBuildingExternalId))
+        try
         {
-            await _auditLogService.LogInventoryItemChangeAsync(
-                item,
-                User.Identity?.Name ?? "sistema",
-                string.Empty,
-                string.Empty,
-                null,
-                string.Empty,
-                string.Empty);
+            if (deliveryFormPdf is not null && deliveryFormPdf.Length > 0)
+            {
+                storedPdfFileName = await SaveInventoryFormPdfUploadAsync(deliveryFormPdf, form.SerialNumber, cancellationToken);
+            }
+
+            var nextRowNumber = (await _context.ImportedInventoryItems.MaxAsync(i => (int?)i.RowNumber, cancellationToken) ?? 0) + 1;
+            var item = new ImportedInventoryItem
+            {
+                RowNumber = nextRowNumber,
+                ItemNumber = string.IsNullOrWhiteSpace(form.ItemNumber) ? $"MANUAL-{nextRowNumber:D5}" : form.ItemNumber.Trim(),
+                SerialNumber = form.SerialNumber?.Trim() ?? string.Empty,
+                Description = form.Description?.Trim() ?? string.Empty,
+                Lot = form.Lot?.Trim() ?? string.Empty,
+                UnitOrDepartment = form.UnitOrDepartment?.Trim() ?? string.Empty,
+                OrganizationalUnit = form.OrganizationalUnit?.Trim() ?? string.Empty,
+                ResponsibleUser = form.ResponsibleUser?.Trim() ?? string.Empty,
+                Email = form.Email?.Trim() ?? string.Empty,
+                JobTitle = form.JobTitle?.Trim() ?? string.Empty,
+                IpAddress = form.IpAddress?.Trim() ?? string.Empty,
+                MacAddress = form.MacAddress?.Trim() ?? string.Empty,
+                AnnexPhone = form.AnnexPhone?.Trim() ?? string.Empty,
+                TicketMda = form.TicketMda?.Trim() ?? string.Empty,
+                Installer = form.Installer?.Trim() ?? string.Empty,
+                Observation = form.Observation?.Trim() ?? string.Empty,
+                InferredCategory = normalizedCategory,
+                InferredStatus = normalizedStatus,
+                AssignedBuildingExternalId = assignedBuildingExternalId,
+                AssignedRoomExternalId = assignedRoomExternalId,
+                AssignedFloor = assignedFloor,
+                AssignmentNotes = form.AssignmentNotes?.Trim() ?? string.Empty,
+                DeliveryFormPdfFileName = storedPdfFileName,
+                SourceFile = ManualInventorySourceFile,
+                ImportedAtUtc = DateTime.UtcNow,
+                AssignmentUpdatedAtUtc = string.IsNullOrWhiteSpace(assignedBuildingExternalId) ? null : DateTime.UtcNow,
+                MatchedSyncedBuildingId = null,
+                MatchedSyncedRoomId = null,
+                MatchedBuildingExternalId = string.Empty,
+                MatchedRoomExternalId = string.Empty,
+                MatchConfidence = string.Empty,
+                MatchNotes = string.Empty
+            };
+
+            _context.ImportedInventoryItems.Add(item);
+            await _context.SaveChangesAsync(cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(item.AssignedBuildingExternalId))
+            {
+                await _auditLogService.LogInventoryItemChangeAsync(
+                    item,
+                    User.Identity?.Name ?? "sistema",
+                    string.Empty,
+                    string.Empty,
+                    null,
+                    string.Empty,
+                    string.Empty);
+            }
+
+            TempData["SuccessMessage"] = "Equipo creado correctamente.";
+            return RedirectToAction(nameof(EditInventoryItem), new { id = item.Id });
         }
+        catch (Exception ex)
+        {
+            if (!string.IsNullOrWhiteSpace(storedPdfFileName))
+            {
+                DeleteInventoryFormPdfIfExists(storedPdfFileName);
+            }
 
-        TempData["SuccessMessage"] = "Equipo creado correctamente.";
-        return RedirectToAction(nameof(EditInventoryItem), new { id = item.Id });
+            ModelState.AddModelError(string.Empty, $"No se pudo crear el equipo: {ex.Message}");
+            return View(await BuildCreateInventoryItemViewModelAsync(form));
+        }
     }
 
     public async Task<IActionResult> EditInventoryItem(int id)
@@ -1149,230 +1199,13 @@ public class AdminController : Controller
         if (item == null)
             return NotFound();
 
-        var model = new EditInventoryItemViewModel
-        {
-            Item = item,
-            Buildings = await _context.SyncedBuildings
-                .AsNoTracking()
-                .OrderBy(b => b.ManualDisplayName != "" ? b.ManualDisplayName : b.DisplayName)
-                .ToListAsync(),
-            Rooms = await _context.SyncedRooms
-                .AsNoTracking()
-                .OrderBy(r => r.ManualFloor ?? r.Floor)
-                .ThenBy(r => r.ManualName != "" ? r.ManualName : r.Name)
-                .ToListAsync(),
-            Categories = await GetInventoryCategoryOptionsAsync(),
-            Statuses = await GetInventoryStatusOptionsAsync()
-        };
-
-        return View(model);
-    }
-
-    [HttpGet("/admin/suggestions/inventory")]
-    public async Task<IActionResult> InventorySuggestions(string? query, int limit = 10)
-    {
-        if (string.IsNullOrWhiteSpace(query))
-        {
-            return Json(Array.Empty<string>());
-        }
-
-        var trimmed = query.Trim().ToLower();
-        var candidates = await _context.ImportedInventoryItems.AsNoTracking()
-            .Where(i =>
-                (i.SerialNumber != null && i.SerialNumber.ToLower().Contains(trimmed)) ||
-                (i.ItemNumber != null && i.ItemNumber.ToLower().Contains(trimmed)) ||
-                (i.Description != null && i.Description.ToLower().Contains(trimmed)) ||
-                (i.ResponsibleUser != null && i.ResponsibleUser.ToLower().Contains(trimmed)) ||
-                (i.Email != null && i.Email.ToLower().Contains(trimmed)) ||
-                (i.IpAddress != null && i.IpAddress.ToLower().Contains(trimmed)) ||
-                (i.UnitOrDepartment != null && i.UnitOrDepartment.ToLower().Contains(trimmed)) ||
-                (i.OrganizationalUnit != null && i.OrganizationalUnit.ToLower().Contains(trimmed)) ||
-                (i.AssignedBuildingExternalId != null && i.AssignedBuildingExternalId.ToLower().Contains(trimmed)))
-            .Select(i => new
-            {
-                i.SerialNumber,
-                i.ItemNumber,
-                i.Description,
-                i.ResponsibleUser,
-                i.Email,
-                i.IpAddress,
-                i.UnitOrDepartment,
-                i.OrganizationalUnit,
-                i.AssignedBuildingExternalId
-            })
-            .Take(200)
-            .ToListAsync();
-
-        var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        void AddIfMatch(string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return;
-            }
-
-            var candidate = value.Trim();
-            if (!candidate.ToLower().Contains(trimmed))
-            {
-                return;
-            }
-
-            results.Add(candidate);
-        }
-
-        foreach (var item in candidates)
-        {
-            AddIfMatch(item.SerialNumber);
-            AddIfMatch(item.ItemNumber);
-            AddIfMatch(item.Description);
-            AddIfMatch(item.ResponsibleUser);
-            AddIfMatch(item.Email);
-            AddIfMatch(item.IpAddress);
-            AddIfMatch(item.UnitOrDepartment);
-            AddIfMatch(item.OrganizationalUnit);
-            AddIfMatch(item.AssignedBuildingExternalId);
-
-            if (results.Count >= limit)
-            {
-                break;
-            }
-        }
-
-        return Json(results.Take(limit).ToList());
-    }
-
-    [HttpGet("/admin/suggestions/inventory-category")]
-    public async Task<IActionResult> InventoryCategorySuggestions(string? query, int limit = 10)
-    {
-        if (string.IsNullOrWhiteSpace(query))
-        {
-            return Json(Array.Empty<string>());
-        }
-
-        var trimmed = query.Trim().ToLower();
-        var categories = await _context.ImportedInventoryItems.AsNoTracking()
-            .Where(i => i.InferredCategory != null && i.InferredCategory.ToLower().Contains(trimmed))
-            .Select(i => i.InferredCategory!)
-            .Distinct()
-            .OrderBy(c => c)
-            .Take(limit)
-            .ToListAsync();
-
-        return Json(categories);
-    }
-
-    [HttpGet("/admin/suggestions/inventory-status")]
-    public async Task<IActionResult> InventoryStatusSuggestions(string? query, int limit = 10)
-    {
-        if (string.IsNullOrWhiteSpace(query))
-        {
-            return Json(Array.Empty<string>());
-        }
-
-        var trimmed = query.Trim().ToLower();
-        var statuses = await _context.ImportedInventoryItems.AsNoTracking()
-            .Where(i => i.InferredStatus != null && i.InferredStatus.ToLower().Contains(trimmed))
-            .Select(i => i.InferredStatus!)
-            .Distinct()
-            .OrderBy(s => s)
-            .Take(limit)
-            .ToListAsync();
-
-        return Json(statuses);
-    }
-
-    [HttpGet("/admin/suggestions/locations")]
-    public async Task<IActionResult> LocationSuggestions(string? query, int limit = 10)
-    {
-        if (string.IsNullOrWhiteSpace(query))
-        {
-            return Json(Array.Empty<string>());
-        }
-
-        var trimmed = query.Trim().ToLower();
-        var candidates = await _context.SyncedBuildings.AsNoTracking()
-            .Where(b =>
-                (b.DisplayName != null && b.DisplayName.ToLower().Contains(trimmed)) ||
-                (b.ManualDisplayName != null && b.ManualDisplayName.ToLower().Contains(trimmed)) ||
-                (b.ExternalId != null && b.ExternalId.ToLower().Contains(trimmed)) ||
-                (b.Type != null && b.Type.ToLower().Contains(trimmed)) ||
-                (b.Campus != null && b.Campus.ToLower().Contains(trimmed)) ||
-                (b.ManualCampus != null && b.ManualCampus.ToLower().Contains(trimmed)) ||
-                (b.ResponsibleArea != null && b.ResponsibleArea.ToLower().Contains(trimmed)))
-            .Select(b => new
-            {
-                b.DisplayName,
-                b.ManualDisplayName,
-                b.ExternalId,
-                b.Type,
-                b.Campus,
-                b.ManualCampus,
-                b.ResponsibleArea
-            })
-            .Take(200)
-            .ToListAsync();
-
-        var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        void AddIfMatch(string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return;
-            }
-
-            var candidate = value.Trim();
-            if (!candidate.ToLower().Contains(trimmed))
-            {
-                return;
-            }
-
-            results.Add(candidate);
-        }
-
-        foreach (var item in candidates)
-        {
-            AddIfMatch(item.ManualDisplayName);
-            AddIfMatch(item.DisplayName);
-            AddIfMatch(item.ExternalId);
-            AddIfMatch(item.Type);
-            AddIfMatch(item.ManualCampus);
-            AddIfMatch(item.Campus);
-            AddIfMatch(item.ResponsibleArea);
-
-            if (results.Count >= limit)
-            {
-                break;
-            }
-        }
-
-        return Json(results.Take(limit).ToList());
-    }
-
-    [HttpGet("/admin/suggestions/campus")]
-    public async Task<IActionResult> CampusSuggestions(string? query, int limit = 10)
-    {
-        if (string.IsNullOrWhiteSpace(query))
-        {
-            return Json(Array.Empty<string>());
-        }
-
-        var trimmed = query.Trim().ToLower();
-        var campuses = await _context.SyncedBuildings.AsNoTracking()
-            .Select(b => string.IsNullOrWhiteSpace(b.ManualCampus) ? b.Campus : b.ManualCampus)
-            .Where(c => c != null && c.ToLower().Contains(trimmed))
-            .Distinct()
-            .OrderBy(c => c)
-            .Take(limit)
-            .ToListAsync();
-
-        return Json(campuses);
+        return View(await BuildEditInventoryItemViewModelAsync(item));
     }
 
     [Authorize(Roles = AppRoles.Admin)]
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [RequestSizeLimit(25_000_000)]
     public async Task<IActionResult> EditInventoryItem(
         int id,
         string? serialNumber,
@@ -1381,9 +1214,11 @@ public class AdminController : Controller
         string? assignedBuildingExternalId,
         string? assignedRoomExternalId,
         int? assignedFloor,
-        string? assignmentNotes)
+        string? assignmentNotes,
+        IFormFile? deliveryFormPdf,
+        CancellationToken cancellationToken)
     {
-        var item = await _context.ImportedInventoryItems.FindAsync(id);
+        var item = await _context.ImportedInventoryItems.FindAsync(new object?[] { id }, cancellationToken);
         if (item == null)
             return NotFound();
 
@@ -1394,6 +1229,7 @@ public class AdminController : Controller
         var previousFloor = item.AssignedFloor;
         var previousSerialNumber = item.SerialNumber;
         var previousAssignmentNotes = item.AssignmentNotes;
+        var previousPdfFileName = item.DeliveryFormPdfFileName;
 
         var normalizedCategory = string.IsNullOrWhiteSpace(inferredCategory)
             ? "other"
@@ -1412,6 +1248,12 @@ public class AdminController : Controller
             normalizedStatus = "active";
         }
 
+        var pdfValidationError = await ValidateInventoryFormPdfAsync(deliveryFormPdf, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(pdfValidationError))
+        {
+            ModelState.AddModelError(string.Empty, pdfValidationError);
+        }
+
         var resolvedBuildingExternalId = assignedBuildingExternalId?.Trim() ?? string.Empty;
         var resolvedRoomExternalId = assignedRoomExternalId?.Trim() ?? string.Empty;
         var resolvedFloor = assignedFloor;
@@ -1420,7 +1262,7 @@ public class AdminController : Controller
         {
             var room = await _context.SyncedRooms
                 .AsNoTracking()
-                .FirstOrDefaultAsync(candidate => candidate.ExternalId == resolvedRoomExternalId);
+                .FirstOrDefaultAsync(candidate => candidate.ExternalId == resolvedRoomExternalId, cancellationToken);
 
             if (room != null)
             {
@@ -1449,16 +1291,80 @@ public class AdminController : Controller
         item.AssignmentNotes = assignmentNotes?.Trim() ?? string.Empty;
         item.AssignmentUpdatedAtUtc = DateTime.UtcNow;
 
+        if (!ModelState.IsValid)
+        {
+            item.DeliveryFormPdfFileName = previousPdfFileName;
+            return View(await BuildEditInventoryItemViewModelAsync(item));
+        }
+
+        string newPdfFileName = string.Empty;
+
+        try
+        {
+            if (deliveryFormPdf is not null && deliveryFormPdf.Length > 0)
+            {
+                newPdfFileName = await SaveInventoryFormPdfUploadAsync(deliveryFormPdf, item.SerialNumber, cancellationToken);
+                item.DeliveryFormPdfFileName = newPdfFileName;
+            }
+            else
+            {
+                item.DeliveryFormPdfFileName = previousPdfFileName;
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(newPdfFileName)
+                && !string.IsNullOrWhiteSpace(previousPdfFileName)
+                && !string.Equals(previousPdfFileName, newPdfFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                DeleteInventoryFormPdfIfExists(previousPdfFileName);
+            }
+
+            await _auditLogService.LogInventoryItemChangeAsync(
+                item,
+                User.Identity?.Name ?? "sistema",
+                previousBuildingExternalId,
+                previousRoomExternalId,
+                previousFloor,
+                previousSerialNumber,
+                previousAssignmentNotes);
+            TempData["SuccessMessage"] = "Equipo actualizado correctamente.";
+            return RedirectToAction(nameof(EditInventoryItem), new { id });
+        }
+        catch (Exception ex)
+        {
+            if (!string.IsNullOrWhiteSpace(newPdfFileName))
+            {
+                DeleteInventoryFormPdfIfExists(newPdfFileName);
+            }
+
+            item.DeliveryFormPdfFileName = previousPdfFileName;
+            ModelState.AddModelError(string.Empty, $"No se pudo actualizar el equipo: {ex.Message}");
+            return View(await BuildEditInventoryItemViewModelAsync(item));
+        }
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPost("/admin/removeinventoryformpdf/{id}")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RemoveInventoryFormPdf(int id)
+    {
+        var item = await _context.ImportedInventoryItems.FindAsync(id);
+        if (item == null)
+            return NotFound();
+
+        if (string.IsNullOrWhiteSpace(item.DeliveryFormPdfFileName))
+        {
+            TempData["ErrorMessage"] = "Este equipo no tiene un formulario PDF cargado.";
+            return RedirectToAction(nameof(EditInventoryItem), new { id });
+        }
+
+        var previousPdfFileName = item.DeliveryFormPdfFileName;
+        item.DeliveryFormPdfFileName = string.Empty;
         await _context.SaveChangesAsync();
-        await _auditLogService.LogInventoryItemChangeAsync(
-            item,
-            User.Identity?.Name ?? "sistema",
-            previousBuildingExternalId,
-            previousRoomExternalId,
-            previousFloor,
-            previousSerialNumber,
-            previousAssignmentNotes);
-        TempData["SuccessMessage"] = "Equipo actualizado correctamente.";
+        DeleteInventoryFormPdfIfExists(previousPdfFileName);
+
+        TempData["SuccessMessage"] = "Formulario PDF eliminado correctamente.";
         return RedirectToAction(nameof(EditInventoryItem), new { id });
     }
 
@@ -1510,6 +1416,7 @@ public class AdminController : Controller
             ? $"S/N {item.SerialNumber}"
             : $"fila #{item.RowNumber}";
         var impactedBuildings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var deliveryFormPdfFileName = item.DeliveryFormPdfFileName;
 
         if (!string.IsNullOrWhiteSpace(item.AssignedBuildingExternalId))
         {
@@ -1538,6 +1445,7 @@ public class AdminController : Controller
 
         _context.ImportedInventoryItems.Remove(item);
         await _context.SaveChangesAsync();
+        DeleteInventoryFormPdfIfExists(deliveryFormPdfFileName);
 
         TempData["SuccessMessage"] = "Equipo eliminado correctamente.";
         return RedirectToAction(nameof(Inventory));
@@ -2407,69 +2315,227 @@ public class AdminController : Controller
         }
     }
 
-    private async Task<ImportedInventoryItem> CreateInventoryItemFromDeliveryFormAsync(EquipmentDeliveryFormViewModel form, string assignedBuildingExternalId)
+    private async Task<ImportedInventoryItem> CreateInventoryItemFromDeliveryFormAsync(
+        EquipmentDeliveryFormViewModel form,
+        string assignedBuildingExternalId,
+        byte[]? deliveryFormPdfContent,
+        CancellationToken cancellationToken)
     {
         var normalizedBuildingExternalId = assignedBuildingExternalId?.Trim() ?? string.Empty;
-        var nextRowNumber = (await _context.ImportedInventoryItems.MaxAsync(item => (int?)item.RowNumber) ?? 0) + 1;
+        var nextRowNumber = (await _context.ImportedInventoryItems.MaxAsync(item => (int?)item.RowNumber, cancellationToken) ?? 0) + 1;
         var description = BuildInventoryDescriptionFromDeliveryForm(form);
         var replacedEquipment = BuildDeliveryFormReplacedEquipment(form);
+        var storedPdfFileName = string.Empty;
 
-        var item = new ImportedInventoryItem
+        try
         {
-            RowNumber = nextRowNumber,
-            ItemNumber = $"MANUAL-{nextRowNumber:D5}",
-            SerialNumber = form.SerialNumber?.Trim() ?? string.Empty,
-            Description = description,
-            Lot = string.Empty,
-            InstallDate = form.DocumentDate?.Trim() ?? string.Empty,
-            UnitOrDepartment = form.UnitOrDepartment?.Trim() ?? string.Empty,
-            OrganizationalUnit = string.Empty,
-            ResponsibleUser = form.ResponsibleUser?.Trim() ?? string.Empty,
-            Run = form.SignedUserRut?.Trim() ?? string.Empty,
-            Email = form.Email?.Trim() ?? string.Empty,
-            JobTitle = form.JobTitle?.Trim() ?? string.Empty,
-            IpAddress = form.IpAddress?.Trim() ?? string.Empty,
-            MacAddress = form.MacAddress?.Trim() ?? string.Empty,
-            AnnexPhone = form.Annex?.Trim() ?? string.Empty,
-            ReplacedEquipment = replacedEquipment,
-            TicketMda = form.MdaTicket?.Trim() ?? string.Empty,
-            Installer = form.TechnicianName?.Trim() ?? string.Empty,
-            Observation = BuildDeliveryFormObservation(form),
-            Rut = form.SignedUserRut?.Trim() ?? string.Empty,
-            InventoryDate = form.DocumentDate?.Trim() ?? string.Empty,
-            InferredCategory = "pc",
-            InferredStatus = "active",
-            AssignedBuildingExternalId = normalizedBuildingExternalId,
-            AssignedRoomExternalId = string.Empty,
-            AssignedFloor = null,
-            AssignmentNotes = BuildDeliveryFormAssignmentNotes(form, !string.IsNullOrWhiteSpace(normalizedBuildingExternalId)),
-            AssignmentUpdatedAtUtc = string.IsNullOrWhiteSpace(normalizedBuildingExternalId) ? null : DateTime.UtcNow,
-            SourceFile = $"{ManualInventorySourceFile}:delivery-form",
-            ImportedAtUtc = DateTime.UtcNow,
-            MatchedSyncedBuildingId = null,
-            MatchedSyncedRoomId = null,
-            MatchedBuildingExternalId = string.Empty,
-            MatchedRoomExternalId = string.Empty,
-            MatchConfidence = string.Empty,
-            MatchNotes = string.Empty
-        };
+            if (deliveryFormPdfContent is { Length: > 0 })
+            {
+                storedPdfFileName = await SaveInventoryFormPdfBytesAsync(deliveryFormPdfContent, form.SerialNumber, cancellationToken);
+            }
 
-        _context.ImportedInventoryItems.Add(item);
-        await _context.SaveChangesAsync();
+            var item = new ImportedInventoryItem
+            {
+                RowNumber = nextRowNumber,
+                ItemNumber = $"MANUAL-{nextRowNumber:D5}",
+                SerialNumber = form.SerialNumber?.Trim() ?? string.Empty,
+                Description = description,
+                Lot = string.Empty,
+                InstallDate = form.DocumentDate?.Trim() ?? string.Empty,
+                UnitOrDepartment = form.UnitOrDepartment?.Trim() ?? string.Empty,
+                OrganizationalUnit = string.Empty,
+                ResponsibleUser = form.ResponsibleUser?.Trim() ?? string.Empty,
+                Run = form.SignedUserRut?.Trim() ?? string.Empty,
+                Email = form.Email?.Trim() ?? string.Empty,
+                JobTitle = form.JobTitle?.Trim() ?? string.Empty,
+                IpAddress = form.IpAddress?.Trim() ?? string.Empty,
+                MacAddress = form.MacAddress?.Trim() ?? string.Empty,
+                AnnexPhone = form.Annex?.Trim() ?? string.Empty,
+                ReplacedEquipment = replacedEquipment,
+                TicketMda = form.MdaTicket?.Trim() ?? string.Empty,
+                Installer = form.TechnicianName?.Trim() ?? string.Empty,
+                Observation = BuildDeliveryFormObservation(form),
+                Rut = form.SignedUserRut?.Trim() ?? string.Empty,
+                InventoryDate = form.DocumentDate?.Trim() ?? string.Empty,
+                InferredCategory = "pc",
+                InferredStatus = "active",
+                AssignedBuildingExternalId = normalizedBuildingExternalId,
+                AssignedRoomExternalId = string.Empty,
+                AssignedFloor = null,
+                AssignmentNotes = BuildDeliveryFormAssignmentNotes(form, !string.IsNullOrWhiteSpace(normalizedBuildingExternalId)),
+                AssignmentUpdatedAtUtc = string.IsNullOrWhiteSpace(normalizedBuildingExternalId) ? null : DateTime.UtcNow,
+                DeliveryFormPdfFileName = storedPdfFileName,
+                SourceFile = $"{ManualInventorySourceFile}:delivery-form",
+                ImportedAtUtc = DateTime.UtcNow,
+                MatchedSyncedBuildingId = null,
+                MatchedSyncedRoomId = null,
+                MatchedBuildingExternalId = string.Empty,
+                MatchedRoomExternalId = string.Empty,
+                MatchConfidence = string.Empty,
+                MatchNotes = string.Empty
+            };
 
-        if (!string.IsNullOrWhiteSpace(item.AssignedBuildingExternalId))
+            _context.ImportedInventoryItems.Add(item);
+            await _context.SaveChangesAsync(cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(item.AssignedBuildingExternalId))
+            {
+                await _auditLogService.LogInventoryItemChangeAsync(
+                    item,
+                    User.Identity?.Name ?? "sistema",
+                    string.Empty,
+                    string.Empty,
+                    null,
+                    string.Empty,
+                    string.Empty);
+            }
+
+            return item;
+        }
+        catch
         {
-            await _auditLogService.LogInventoryItemChangeAsync(
-                item,
-                User.Identity?.Name ?? "sistema",
-                string.Empty,
-                string.Empty,
-                null,
-                string.Empty,
-                string.Empty);
+            if (!string.IsNullOrWhiteSpace(storedPdfFileName))
+            {
+                DeleteInventoryFormPdfIfExists(storedPdfFileName);
+            }
+
+            throw;
+        }
+    }
+
+    private async Task<string?> ValidateInventoryFormPdfAsync(IFormFile? pdfFile, CancellationToken cancellationToken)
+    {
+        if (pdfFile is null || pdfFile.Length == 0)
+        {
+            return null;
         }
 
-        return item;
+        if (pdfFile.Length > 25_000_000)
+        {
+            return "El formulario PDF supera el limite de 25 MB.";
+        }
+
+        if (!string.Equals(Path.GetExtension(pdfFile.FileName), ".pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Solo puedes adjuntar archivos PDF para el formulario.";
+        }
+
+        await using var stream = pdfFile.OpenReadStream();
+        var header = new byte[5];
+        var bytesRead = await stream.ReadAsync(header, cancellationToken);
+        if (bytesRead < 5 || !string.Equals(Encoding.ASCII.GetString(header, 0, 5), "%PDF-", StringComparison.Ordinal))
+        {
+            return "El archivo seleccionado no parece ser un PDF valido.";
+        }
+
+        return null;
+    }
+
+    private async Task<string> SaveInventoryFormPdfUploadAsync(IFormFile pdfFile, string? serialNumber, CancellationToken cancellationToken)
+    {
+        var storedFileName = BuildInventoryFormPdfStorageFileName(serialNumber);
+        var pdfPath = GetInventoryFormPdfPath(storedFileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(pdfPath) ?? GetInventoryFormPdfDirectory());
+
+        await using var stream = System.IO.File.Create(pdfPath);
+        await pdfFile.CopyToAsync(stream, cancellationToken);
+        return storedFileName;
+    }
+
+    private async Task<string> SaveInventoryFormPdfBytesAsync(byte[] content, string? serialNumber, CancellationToken cancellationToken)
+    {
+        var storedFileName = BuildInventoryFormPdfStorageFileName(serialNumber);
+        var pdfPath = GetInventoryFormPdfPath(storedFileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(pdfPath) ?? GetInventoryFormPdfDirectory());
+        await System.IO.File.WriteAllBytesAsync(pdfPath, content, cancellationToken);
+        return storedFileName;
+    }
+
+    private string BuildInventoryFormPdfStorageFileName(string? serialNumber)
+    {
+        var sanitizedSerial = SanitizeInventoryFormFileNameSegment(serialNumber);
+        if (string.IsNullOrWhiteSpace(sanitizedSerial))
+        {
+            sanitizedSerial = "sin-serie";
+        }
+
+        return $"inventory-form-{sanitizedSerial}-{Guid.NewGuid():N}.pdf";
+    }
+
+    private static string BuildInventoryFormPdfDownloadName(ImportedInventoryItem item)
+    {
+        var serialSegment = SanitizeInventoryFormFileNameSegment(item.SerialNumber);
+        var userSegment = SanitizeInventoryFormFileNameSegment(item.ResponsibleUser);
+
+        if (string.IsNullOrWhiteSpace(serialSegment))
+        {
+            serialSegment = $"equipo-{item.Id}";
+        }
+
+        var baseName = string.IsNullOrWhiteSpace(userSegment)
+            ? $"formulario-{serialSegment}"
+            : $"formulario-{serialSegment}-{userSegment}";
+
+        return $"{baseName}.pdf";
+    }
+
+    private string GetInventoryFormPdfDirectory()
+    {
+        var databasePath = GetDatabaseFilePath();
+        var databaseDirectory = Path.GetDirectoryName(databasePath) ?? AppContext.BaseDirectory;
+        return Path.Combine(databaseDirectory, "inventory-forms");
+    }
+
+    private string GetInventoryFormPdfPath(string storedFileName)
+    {
+        return Path.Combine(GetInventoryFormPdfDirectory(), Path.GetFileName(storedFileName ?? string.Empty));
+    }
+
+    private void DeleteInventoryFormPdfIfExists(string? storedFileName)
+    {
+        if (string.IsNullOrWhiteSpace(storedFileName))
+        {
+            return;
+        }
+
+        var pdfPath = GetInventoryFormPdfPath(storedFileName);
+        if (System.IO.File.Exists(pdfPath))
+        {
+            try
+            {
+                System.IO.File.Delete(pdfPath);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private static string SanitizeInventoryFormFileNameSegment(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder();
+        var previousWasSeparator = false;
+
+        foreach (var character in value.Trim().ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                builder.Append(character);
+                previousWasSeparator = false;
+            }
+            else if (!previousWasSeparator)
+            {
+                builder.Append('-');
+                previousWasSeparator = true;
+            }
+        }
+
+        return builder.ToString().Trim('-');
     }
 
     private static string BuildInventoryDescriptionFromDeliveryForm(EquipmentDeliveryFormViewModel form)
@@ -2565,6 +2631,25 @@ public class AdminController : Controller
         return new CreateInventoryItemViewModel
         {
             Form = form,
+            Buildings = await _context.SyncedBuildings
+                .AsNoTracking()
+                .OrderBy(building => building.ManualDisplayName != "" ? building.ManualDisplayName : building.DisplayName)
+                .ToListAsync(),
+            Rooms = await _context.SyncedRooms
+                .AsNoTracking()
+                .OrderBy(room => room.ManualFloor ?? room.Floor)
+                .ThenBy(room => room.ManualName != "" ? room.ManualName : room.Name)
+                .ToListAsync(),
+            Categories = await GetInventoryCategoryOptionsAsync(),
+            Statuses = await GetInventoryStatusOptionsAsync()
+        };
+    }
+
+    private async Task<EditInventoryItemViewModel> BuildEditInventoryItemViewModelAsync(ImportedInventoryItem item)
+    {
+        return new EditInventoryItemViewModel
+        {
+            Item = item,
             Buildings = await _context.SyncedBuildings
                 .AsNoTracking()
                 .OrderBy(building => building.ManualDisplayName != "" ? building.ManualDisplayName : building.DisplayName)

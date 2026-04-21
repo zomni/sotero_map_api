@@ -180,6 +180,7 @@ public static class ExtendedSchemaInitializer
             await EnsureColumnAsync(context, "ImportedInventoryItems", "AssignedFloor", "INTEGER NULL");
             await EnsureColumnAsync(context, "ImportedInventoryItems", "AssignmentNotes", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "ImportedInventoryItems", "AssignmentUpdatedAtUtc", "TEXT NULL");
+            await EnsureColumnAsync(context, "ImportedInventoryItems", "DeliveryFormPdfFileName", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "SyncedBuildings", "ManualCampus", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "SyncedBuildings", "ManualDisplayName", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "SyncedBuildings", "ManualFloorsJson", "TEXT NOT NULL DEFAULT ''");

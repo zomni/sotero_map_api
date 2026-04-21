@@ -22,6 +22,16 @@
     <div class="alert alert-success">@successMessage</div>
 }
 
+@if (TempData["ErrorMessage"] is string errorMessage)
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+
+@if (!ViewData.ModelState.IsValid)
+{
+    <div asp-validation-summary="All" class="alert alert-danger"></div>
+}
+
 <div class="row g-4">
     <div class="col-lg-7">
         <div class="card border-0 shadow-sm">
@@ -128,7 +138,7 @@
                     </div>
                 }
 
-                <form method="post" action="/admin/editinventoryitem/@item.Id">
+                <form method="post" action="/admin/editinventoryitem/@item.Id" enctype="multipart/form-data">
                     @Html.AntiForgeryToken()
                     <fieldset @disabledAttr>
                         <div class="mb-3">
@@ -190,6 +200,31 @@
                         <div class="mb-3">
                             <label class="form-label">Notas de asignacion</label>
                             <textarea class="form-control" name="assignmentNotes" rows="4" placeholder="Ej: pendiente confirmar sala exacta">@item.AssignmentNotes</textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Formulario PDF</label>
+                            @if (!string.IsNullOrWhiteSpace(item.DeliveryFormPdfFileName))
+                            {
+                                <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+                                    <a href="/admin/inventory/@item.Id/form-pdf" target="_blank" class="btn btn-sm btn-outline-danger">
+                                        <i class="bi bi-file-earmark-pdf me-1"></i> Ver formulario actual
+                                    </a>
+                                    @if (isAdmin)
+                                    {
+                                        <button type="submit"
+                                                class="btn btn-sm btn-outline-secondary"
+                                                formaction="/admin/removeinventoryformpdf/@item.Id"
+                                                formmethod="post"
+                                                formnovalidate
+                                                onclick="return confirm('Estas seguro de quitar el formulario PDF actual?');">
+                                            <i class="bi bi-x-circle me-1"></i> Quitar formulario
+                                        </button>
+                                    }
+                                    <span class="text-muted small">Si subes otro PDF, reemplaza el actual.</span>
+                                </div>
+                            }
+                            <input type="file" class="form-control" name="deliveryFormPdf" accept=".pdf,application/pdf" />
+                            <div class="form-text">Opcional. Puedes agregarlo o reemplazarlo cuando quieras.</div>
                         </div>
                     </fieldset>
                     @if (isAdmin)
