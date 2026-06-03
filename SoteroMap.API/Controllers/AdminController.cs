@@ -2874,15 +2874,11 @@ public class AdminController : Controller
 
     private static string NormalizeFloorsCsv(string? manualFloorsCsv)
     {
-        var tokens = (manualFloorsCsv ?? string.Empty)
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(value => int.TryParse(value, out _))
-            .Select(int.Parse)
-            .Distinct()
-            .OrderBy(value => value)
-            .ToList();
+        var rawValue = manualFloorsCsv?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(rawValue))
+            return string.Empty;
 
-        return tokens.Count == 0 ? string.Empty : System.Text.Json.JsonSerializer.Serialize(tokens);
+        return BuildingFloorNormalizer.NormalizeCsv(rawValue);
     }
 
     private string ResolveFrontendMapUrl()

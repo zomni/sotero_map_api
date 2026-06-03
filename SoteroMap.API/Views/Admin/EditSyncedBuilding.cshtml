@@ -11,7 +11,7 @@
 
         try
         {
-            var floors = JsonSerializer.Deserialize<List<int>>(floorsJson) ?? [];
+            var floors = JsonSerializer.Deserialize<List<int>>(floorsJson) ?? new List<int>();
             return string.Join(", ", floors);
         }
         catch
@@ -20,9 +20,32 @@
         }
     }
 
+    static List<int> FloorsToList(string floorsJson)
+    {
+        if (string.IsNullOrWhiteSpace(floorsJson))
+            return new List<int>();
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<int>>(floorsJson) ?? new List<int>();
+        }
+        catch
+        {
+            return new List<int>();
+        }
+    }
+
     var building = Model.Building;
     var sourceFloorsCsv = FloorsToCsv(building.FloorsJson);
     var overrideFloorsCsv = FloorsToCsv(building.ManualFloorsJson);
+    var effectiveFloors = FloorsToList(building.EffectiveFloorsJson);
+    var selectedFloors = effectiveFloors.ToHashSet();
+    var floorOptions = Enumerable.Range(-1, 7)
+        .Concat(effectiveFloors)
+        .Concat(FloorsToList(building.FloorsJson))
+        .Distinct()
+        .OrderBy(floor => floor)
+        .ToList();
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -68,11 +91,26 @@
 
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Pisos</label>
-                        <input name="manualFloorsCsv"
-                               class="form-control"
-                               value="@overrideFloorsCsv"
-                               placeholder="@sourceFloorsCsv" />
-                        <div class="form-text">Ingresa pisos separados por coma, por ejemplo: 0, 1, 2.</div>
+                        <input id="manualFloorsCsv" name="manualFloorsCsv" type="hidden" value="@string.Join(", ", selectedFloors.OrderBy(floor => floor))" />
+                        <div class="d-flex flex-wrap gap-2">
+                            @foreach (var floor in floorOptions)
+                            {
+                                var checkboxId = $"floor_{floor}".Replace("-", "minus_");
+                                <input class="btn-check building-floor-checkbox"
+                                       type="checkbox"
+                                       id="@checkboxId"
+                                       value="@floor"
+                                       checked="@selectedFloors.Contains(floor)"
+                                       autocomplete="off" />
+                                <label class="btn btn-outline-primary btn-sm fw-semibold px-3" for="@checkboxId">
+                                    Piso @floor
+                                </label>
+                            }
+                        </div>
+                        <div class="form-text">Selecciona los pisos exactos del edificio. Si marcas 0, el sistema agregara 1 si falta. Para subterraneo usa -1 o -2.</div>
+                        <button type="button" id="clearFloorOverrideButton" class="btn btn-outline-secondary btn-sm mt-2">
+                            Usar pisos fuente
+                        </button>
                     </div>
 
                     <button type="submit" class="btn btn-primary">
@@ -101,6 +139,49 @@
         </div>
     </div>
 </div>
+
+<script>
+    (() => {
+        const hiddenInput = document.getElementById("manualFloorsCsv");
+        const clearButton = document.getElementById("clearFloorOverrideButton");
+        const checkboxes = Array.from(document.querySelectorAll(".building-floor-checkbox"));
+        const form = hiddenInput?.closest("form");
+        let useSourceFloors = false;
+
+        const updateHiddenFloors = () => {
+            if (!hiddenInput || useSourceFloors) {
+                if (hiddenInput) hiddenInput.value = "";
+                return;
+            }
+
+            const selectedFloors = checkboxes
+                .filter((checkbox) => checkbox.checked)
+                .map((checkbox) => Number(checkbox.value))
+                .filter((floor) => Number.isFinite(floor))
+                .sort((left, right) => left - right);
+
+            hiddenInput.value = selectedFloors.join(", ");
+        };
+
+        checkboxes.forEach((checkbox) => {
+            checkbox.addEventListener("change", () => {
+                useSourceFloors = false;
+                updateHiddenFloors();
+            });
+        });
+
+        clearButton?.addEventListener("click", () => {
+            useSourceFloors = true;
+            checkboxes.forEach((checkbox) => {
+                checkbox.checked = false;
+            });
+            updateHiddenFloors();
+        });
+
+        form?.addEventListener("submit", updateHiddenFloors);
+        updateHiddenFloors();
+    })();
+</script>
 
 <div class="card border-0 shadow-sm mt-4">
     <div class="card-body">

@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using SoteroMap.API.Services;
 
 namespace SoteroMap.API.Data;
 
@@ -187,6 +188,8 @@ public static class ExtendedSchemaInitializer
             await EnsureColumnAsync(context, "SyncedRooms", "ManualName", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "SyncedRooms", "ManualFloor", "INTEGER NULL");
 
+            await NormalizeBuildingFloorsAsync(context);
+
             await context.Database.ExecuteSqlRawAsync("""
                 UPDATE ImportedInventoryItems
                 SET SerialNumber = Lot
@@ -264,6 +267,37 @@ public static class ExtendedSchemaInitializer
         finally
         {
             await context.Database.CloseConnectionAsync();
+        }
+    }
+
+    private static async Task NormalizeBuildingFloorsAsync(AppDbContext context)
+    {
+        var buildings = await context.SyncedBuildings.ToListAsync();
+        var changed = false;
+
+        foreach (var building in buildings)
+        {
+            var normalizedFloorsJson = BuildingFloorNormalizer.NormalizeJson(building.FloorsJson);
+            if (!string.Equals(building.FloorsJson, normalizedFloorsJson, StringComparison.Ordinal))
+            {
+                building.FloorsJson = normalizedFloorsJson;
+                changed = true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(building.ManualFloorsJson))
+            {
+                var normalizedManualFloorsJson = BuildingFloorNormalizer.NormalizeJson(building.ManualFloorsJson);
+                if (!string.Equals(building.ManualFloorsJson, normalizedManualFloorsJson, StringComparison.Ordinal))
+                {
+                    building.ManualFloorsJson = normalizedManualFloorsJson;
+                    changed = true;
+                }
+            }
+        }
+
+        if (changed)
+        {
+            await context.SaveChangesAsync();
         }
     }
 

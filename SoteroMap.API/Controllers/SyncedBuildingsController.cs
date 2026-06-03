@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SoteroMap.API.Data;
+using SoteroMap.API.Services;
 
 namespace SoteroMap.API.Controllers;
 
@@ -28,7 +29,7 @@ public class SyncedBuildingsController : ControllerBase
             query = query.Where(b => (b.ManualCampus != "" ? b.ManualCampus : b.Campus) == campus);
         }
 
-        var buildings = await query
+        var buildingRows = await query
             .OrderBy(b => b.ManualDisplayName != "" ? b.ManualDisplayName : b.DisplayName)
             .Select(b => new
             {
@@ -50,6 +51,26 @@ public class SyncedBuildingsController : ControllerBase
                 b.SyncedAtUtc
             })
             .ToListAsync(cancellationToken);
+
+        var buildings = buildingRows.Select(b => new
+        {
+            b.Id,
+            b.ExternalId,
+            b.Campus,
+            b.DisplayName,
+            b.ShortName,
+            b.RealName,
+            b.Type,
+            b.ResponsibleArea,
+            b.CentroidLatitude,
+            b.CentroidLongitude,
+            b.HasInteriorMap,
+            b.HasInventory,
+            b.MappingStatus,
+            b.InventoryStatus,
+            FloorsJson = BuildingFloorNormalizer.NormalizeJson(b.FloorsJson),
+            b.SyncedAtUtc
+        });
 
         return Ok(buildings);
     }
