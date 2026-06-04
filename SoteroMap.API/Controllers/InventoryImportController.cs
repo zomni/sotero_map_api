@@ -186,4 +186,40 @@ public class InventoryImportController : ControllerBase
 
         return Ok(items);
     }
+
+    [AllowAnonymous]
+    [HttpGet("building-summary")]
+    public async Task<IActionResult> GetBuildingSummary(CancellationToken cancellationToken)
+    {
+        var rows = await _context.ImportedInventoryItems
+            .AsNoTracking()
+            .Where(item => item.AssignedBuildingExternalId != "")
+            .GroupBy(item => new
+            {
+                item.AssignedBuildingExternalId,
+                Category = item.InferredCategory == "" ? "other" : item.InferredCategory
+            })
+            .Select(group => new
+            {
+                buildingExternalId = group.Key.AssignedBuildingExternalId,
+                category = group.Key.Category,
+                count = group.Count()
+            })
+            .ToListAsync(cancellationToken);
+
+        var summaries = rows
+            .GroupBy(row => row.buildingExternalId)
+            .Select(group => new
+            {
+                buildingExternalId = group.Key,
+                total = group.Sum(row => row.count),
+                byType = group
+                    .GroupBy(row => row.category)
+                    .ToDictionary(typeGroup => typeGroup.Key, typeGroup => typeGroup.Sum(row => row.count))
+            })
+            .OrderBy(summary => summary.buildingExternalId)
+            .ToList();
+
+        return Ok(summaries);
+    }
 }
