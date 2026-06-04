@@ -17,6 +17,7 @@ public class AppDbContext : DbContext
     public DbSet<AuthUser> AuthUsers => Set<AuthUser>();
     public DbSet<AuditLogEntry> AuditLogEntries => Set<AuditLogEntry>();
     public DbSet<ManualBuilding> ManualBuildings => Set<ManualBuilding>();
+    public DbSet<BuildingGeometryOverride> BuildingGeometryOverrides => Set<BuildingGeometryOverride>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -61,6 +62,15 @@ public class AppDbContext : DbContext
             entity.Property(e => e.ResponsibleArea).HasMaxLength(200);
             entity.Property(e => e.SourceId).HasMaxLength(200);
             entity.Property(e => e.ManualFloorsJson).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<BuildingGeometryOverride>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.BuildingExternalId).IsUnique();
+            entity.Property(e => e.BuildingExternalId).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.GeometryJson).IsRequired();
+            entity.Property(e => e.UpdatedByUsername).HasMaxLength(100);
         });
 
         modelBuilder.Entity<SyncedRoom>(entity =>

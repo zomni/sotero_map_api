@@ -288,6 +288,23 @@ public static class ExtendedSchemaInitializer
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_ManualBuildings_ExternalId
                 ON ManualBuildings (ExternalId);
                 """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS BuildingGeometryOverrides (
+                    Id INTEGER NOT NULL CONSTRAINT PK_BuildingGeometryOverrides PRIMARY KEY AUTOINCREMENT,
+                    BuildingExternalId TEXT NOT NULL,
+                    GeometryJson TEXT NOT NULL,
+                    CentroidLatitude REAL NULL,
+                    CentroidLongitude REAL NULL,
+                    UpdatedByUsername TEXT NOT NULL,
+                    UpdatedAtUtc TEXT NOT NULL
+                );
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_BuildingGeometryOverrides_BuildingExternalId
+                ON BuildingGeometryOverrides (BuildingExternalId);
+                """);
         }
         finally
         {
