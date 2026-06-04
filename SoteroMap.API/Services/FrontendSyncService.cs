@@ -47,7 +47,8 @@ public class FrontendSyncService
                 {
                     ManualCampus = b.ManualCampus,
                     ManualDisplayName = b.ManualDisplayName,
-                    ManualFloorsJson = b.ManualFloorsJson
+                    ManualFloorsJson = b.ManualFloorsJson,
+                    IsDeleted = b.IsDeleted
                 },
                 StringComparer.OrdinalIgnoreCase,
                 cancellationToken);
@@ -108,6 +109,7 @@ public class FrontendSyncService
                 LastUpdate = detail?.LastUpdate ?? string.Empty,
                 FloorsJson = SerializeJson(detail?.Floors ?? building.Floors ?? []),
                 ManualFloorsJson = existingBuildingOverrides.GetValueOrDefault(building.Id)?.ManualFloorsJson ?? string.Empty,
+                IsDeleted = existingBuildingOverrides.GetValueOrDefault(building.Id)?.IsDeleted ?? false,
                 FloorSummariesJson = SerializeJson(detail?.FloorSummaries ?? []),
                 TagsJson = SerializeJson(detail?.Tags ?? []),
                 ContactsJson = SerializeJson(detail?.Contacts ?? []),
@@ -410,6 +412,7 @@ public class FrontendSyncService
         public string ManualCampus { get; set; } = string.Empty;
         public string ManualDisplayName { get; set; } = string.Empty;
         public string ManualFloorsJson { get; set; } = string.Empty;
+        public bool IsDeleted { get; set; }
     }
 
     private sealed class RoomOverrideSnapshot

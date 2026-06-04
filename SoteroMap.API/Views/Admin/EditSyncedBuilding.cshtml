@@ -46,6 +46,11 @@
         .Distinct()
         .OrderBy(floor => floor)
         .ToList();
+    var assignedInventoryUrl = Url.Action("Inventory", "Admin", new
+    {
+        assignment = "assigned",
+        buildingExternalId = building.ExternalId
+    }) ?? $"/admin/inventory?assignment=assigned&buildingExternalId={Uri.EscapeDataString(building.ExternalId)}";
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -61,6 +66,11 @@
 @if (TempData["SuccessMessage"] is string successMessage)
 {
     <div class="alert alert-success">@successMessage</div>
+}
+
+@if (TempData["ErrorMessage"] is string errorMessage)
+{
+    <div class="alert alert-danger">@errorMessage</div>
 }
 
 <div class="row g-4">
@@ -137,6 +147,38 @@
                 <div class="mb-0"><span class="text-muted">Ultima sincronizacion:</span> @building.SyncedAtUtc.ToLocalTime().ToString("g")</div>
             </div>
         </div>
+
+        <div class="card border-danger shadow-sm mt-4">
+            <div class="card-body">
+                <div class="d-flex align-items-start gap-3">
+                    <div class="rounded-circle bg-danger-subtle text-danger d-flex align-items-center justify-content-center flex-shrink-0" style="width:42px;height:42px;">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <h5 class="fw-semibold mb-1 text-danger">Eliminar edificio</h5>
+                        <p class="mb-2">
+                            Este edificio tiene <strong>@Model.AssignedInventoryCount equipo(s) asignado(s)</strong>.
+                            Al eliminarlo se ocultara del mapa y de las listas de edificios, pero los equipos asignados se conservaran.
+                        </p>
+                        <div class="d-flex flex-wrap gap-2">
+                            <a href="@assignedInventoryUrl" class="btn btn-outline-secondary fw-semibold">
+                                <i class="bi bi-list-ul me-1"></i> Ver equipos filtrados
+                            </a>
+                            <form method="post"
+                                  action="/admin/deletesyncedbuilding/@Uri.EscapeDataString(building.ExternalId)"
+                                  data-delete-building-form
+                                  data-building-name="@building.EffectiveDisplayName"
+                                  data-assigned-count="@Model.AssignedInventoryCount">
+                                @Html.AntiForgeryToken()
+                                <button type="submit" class="btn btn-danger fw-semibold">
+                                    <i class="bi bi-trash me-1"></i> Eliminar edificio
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -180,6 +222,17 @@
 
         form?.addEventListener("submit", updateHiddenFloors);
         updateHiddenFloors();
+
+        document.querySelector("[data-delete-building-form]")?.addEventListener("submit", (event) => {
+            const deleteForm = event.currentTarget;
+            const buildingName = deleteForm?.dataset?.buildingName || "este edificio";
+            const assignedCount = deleteForm?.dataset?.assignedCount || "0";
+            const message = `Eliminar ${buildingName}?\n\nTiene ${assignedCount} equipo(s) asignado(s). El edificio se ocultara del mapa y de las listas, pero los equipos se conservaran.`;
+
+            if (!window.confirm(message)) {
+                event.preventDefault();
+            }
+        });
     })();
 </script>
 

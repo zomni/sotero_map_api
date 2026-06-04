@@ -40,7 +40,7 @@ public class AdminController : Controller
 
         var model = new AdminDashboardViewModel
         {
-            SyncedBuildings = await _context.SyncedBuildings.CountAsync(),
+            SyncedBuildings = await _context.SyncedBuildings.CountAsync(building => !building.IsDeleted),
             SyncedRooms = await _context.SyncedRooms.CountAsync(),
             TotalImportedItems = await _context.ImportedInventoryItems.CountAsync(),
             AssignedItems = await _context.ImportedInventoryItems.CountAsync(i => i.AssignedBuildingExternalId != ""),
@@ -364,6 +364,7 @@ public class AdminController : Controller
         var buildings = User.IsInRole(AppRoles.Admin)
             ? await _context.SyncedBuildings
                 .AsNoTracking()
+                .Where(building => !building.IsDeleted)
                 .OrderBy(building => building.ManualDisplayName != "" ? building.ManualDisplayName : building.DisplayName)
                 .ToListAsync()
             : new List<SyncedBuilding>();
@@ -407,7 +408,7 @@ public class AdminController : Controller
         {
             var buildingExists = await _context.SyncedBuildings
                 .AsNoTracking()
-                .AnyAsync(building => building.ExternalId == normalizedBuildingExternalId);
+                .AnyAsync(building => building.ExternalId == normalizedBuildingExternalId && !building.IsDeleted);
 
             if (!buildingExists)
             {
@@ -490,7 +491,7 @@ public class AdminController : Controller
         sortBy = NormalizeLocationSortBy(sortBy);
         sortDirection = NormalizeSortDirection(sortDirection);
 
-        var buildingsQuery = _context.SyncedBuildings.AsNoTracking().AsQueryable();
+        var buildingsQuery = _context.SyncedBuildings.AsNoTracking().Where(b => !b.IsDeleted).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -624,6 +625,9 @@ public class AdminController : Controller
         var model = new EditSyncedBuildingViewModel
         {
             Building = building,
+            AssignedInventoryCount = await _context.ImportedInventoryItems
+                .AsNoTracking()
+                .CountAsync(item => item.AssignedBuildingExternalId == externalId),
             Rooms = await _context.SyncedRooms
                 .AsNoTracking()
                 .Where(r => r.BuildingExternalId == externalId)
@@ -656,11 +660,54 @@ public class AdminController : Controller
         building.ManualDisplayName = manualDisplayName?.Trim() ?? string.Empty;
         building.ManualFloorsJson = NormalizeFloorsCsv(manualFloorsCsv);
 
+        var manualBuilding = await _context.ManualBuildings.FirstOrDefaultAsync(manual => manual.ExternalId == externalId);
+        if (manualBuilding is not null)
+        {
+            manualBuilding.Campus = building.EffectiveCampus;
+            manualBuilding.DisplayName = building.EffectiveDisplayName;
+            manualBuilding.Type = building.Type;
+            manualBuilding.Notes = building.Notes;
+            manualBuilding.FloorsJson = BuildingFloorNormalizer.NormalizeJson(building.EffectiveFloorsJson);
+            manualBuilding.UpdatedAtUtc = DateTime.UtcNow;
+        }
+
         await _context.SaveChangesAsync();
         await LogBuildingOverrideAsync(building, previousCampus, previousDisplayName, previousFloors);
 
         TempData["SuccessMessage"] = "Override del edificio guardado correctamente.";
         return RedirectToAction(nameof(EditSyncedBuilding), new { externalId });
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPost("/admin/deletesyncedbuilding/{externalId}")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteSyncedBuilding(string externalId)
+    {
+        var building = await _context.SyncedBuildings.FirstOrDefaultAsync(b => b.ExternalId == externalId);
+        if (building is null)
+            return NotFound();
+
+        if (!building.IsDeleted)
+        {
+            building.IsDeleted = true;
+
+            _context.AuditLogEntries.Add(new AuditLogEntry
+            {
+                BuildingExternalId = building.ExternalId,
+                EntityType = "synced-building",
+                EntityId = building.ExternalId,
+                ActionType = "delete-building",
+                Summary = $"Edificio eliminado del mapa: {building.EffectiveDisplayName}",
+                Details = "El edificio fue marcado como eliminado desde el dashboard. Los equipos asignados se conservaron sin cambios.",
+                ChangedByUsername = User.Identity?.Name ?? "sistema",
+                CreatedAtUtc = DateTime.UtcNow
+            });
+
+            await _context.SaveChangesAsync();
+        }
+
+        TempData["SuccessMessage"] = $"El edificio {building.EffectiveDisplayName} fue eliminado del mapa. Los equipos asignados se conservaron.";
+        return RedirectToAction(nameof(Locations));
     }
 
     [Authorize(Roles = AppRoles.Admin)]
@@ -903,6 +950,7 @@ public class AdminController : Controller
             Items = items,
             Buildings = await _context.SyncedBuildings
                 .AsNoTracking()
+                .Where(b => !b.IsDeleted || b.ExternalId == buildingExternalId)
                 .OrderBy(b => b.ManualDisplayName != "" ? b.ManualDisplayName : b.DisplayName)
                 .ToListAsync(),
             Categories = availableCategories,
@@ -1093,7 +1141,7 @@ public class AdminController : Controller
         {
             var buildingExists = await _context.SyncedBuildings
                 .AsNoTracking()
-                .AnyAsync(building => building.ExternalId == assignedBuildingExternalId, cancellationToken);
+                .AnyAsync(building => building.ExternalId == assignedBuildingExternalId && !building.IsDeleted, cancellationToken);
 
             if (!buildingExists)
             {
@@ -2633,6 +2681,7 @@ public class AdminController : Controller
             Form = form,
             Buildings = await _context.SyncedBuildings
                 .AsNoTracking()
+                .Where(building => !building.IsDeleted)
                 .OrderBy(building => building.ManualDisplayName != "" ? building.ManualDisplayName : building.DisplayName)
                 .ToListAsync(),
             Rooms = await _context.SyncedRooms
@@ -2652,6 +2701,7 @@ public class AdminController : Controller
             Item = item,
             Buildings = await _context.SyncedBuildings
                 .AsNoTracking()
+                .Where(building => !building.IsDeleted || building.ExternalId == item.AssignedBuildingExternalId)
                 .OrderBy(building => building.ManualDisplayName != "" ? building.ManualDisplayName : building.DisplayName)
                 .ToListAsync(),
             Rooms = await _context.SyncedRooms

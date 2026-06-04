@@ -29,6 +29,7 @@ public class SyncedBuilding
     public string FloorSummariesJson { get; set; } = "[]";
     public string TagsJson { get; set; } = "[]";
     public string ContactsJson { get; set; } = "[]";
+    public bool IsDeleted { get; set; }
     public DateTime SyncedAtUtc { get; set; } = DateTime.UtcNow;
 
     public ICollection<SyncedRoom> Rooms { get; set; } = new List<SyncedRoom>();

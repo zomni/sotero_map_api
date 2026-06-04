@@ -16,6 +16,7 @@ public class AppDbContext : DbContext
     public DbSet<InventoryAliasRule> InventoryAliasRules => Set<InventoryAliasRule>();
     public DbSet<AuthUser> AuthUsers => Set<AuthUser>();
     public DbSet<AuditLogEntry> AuditLogEntries => Set<AuditLogEntry>();
+    public DbSet<ManualBuilding> ManualBuildings => Set<ManualBuilding>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -193,6 +194,19 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Summary).IsRequired().HasMaxLength(300);
             entity.Property(e => e.Details).HasMaxLength(1000);
             entity.Property(e => e.ChangedByUsername).IsRequired().HasMaxLength(100);
+        });
+
+        modelBuilder.Entity<ManualBuilding>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.ExternalId).IsUnique();
+            entity.Property(e => e.ExternalId).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Campus).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.DisplayName).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Type).HasMaxLength(100);
+            entity.Property(e => e.Notes).HasMaxLength(1000);
+            entity.Property(e => e.FloorsJson).HasMaxLength(500);
+            entity.Property(e => e.CreatedByUsername).HasMaxLength(100);
         });
     }
 }

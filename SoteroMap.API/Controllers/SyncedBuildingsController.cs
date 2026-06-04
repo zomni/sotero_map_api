@@ -47,6 +47,7 @@ public class SyncedBuildingsController : ControllerBase
                 b.HasInventory,
                 b.MappingStatus,
                 b.InventoryStatus,
+                b.IsDeleted,
                 FloorsJson = b.ManualFloorsJson != "" ? b.ManualFloorsJson : b.FloorsJson,
                 b.SyncedAtUtc
             })
@@ -68,6 +69,7 @@ public class SyncedBuildingsController : ControllerBase
             b.HasInventory,
             b.MappingStatus,
             b.InventoryStatus,
+            b.IsDeleted,
             FloorsJson = BuildingFloorNormalizer.NormalizeJson(b.FloorsJson),
             b.SyncedAtUtc
         });

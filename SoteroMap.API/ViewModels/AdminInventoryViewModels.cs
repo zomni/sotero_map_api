@@ -168,6 +168,7 @@ public class EditSyncedBuildingViewModel
 {
     public SyncedBuilding Building { get; set; } = null!;
     public IReadOnlyList<SyncedRoom> Rooms { get; set; } = [];
+    public int AssignedInventoryCount { get; set; }
 }
 
 public class EditSyncedRoomViewModel

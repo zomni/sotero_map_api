@@ -185,10 +185,12 @@ public static class ExtendedSchemaInitializer
             await EnsureColumnAsync(context, "SyncedBuildings", "ManualCampus", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "SyncedBuildings", "ManualDisplayName", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "SyncedBuildings", "ManualFloorsJson", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "SyncedBuildings", "IsDeleted", "INTEGER NOT NULL DEFAULT 0");
             await EnsureColumnAsync(context, "SyncedRooms", "ManualName", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "SyncedRooms", "ManualFloor", "INTEGER NULL");
 
             await NormalizeBuildingFloorsAsync(context);
+            await EnsureManualBuildingsSyncedAsync(context);
 
             await context.Database.ExecuteSqlRawAsync("""
                 UPDATE ImportedInventoryItems
@@ -263,6 +265,29 @@ public static class ExtendedSchemaInitializer
                 CREATE INDEX IF NOT EXISTS IX_AuditLogEntries_BuildingExternalId_CreatedAtUtc
                 ON AuditLogEntries (BuildingExternalId, CreatedAtUtc);
                 """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS ManualBuildings (
+                    Id INTEGER NOT NULL CONSTRAINT PK_ManualBuildings PRIMARY KEY AUTOINCREMENT,
+                    ExternalId TEXT NOT NULL,
+                    Campus TEXT NOT NULL,
+                    DisplayName TEXT NOT NULL,
+                    Type TEXT NOT NULL,
+                    Notes TEXT NOT NULL,
+                    FloorsJson TEXT NOT NULL,
+                    GeometryJson TEXT NOT NULL,
+                    CentroidLatitude REAL NULL,
+                    CentroidLongitude REAL NULL,
+                    CreatedByUsername TEXT NOT NULL,
+                    CreatedAtUtc TEXT NOT NULL,
+                    UpdatedAtUtc TEXT NOT NULL
+                );
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_ManualBuildings_ExternalId
+                ON ManualBuildings (ExternalId);
+                """);
         }
         finally
         {
@@ -299,6 +324,55 @@ public static class ExtendedSchemaInitializer
         {
             await context.SaveChangesAsync();
         }
+    }
+
+    private static async Task EnsureManualBuildingsSyncedAsync(AppDbContext context)
+    {
+        var manualBuildings = await context.ManualBuildings.AsNoTracking().ToListAsync();
+        if (manualBuildings.Count == 0)
+            return;
+
+        var existingIds = await context.SyncedBuildings
+            .Select(building => building.ExternalId)
+            .ToListAsync();
+        var existingIdSet = existingIds.ToHashSet(StringComparer.Ordinal);
+        var now = DateTime.UtcNow;
+
+        foreach (var manualBuilding in manualBuildings)
+        {
+            if (existingIdSet.Contains(manualBuilding.ExternalId))
+                continue;
+
+            context.SyncedBuildings.Add(new Models.SyncedBuilding
+            {
+                ExternalId = manualBuilding.ExternalId,
+                Campus = manualBuilding.Campus,
+                Slug = manualBuilding.ExternalId.ToLowerInvariant().Replace("_", "-"),
+                DisplayName = manualBuilding.DisplayName,
+                ShortName = manualBuilding.ExternalId,
+                RealName = manualBuilding.DisplayName,
+                Type = manualBuilding.Type,
+                ResponsibleArea = string.Empty,
+                Notes = manualBuilding.Notes,
+                SourceId = "manual",
+                CentroidLatitude = manualBuilding.CentroidLatitude,
+                CentroidLongitude = manualBuilding.CentroidLongitude,
+                HasInteriorMap = false,
+                HasInventory = false,
+                MappingStatus = "manual",
+                InventoryStatus = string.Empty,
+                OperationalNotes = string.Empty,
+                TechnicalNotes = string.Empty,
+                LastUpdate = manualBuilding.UpdatedAtUtc.ToString("O"),
+                FloorsJson = manualBuilding.FloorsJson,
+                FloorSummariesJson = "[]",
+                TagsJson = "[]",
+                ContactsJson = "[]",
+                SyncedAtUtc = now
+            });
+        }
+
+        await context.SaveChangesAsync();
     }
 
     private static async Task EnsureColumnAsync(AppDbContext context, string tableName, string columnName, string definition)

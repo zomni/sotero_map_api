@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SoteroMap.API.Infrastructure;
 using SoteroMap.API.Models;
 using SoteroMap.API.Services;
 using SoteroMap.API.ViewModels;
@@ -96,6 +97,14 @@ public class AuthController : Controller
     }
 
     [Authorize]
+    [HttpPost("/api/auth/logout")]
+    public async Task<IActionResult> ApiLogout()
+    {
+        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return Ok(new { signedOut = true });
+    }
+
+    [Authorize]
     [HttpGet]
     public async Task<IActionResult> KeepAlive()
     {
@@ -122,6 +131,24 @@ public class AuthController : Controller
     public IActionResult AccessDenied()
     {
         return View();
+    }
+
+    [HttpGet("/api/auth/session")]
+    public IActionResult Session()
+    {
+        if (User.Identity?.IsAuthenticated != true)
+        {
+            return Ok(new { isAuthenticated = false, username = "", role = "", isAdmin = false });
+        }
+
+        var role = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        return Ok(new
+        {
+            isAuthenticated = true,
+            username = User.FindFirstValue(ClaimTypes.Name) ?? string.Empty,
+            role,
+            isAdmin = string.Equals(role, AppRoles.Admin, StringComparison.OrdinalIgnoreCase)
+        });
     }
 
     private IActionResult RedirectToLocal(string? returnUrl)
