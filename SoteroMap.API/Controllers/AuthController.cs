@@ -13,6 +13,7 @@ namespace SoteroMap.API.Controllers;
 [AllowAnonymous]
 public class AuthController : Controller
 {
+    private const string RememberMeClaimType = "sotero:remember_me";
     private readonly BackendAuthService _authService;
     private readonly IConfiguration _configuration;
 
@@ -66,13 +67,16 @@ public class AuthController : Controller
         {
             new(ClaimTypes.NameIdentifier, result.User.Id.ToString()),
             new(ClaimTypes.Name, result.User.Username),
-            new(ClaimTypes.Role, result.User.Role)
+            new(ClaimTypes.Role, result.User.Role),
+            new(RememberMeClaimType, model.RememberMe ? "true" : "false")
         };
 
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
 
-        var sessionMinutes = _configuration.GetValue<double?>("SessionSettings:IdleMinutes") ?? 15;
+        var expiresUtc = model.RememberMe
+            ? DateTimeOffset.UtcNow.AddDays(_configuration.GetValue<double?>("SessionSettings:RememberMeDays") ?? 30)
+            : DateTimeOffset.UtcNow.AddMinutes(_configuration.GetValue<double?>("SessionSettings:IdleMinutes") ?? 15);
 
         await HttpContext.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
@@ -81,7 +85,7 @@ public class AuthController : Controller
             {
                 IsPersistent = model.RememberMe,
                 AllowRefresh = true,
-                ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(sessionMinutes)
+                ExpiresUtc = expiresUtc
             });
 
         return RedirectToLocal(model.ReturnUrl);
@@ -114,10 +118,16 @@ public class AuthController : Controller
             return Unauthorized();
         }
 
-        var sessionMinutes = _configuration.GetValue<double?>("SessionSettings:IdleMinutes") ?? 15;
+        var rememberMe = string.Equals(
+            authResult.Principal.FindFirstValue(RememberMeClaimType),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
         var properties = authResult.Properties ?? new AuthenticationProperties();
         properties.AllowRefresh = true;
-        properties.ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(sessionMinutes);
+        properties.IsPersistent = rememberMe;
+        properties.ExpiresUtc = rememberMe
+            ? DateTimeOffset.UtcNow.AddDays(_configuration.GetValue<double?>("SessionSettings:RememberMeDays") ?? 30)
+            : DateTimeOffset.UtcNow.AddMinutes(_configuration.GetValue<double?>("SessionSettings:IdleMinutes") ?? 15);
 
         await HttpContext.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
@@ -142,12 +152,18 @@ public class AuthController : Controller
         }
 
         var role = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        var rememberMe = string.Equals(
+            User.FindFirstValue(RememberMeClaimType),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+
         return Ok(new
         {
             isAuthenticated = true,
             username = User.FindFirstValue(ClaimTypes.Name) ?? string.Empty,
             role,
-            isAdmin = string.Equals(role, AppRoles.Admin, StringComparison.OrdinalIgnoreCase)
+            isAdmin = string.Equals(role, AppRoles.Admin, StringComparison.OrdinalIgnoreCase),
+            rememberMe
         });
     }
 
@@ -158,6 +174,6 @@ public class AuthController : Controller
             return Redirect(returnUrl);
         }
 
-        return RedirectToAction("Index", "Admin");
+        return Redirect("/dashboard");
     }
 }

@@ -31,6 +31,26 @@ builder.Services
         options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.SlidingExpiration = true;
         options.ExpireTimeSpan = TimeSpan.FromMinutes(sessionMinutes);
+        options.Events = new CookieAuthenticationEvents
+        {
+            OnRedirectToLogin = context =>
+            {
+                var publicPath = context.Request.Headers.TryGetValue("X-Sotero-Public-Path", out var value)
+                    ? value.ToString()
+                    : string.Empty;
+
+                if (!string.IsNullOrWhiteSpace(publicPath))
+                {
+                    var returnUrl = $"{publicPath}{context.Request.QueryString}";
+                    var loginUrl = $"{options.LoginPath}?ReturnUrl={Uri.EscapeDataString(returnUrl)}";
+                    context.Response.Redirect(loginUrl);
+                    return Task.CompletedTask;
+                }
+
+                context.Response.Redirect(context.RedirectUri);
+                return Task.CompletedTask;
+            }
+        };
     });
 builder.Services.AddAuthorization();
 
@@ -91,11 +111,33 @@ using (var scope = app.Services.CreateScope())
 app.UseCors("FrontendPolicy");
 app.Use(async (context, next) =>
 {
+    if (context.Request.Path.StartsWithSegments("/dashboard", out var dashboardRemaining))
+    {
+        context.Request.Headers["X-Sotero-Public-Path"] = context.Request.Path.ToString();
+        context.Request.Path = new PathString($"/admin{dashboardRemaining}");
+        await next();
+        return;
+    }
+
+    if (
+        HttpMethods.IsGet(context.Request.Method) &&
+        context.Request.Path.StartsWithSegments("/admin", out var adminRemaining))
+    {
+        var target = $"/dashboard{adminRemaining}{context.Request.QueryString}";
+        context.Response.Redirect(target, permanent: false);
+        return;
+    }
+
+    await next();
+});
+app.Use(async (context, next) =>
+{
     context.Response.OnStarting(() =>
     {
         var path = context.Request.Path;
         var disableCache = path == "/"
             || path.StartsWithSegments("/admin", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWithSegments("/dashboard", StringComparison.OrdinalIgnoreCase)
             || path.StartsWithSegments("/Auth", StringComparison.OrdinalIgnoreCase)
             || path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase);
 

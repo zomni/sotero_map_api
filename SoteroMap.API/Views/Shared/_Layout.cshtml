@@ -13,6 +13,7 @@
     var warningMinutes = double.TryParse(warningMinutesRaw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedWarningMinutes)
         ? parsedWarningMinutes
         : 14d;
+    var rememberMeSession = User.HasClaim("sotero:remember_me", "true");
 }
 <!DOCTYPE html>
 <html lang="es">
@@ -72,7 +73,7 @@
     <div class="container-fluid admin-container">
         <div class="row g-0 admin-shell">
             <nav class="sidebar admin-sidebar py-3 px-3">
-                <a class="navbar-brand sidebar-brand d-block mb-4 fs-5" href="/admin">
+                <a class="navbar-brand sidebar-brand d-block mb-4 fs-5" href="/dashboard">
                     <i class="bi bi-map-fill me-2"></i>SoteroMap
                 </a>
                 <div class="bg-dark bg-opacity-25 rounded-3 p-3 mb-4 text-white">
@@ -82,27 +83,27 @@
                 </div>
                 <ul class="nav flex-column gap-1">
                     <li class="nav-item">
-                        <a class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString() == "Index" ? "active" : "")" href="/admin">
+                        <a class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString() == "Index" ? "active" : "")" href="/dashboard">
                             <i class="bi bi-speedometer2 me-2"></i>Dashboard
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString()?.Contains("Location") == true ? "active" : "")" href="/admin/locations">
+                        <a class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString()?.Contains("Location") == true ? "active" : "")" href="/dashboard/locations">
                             <i class="bi bi-geo-alt me-2"></i>Ubicaciones
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link @((ViewContext.RouteData.Values["action"]?.ToString()?.Contains("Inventory") == true || ViewContext.RouteData.Values["action"]?.ToString()?.Contains("Equipment") == true) ? "active" : "")" href="/admin/inventory">
+                        <a class="nav-link @((ViewContext.RouteData.Values["action"]?.ToString()?.Contains("Inventory") == true || ViewContext.RouteData.Values["action"]?.ToString()?.Contains("Equipment") == true) ? "active" : "")" href="/dashboard/inventory">
                             <i class="bi bi-pc-display me-2"></i>Inventario
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString() == "Activity" ? "active" : "")" href="/admin/activity">
+                        <a class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString() == "Activity" ? "active" : "")" href="/dashboard/activity">
                             <i class="bi bi-clock-history me-2"></i>Actividad
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString()?.Contains("DeliveryForm") == true ? "active" : "")" href="/admin/delivery-form">
+                        <a class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString()?.Contains("DeliveryForm") == true ? "active" : "")" href="/dashboard/delivery-form">
                             <i class="bi bi-file-earmark-text me-2"></i>Formulario
                         </a>
                     </li>
@@ -152,6 +153,11 @@
     <script>
     window.addEventListener("DOMContentLoaded", () => {
         if (window.location.pathname.startsWith("/Auth")) {
+            return;
+        }
+
+        const SESSION_TIMEOUT_ENABLED = @((!rememberMeSession).ToString().ToLowerInvariant());
+        if (!SESSION_TIMEOUT_ENABLED) {
             return;
         }
 
