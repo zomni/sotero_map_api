@@ -217,6 +217,18 @@ public class ManualBuildingsController : ControllerBase
             _context.SyncedBuildings.Remove(syncedBuilding);
         }
 
+        _context.AuditLogEntries.Add(new AuditLogEntry
+        {
+            BuildingExternalId = normalizedExternalId,
+            EntityType = "manual-building",
+            EntityId = normalizedExternalId,
+            ActionType = "delete-building",
+            Summary = $"Edificio manual eliminado del mapa: {manualBuilding.DisplayName}",
+            Details = "El edificio manual fue eliminado desde el mapa.",
+            ChangedByUsername = User.FindFirstValue(ClaimTypes.Name) ?? "sistema",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
         await _context.SaveChangesAsync(cancellationToken);
         return NoContent();
     }

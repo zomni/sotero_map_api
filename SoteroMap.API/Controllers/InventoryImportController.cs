@@ -45,6 +45,11 @@ public class InventoryImportController : ControllerBase
             cancellationToken);
 
         var pendingItems = totalItems - assignedItems;
+        var totalBuildings = await _context.SyncedBuildings.CountAsync(cancellationToken);
+        var activeBuildings = await _context.SyncedBuildings.CountAsync(
+            building => !building.IsDeleted,
+            cancellationToken);
+        var deletedBuildings = totalBuildings - activeBuildings;
 
         var latestImportedAtUtc = await _context.ImportedInventoryItems
             .AsNoTracking()
@@ -65,28 +70,43 @@ public class InventoryImportController : ControllerBase
             .Select(x => (DateTime?)x.CreatedAtUtc)
             .FirstOrDefaultAsync(cancellationToken);
 
+        var latestBuildingChangeUtc = await _context.SyncedBuildings
+            .AsNoTracking()
+            .OrderByDescending(x => x.SyncedAtUtc)
+            .Select(x => (DateTime?)x.SyncedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
         var latestChangeUtc = new[]
         {
             latestImportedAtUtc,
             latestAssignmentUpdateUtc,
-            latestAuditChangeUtc
+            latestAuditChangeUtc,
+            latestBuildingChangeUtc
         }
         .Where(value => value.HasValue)
         .Select(value => value!.Value)
         .DefaultIfEmpty(DateTime.MinValue)
         .Max();
 
+        var revision = latestChangeUtc == DateTime.MinValue
+            ? $"empty|items:{totalItems}|assigned:{assignedItems}|buildings:{activeBuildings}|deleted:{deletedBuildings}"
+            : $"{latestChangeUtc:O}|items:{totalItems}|assigned:{assignedItems}|buildings:{activeBuildings}|deleted:{deletedBuildings}";
+
         return Ok(new
         {
             totalItems,
             assignedItems,
             pendingItems,
+            totalBuildings,
+            activeBuildings,
+            deletedBuildings,
             backendVersion,
             latestImportedAtUtc,
             latestAssignmentUpdateUtc,
             latestAuditChangeUtc,
+            latestBuildingChangeUtc,
             latestChangeUtc = latestChangeUtc == DateTime.MinValue ? (DateTime?)null : latestChangeUtc,
-            revision = latestChangeUtc == DateTime.MinValue ? "empty" : latestChangeUtc.ToString("O")
+            revision
         });
     }
 

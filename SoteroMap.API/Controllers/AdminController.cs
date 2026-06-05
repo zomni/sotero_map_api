@@ -689,7 +689,9 @@ public class AdminController : Controller
 
         if (!building.IsDeleted)
         {
+            var now = DateTime.UtcNow;
             building.IsDeleted = true;
+            building.SyncedAtUtc = now;
 
             _context.AuditLogEntries.Add(new AuditLogEntry
             {
@@ -700,7 +702,7 @@ public class AdminController : Controller
                 Summary = $"Edificio eliminado del mapa: {building.EffectiveDisplayName}",
                 Details = "El edificio fue marcado como eliminado desde el dashboard. Los equipos asignados se conservaron sin cambios.",
                 ChangedByUsername = User.Identity?.Name ?? "sistema",
-                CreatedAtUtc = DateTime.UtcNow
+                CreatedAtUtc = now
             });
 
             await _context.SaveChangesAsync();
