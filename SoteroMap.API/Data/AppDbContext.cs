@@ -18,6 +18,8 @@ public class AppDbContext : DbContext
     public DbSet<AuditLogEntry> AuditLogEntries => Set<AuditLogEntry>();
     public DbSet<ManualBuilding> ManualBuildings => Set<ManualBuilding>();
     public DbSet<BuildingGeometryOverride> BuildingGeometryOverrides => Set<BuildingGeometryOverride>();
+    public DbSet<WalkingRouteNode> WalkingRouteNodes => Set<WalkingRouteNode>();
+    public DbSet<WalkingRouteEdge> WalkingRouteEdges => Set<WalkingRouteEdge>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -71,6 +73,32 @@ public class AppDbContext : DbContext
             entity.Property(e => e.BuildingExternalId).IsRequired().HasMaxLength(100);
             entity.Property(e => e.GeometryJson).IsRequired();
             entity.Property(e => e.UpdatedByUsername).HasMaxLength(100);
+        });
+
+        modelBuilder.Entity<WalkingRouteNode>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.ExternalId).IsUnique();
+            entity.Property(e => e.ExternalId).IsRequired().HasMaxLength(120);
+            entity.Property(e => e.Campus).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Notes).HasMaxLength(500);
+            entity.Property(e => e.CreatedByUsername).HasMaxLength(100);
+        });
+
+        modelBuilder.Entity<WalkingRouteEdge>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.ExternalId).IsUnique();
+            entity.HasIndex(e => e.Campus);
+            entity.HasIndex(e => e.FromNodeExternalId);
+            entity.HasIndex(e => e.ToNodeExternalId);
+            entity.Property(e => e.ExternalId).IsRequired().HasMaxLength(120);
+            entity.Property(e => e.Campus).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.FromNodeExternalId).IsRequired().HasMaxLength(120);
+            entity.Property(e => e.ToNodeExternalId).IsRequired().HasMaxLength(120);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(30);
+            entity.Property(e => e.Notes).HasMaxLength(500);
+            entity.Property(e => e.CreatedByUsername).HasMaxLength(100);
         });
 
         modelBuilder.Entity<SyncedRoom>(entity =>

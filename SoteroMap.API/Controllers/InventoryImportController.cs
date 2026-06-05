@@ -50,6 +50,7 @@ public class InventoryImportController : ControllerBase
             building => !building.IsDeleted,
             cancellationToken);
         var deletedBuildings = totalBuildings - activeBuildings;
+        var totalWalkingRouteEdges = await _context.WalkingRouteEdges.CountAsync(cancellationToken);
 
         var latestImportedAtUtc = await _context.ImportedInventoryItems
             .AsNoTracking()
@@ -76,12 +77,19 @@ public class InventoryImportController : ControllerBase
             .Select(x => (DateTime?)x.SyncedAtUtc)
             .FirstOrDefaultAsync(cancellationToken);
 
+        var latestWalkingRouteChangeUtc = await _context.WalkingRouteEdges
+            .AsNoTracking()
+            .OrderByDescending(x => x.UpdatedAtUtc)
+            .Select(x => (DateTime?)x.UpdatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
         var latestChangeUtc = new[]
         {
             latestImportedAtUtc,
             latestAssignmentUpdateUtc,
             latestAuditChangeUtc,
-            latestBuildingChangeUtc
+            latestBuildingChangeUtc,
+            latestWalkingRouteChangeUtc
         }
         .Where(value => value.HasValue)
         .Select(value => value!.Value)
@@ -89,8 +97,8 @@ public class InventoryImportController : ControllerBase
         .Max();
 
         var revision = latestChangeUtc == DateTime.MinValue
-            ? $"empty|items:{totalItems}|assigned:{assignedItems}|buildings:{activeBuildings}|deleted:{deletedBuildings}"
-            : $"{latestChangeUtc:O}|items:{totalItems}|assigned:{assignedItems}|buildings:{activeBuildings}|deleted:{deletedBuildings}";
+            ? $"empty|items:{totalItems}|assigned:{assignedItems}|buildings:{activeBuildings}|deleted:{deletedBuildings}|routes:{totalWalkingRouteEdges}"
+            : $"{latestChangeUtc:O}|items:{totalItems}|assigned:{assignedItems}|buildings:{activeBuildings}|deleted:{deletedBuildings}|routes:{totalWalkingRouteEdges}";
 
         return Ok(new
         {
@@ -100,11 +108,13 @@ public class InventoryImportController : ControllerBase
             totalBuildings,
             activeBuildings,
             deletedBuildings,
+            totalWalkingRouteEdges,
             backendVersion,
             latestImportedAtUtc,
             latestAssignmentUpdateUtc,
             latestAuditChangeUtc,
             latestBuildingChangeUtc,
+            latestWalkingRouteChangeUtc,
             latestChangeUtc = latestChangeUtc == DateTime.MinValue ? (DateTime?)null : latestChangeUtc,
             revision
         });

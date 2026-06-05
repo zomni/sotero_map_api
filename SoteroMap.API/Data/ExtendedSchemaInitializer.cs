@@ -305,6 +305,61 @@ public static class ExtendedSchemaInitializer
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_BuildingGeometryOverrides_BuildingExternalId
                 ON BuildingGeometryOverrides (BuildingExternalId);
                 """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS WalkingRouteNodes (
+                    Id INTEGER NOT NULL CONSTRAINT PK_WalkingRouteNodes PRIMARY KEY AUTOINCREMENT,
+                    ExternalId TEXT NOT NULL,
+                    Campus TEXT NOT NULL,
+                    Latitude REAL NOT NULL,
+                    Longitude REAL NOT NULL,
+                    Notes TEXT NOT NULL,
+                    CreatedByUsername TEXT NOT NULL,
+                    CreatedAtUtc TEXT NOT NULL,
+                    UpdatedAtUtc TEXT NOT NULL
+                );
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_WalkingRouteNodes_ExternalId
+                ON WalkingRouteNodes (ExternalId);
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS WalkingRouteEdges (
+                    Id INTEGER NOT NULL CONSTRAINT PK_WalkingRouteEdges PRIMARY KEY AUTOINCREMENT,
+                    ExternalId TEXT NOT NULL,
+                    Campus TEXT NOT NULL,
+                    FromNodeExternalId TEXT NOT NULL,
+                    ToNodeExternalId TEXT NOT NULL,
+                    DistanceMeters REAL NOT NULL,
+                    Status TEXT NOT NULL,
+                    Notes TEXT NOT NULL,
+                    CreatedByUsername TEXT NOT NULL,
+                    CreatedAtUtc TEXT NOT NULL,
+                    UpdatedAtUtc TEXT NOT NULL
+                );
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_WalkingRouteEdges_ExternalId
+                ON WalkingRouteEdges (ExternalId);
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_WalkingRouteEdges_Campus
+                ON WalkingRouteEdges (Campus);
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_WalkingRouteEdges_FromNodeExternalId
+                ON WalkingRouteEdges (FromNodeExternalId);
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_WalkingRouteEdges_ToNodeExternalId
+                ON WalkingRouteEdges (ToNodeExternalId);
+                """);
         }
         finally
         {
