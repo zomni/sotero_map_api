@@ -94,13 +94,18 @@ El dashboard crea respaldos automaticos antes de reemplazar la base actual.
 El `docker-compose.yml` permite personalizar rutas y URLs:
 
 - `FRONTEND_APP_URL`: URL del mapa que se muestra en el dashboard.
-- `FRONTEND_DATA_HOST_PATH`: carpeta local con data exportada o compartida del frontend.
+- `FRONTEND_DATA_HOST_PATH`: carpeta local `src/data` del frontend donde se guardan los respaldos estaticos del mapa.
 - `IMPORT_HOST_PATH`: carpeta local para archivos de importacion.
 
 Si no se definen, se usan:
 
-- `./frontend-data`
+- `../sotero_map/src/data`
 - `./import`
+
+El endpoint admin `POST /api/frontend-static-backup/save` actualiza directamente:
+
+- `walking_routes_backup.json`
+- `sotero_buildings_backend_backup.json`
 
 ## Sesiones
 
