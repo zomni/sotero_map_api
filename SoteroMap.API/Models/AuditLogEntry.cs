@@ -7,8 +7,15 @@ public class AuditLogEntry
     public string EntityType { get; set; } = string.Empty;
     public string EntityId { get; set; } = string.Empty;
     public string ActionType { get; set; } = string.Empty;
+    public string Resource { get; set; } = string.Empty;
+    public string Result { get; set; } = string.Empty;
+    public string Severity { get; set; } = string.Empty;
     public string Summary { get; set; } = string.Empty;
     public string Details { get; set; } = string.Empty;
+    public string PreviousValue { get; set; } = string.Empty;
+    public string NewValue { get; set; } = string.Empty;
     public string ChangedByUsername { get; set; } = string.Empty;
+    public string ClientIp { get; set; } = string.Empty;
+    public string UserAgent { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }

@@ -2,12 +2,13 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SoteroMap.API.Data;
+using SoteroMap.API.Models;
 
 namespace SoteroMap.API.Controllers;
 
 [ApiController]
 [Route("api/activity-log")]
-[Authorize]
+[Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Auditor}")]
 public class AuditLogController : ControllerBase
 {
     private readonly AppDbContext _context;
@@ -43,9 +44,16 @@ public class AuditLogController : ControllerBase
                 x.EntityType,
                 x.EntityId,
                 x.ActionType,
+                x.Resource,
+                x.Result,
+                x.Severity,
                 x.Summary,
                 x.Details,
+                x.PreviousValue,
+                x.NewValue,
                 x.ChangedByUsername,
+                x.ClientIp,
+                x.UserAgent,
                 x.CreatedAtUtc
             })
             .ToListAsync(cancellationToken);

@@ -18,16 +18,25 @@ public class AdminController : Controller
 {
     private readonly AppDbContext _context;
     private readonly AuditLogService _auditLogService;
+    private readonly DatabaseBackupService _databaseBackupService;
     private readonly IConfiguration _configuration;
     private readonly IMemoryCache _memoryCache;
     private readonly EquipmentDeliveryDocumentService _equipmentDeliveryDocumentService;
     private const string ManualInventorySourceFile = "manual-admin";
     private const string DeliveryFormPreviewCachePrefix = "delivery-form-preview:";
+    private const string DefaultPdfAllowedMimeTypes = "application/pdf,application/x-pdf";
 
-    public AdminController(AppDbContext context, AuditLogService auditLogService, IConfiguration configuration, IMemoryCache memoryCache, EquipmentDeliveryDocumentService equipmentDeliveryDocumentService)
+    public AdminController(
+        AppDbContext context,
+        AuditLogService auditLogService,
+        DatabaseBackupService databaseBackupService,
+        IConfiguration configuration,
+        IMemoryCache memoryCache,
+        EquipmentDeliveryDocumentService equipmentDeliveryDocumentService)
     {
         _context = context;
         _auditLogService = auditLogService;
+        _databaseBackupService = databaseBackupService;
         _configuration = configuration;
         _memoryCache = memoryCache;
         _equipmentDeliveryDocumentService = equipmentDeliveryDocumentService;
@@ -98,10 +107,17 @@ public class AdminController : Controller
                 {
                     Id = x.Id,
                     BuildingExternalId = x.BuildingExternalId,
+                    Resource = x.Resource,
+                    Result = x.Result,
+                    Severity = x.Severity,
                     Summary = x.Summary,
                     Details = x.Details,
+                    PreviousValue = x.PreviousValue,
+                    NewValue = x.NewValue,
                     ChangedByUsername = x.ChangedByUsername,
                     ActionType = x.ActionType,
+                    ClientIp = x.ClientIp,
+                    UserAgent = x.UserAgent,
                     CreatedAtUtc = x.CreatedAtUtc
                 })
                 .ToListAsync()
@@ -110,20 +126,191 @@ public class AdminController : Controller
         return View(model);
     }
 
+    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Auditor}")]
+    [HttpGet("/admin/compliance")]
+    public async Task<IActionResult> Compliance()
+    {
+        var databaseFileInfo = GetDatabaseFileInfo();
+        var nowUtc = DateTime.UtcNow;
+        var recentWindow = nowUtc.AddDays(-7);
+        var recentDayWindow = nowUtc.AddDays(-2);
+
+        var databaseConnected = await _context.Database.CanConnectAsync();
+        var totalUsers = await _context.AuthUsers.CountAsync();
+        var activeUsers = await _context.AuthUsers.CountAsync(user => user.IsActive);
+        var adminUsers = await _context.AuthUsers.CountAsync(user => user.IsActive && user.Role == AppRoles.Admin);
+        var adminUsersWithMfa = await _context.AuthUsers.CountAsync(user => user.IsActive && user.Role == AppRoles.Admin && user.MfaEnabled && user.MfaSecretProtected != "");
+        var failedLoginsLast7Days = await _context.AuditLogEntries.CountAsync(entry => entry.ActionType == "login-failed" && entry.CreatedAtUtc >= recentWindow);
+        var criticalEventsLast7Days = await _context.AuditLogEntries.CountAsync(entry => entry.Severity == "critical" && entry.CreatedAtUtc >= recentWindow);
+        var recentAccessEventsCount = await _context.AuditLogEntries.CountAsync(entry =>
+            (entry.ActionType == "login-success" || entry.ActionType == "login-failed" || entry.ActionType == "logout" || entry.ActionType == "access-denied" || entry.ActionType == "mfa-verified") &&
+            entry.CreatedAtUtc >= recentWindow);
+
+        var latestBackups = await _databaseBackupService.GetLatestBackupsAsync(10);
+        var latestSuccessfulBackup = latestBackups.FirstOrDefault(backup => backup.Status == "success");
+        var backupEnabled = _databaseBackupService.IsEnabled();
+        var backupHealthy = backupEnabled && latestSuccessfulBackup is not null && latestSuccessfulBackup.CreatedAtUtc >= recentDayWindow;
+
+        var isDevelopment = string.Equals(
+            System.Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+            "Development",
+            StringComparison.OrdinalIgnoreCase);
+        var forceHttps = _configuration.GetSection("SecuritySettings").GetValue<bool?>("ForceHttps") ?? !isDevelopment;
+        var swaggerInProduction = _configuration.GetSection("SecuritySettings").GetValue<bool?>("EnableSwaggerInProduction") ?? false;
+        var httpsActive = string.Equals(Request.Scheme, "https", StringComparison.OrdinalIgnoreCase);
+        var swaggerRestricted = !swaggerInProduction || User.IsInRole(AppRoles.Admin);
+
+        var ldapUseSsl = _configuration.GetSection("LdapSettings").GetValue<bool?>("UseSsl") ?? true;
+        var ldapPort = _configuration.GetSection("LdapSettings").GetValue<int?>("Port") ?? 636;
+        var ldapsConfigured = ldapUseSsl && ldapPort == 636;
+
+        var dataIntegrityHealthy =
+            databaseConnected &&
+            totalUsers > 0 &&
+            adminUsers > 0 &&
+            adminUsersWithMfa == adminUsers &&
+            criticalEventsLast7Days == 0;
+
+        var score = 0;
+        score += databaseConnected ? 1 : 0;
+        score += adminUsers > 0 ? 1 : 0;
+        score += adminUsersWithMfa == adminUsers ? 1 : 0;
+        score += backupHealthy ? 1 : 0;
+        score += ldapsConfigured ? 1 : 0;
+        score += swaggerRestricted ? 1 : 0;
+        score += (forceHttps ? 1 : 0);
+        score += criticalEventsLast7Days == 0 ? 1 : 0;
+
+        var overallStatus = score >= 7 ? "OK" : score >= 5 ? "Advertencia" : "Critico";
+        var overallLabel = overallStatus;
+
+        var checks = new List<ComplianceCheckViewModel>
+        {
+            new() { Title = "Base de datos", Detail = databaseConnected ? "Conexion OK" : "No responde", Status = databaseConnected ? "ok" : "critical", IconClass = "bi bi-database" },
+            new() { Title = "HTTPS", Detail = forceHttps ? (httpsActive ? "Activo en la solicitud actual" : "Forzado en configuracion") : "No forzado", Status = forceHttps ? "ok" : "warning", IconClass = "bi bi-shield-lock" },
+            new() { Title = "Swagger", Detail = swaggerInProduction ? "Protegido en produccion" : "Solo disponible segun entorno", Status = swaggerRestricted ? "ok" : "warning", IconClass = "bi bi-braces" },
+            new() { Title = "MFA admin", Detail = adminUsers == 0 ? "Sin usuarios admin" : $"{adminUsersWithMfa}/{adminUsers} administradores con MFA", Status = adminUsers == 0 || adminUsersWithMfa == adminUsers ? "ok" : "critical", IconClass = "bi bi-patch-check" },
+            new() { Title = "Backup", Detail = backupEnabled ? (backupHealthy ? "Respaldo reciente disponible" : "Habilitado, pero sin respaldo reciente") : "Deshabilitado", Status = backupEnabled && backupHealthy ? "ok" : "warning", IconClass = "bi bi-hdd-stack" },
+            new() { Title = "LDAPS", Detail = ldapsConfigured ? "Configurado sobre 636" : "Revisar configuracion", Status = ldapsConfigured ? "ok" : "warning", IconClass = "bi bi-plug" },
+            new() { Title = "Integridad", Detail = dataIntegrityHealthy ? "Sin alertas criticas" : "Hay elementos por revisar", Status = dataIntegrityHealthy ? "ok" : "critical", IconClass = "bi bi-heart-pulse" }
+        };
+
+        var summaryCards = new List<ComplianceSummaryCardViewModel>
+        {
+            new() { Title = "Usuarios activos", Value = activeUsers.ToString(), Detail = $"de {totalUsers} usuarios", IconClass = "bi bi-people", Tone = "primary" },
+            new() { Title = "Admins", Value = adminUsers.ToString(), Detail = $"{adminUsersWithMfa} con MFA", IconClass = "bi bi-person-badge", Tone = "info" },
+            new() { Title = "Errores criticos", Value = criticalEventsLast7Days.ToString(), Detail = "ultimos 7 dias", IconClass = "bi bi-exclamation-triangle", Tone = "danger" },
+            new() { Title = "Fallos login", Value = failedLoginsLast7Days.ToString(), Detail = "ultimos 7 dias", IconClass = "bi bi-shield-exclamation", Tone = "warning" }
+        };
+
+        var recentBackups = latestBackups
+            .Select(backup => new ComplianceEventViewModel
+            {
+                Title = Path.GetFileName(backup.FilePath),
+                Detail = backup.Status == "success"
+                    ? $"Tamano {backup.SizeBytes / 1024.0 / 1024.0:F2} MB | Hash {backup.Hash[..Math.Min(10, backup.Hash.Length)]}"
+                    : backup.ErrorMessage,
+                Badge = backup.Status,
+                BadgeClass = backup.Status == "success" ? "bg-success" : backup.Status == "expired" ? "bg-secondary" : "bg-danger",
+                TimeLabel = backup.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+            })
+            .ToList();
+
+        var recentAccesses = await _context.AuditLogEntries
+            .AsNoTracking()
+            .Where(entry => (entry.ActionType == "login-success" || entry.ActionType == "login-failed" || entry.ActionType == "logout" || entry.ActionType == "access-denied" || entry.ActionType == "mfa-verified") && entry.CreatedAtUtc >= recentWindow)
+            .OrderByDescending(entry => entry.CreatedAtUtc)
+            .Take(10)
+            .Select(entry => new ComplianceEventViewModel
+            {
+                Title = $"{entry.ActionType} - {entry.ChangedByUsername}",
+                Detail = $"{entry.Resource} | {entry.Result} | {entry.ClientIp}",
+                Badge = entry.Severity,
+                BadgeClass = entry.Severity == "critical" ? "bg-danger" : entry.Severity == "warning" ? "bg-warning text-dark" : "bg-info text-dark",
+                TimeLabel = entry.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+            })
+            .ToListAsync();
+
+        var criticalEvents = await _context.AuditLogEntries
+            .AsNoTracking()
+            .Where(entry => entry.Severity == "critical" && entry.CreatedAtUtc >= recentWindow)
+            .OrderByDescending(entry => entry.CreatedAtUtc)
+            .Take(10)
+            .Select(entry => new ComplianceEventViewModel
+            {
+                Title = $"{entry.ActionType} - {entry.ChangedByUsername}",
+                Detail = $"{entry.Summary} | {entry.Details}",
+                Badge = entry.Result,
+                BadgeClass = "bg-danger",
+                TimeLabel = entry.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+            })
+            .ToListAsync();
+
+        var model = new ComplianceDashboardViewModel
+        {
+            OverallStatus = overallStatus,
+            OverallStatusLabel = overallLabel,
+            Checks = checks,
+            SummaryCards = summaryCards,
+            RecentBackups = recentBackups,
+            RecentAccesses = recentAccesses,
+            CriticalEvents = criticalEvents,
+            TotalUsers = totalUsers,
+            ActiveUsers = activeUsers,
+            AdminUsers = adminUsers,
+            AdminUsersWithMfa = adminUsersWithMfa,
+            FailedLoginsLast7Days = failedLoginsLast7Days,
+            CriticalEventsLast7Days = criticalEventsLast7Days,
+            RecentBackupsCount = latestBackups.Count,
+            RecentAccessEventsCount = recentAccessEventsCount,
+            DatabaseConnected = databaseConnected,
+            HttpsConfigured = forceHttps,
+            HttpsActive = httpsActive,
+            SwaggerRestricted = swaggerRestricted,
+            MfaCompliant = adminUsers == 0 || adminUsersWithMfa == adminUsers,
+            BackupEnabled = backupEnabled,
+            BackupHealthy = backupHealthy,
+            LdapsConfigured = ldapsConfigured,
+            DataIntegrityHealthy = dataIntegrityHealthy,
+            DatabaseFileName = databaseFileInfo?.Name ?? "soteromap.db",
+            DatabaseFileSizeBytes = databaseFileInfo?.Length ?? 0,
+            DatabaseLastWriteUtc = databaseFileInfo?.LastWriteTimeUtc,
+            GeneratedAtUtc = nowUtc
+        };
+
+        return View(model);
+    }
+
+    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Auditor}")]
+    [HttpGet("/dashboard/compliance")]
+    public IActionResult ComplianceLegacy()
+    {
+        return RedirectToAction(nameof(Compliance));
+    }
+
     [Authorize(Roles = AppRoles.Admin)]
     [HttpGet("/admin/database/download")]
-    public IActionResult DownloadDatabase()
+    public async Task<IActionResult> DownloadDatabase()
     {
         var databasePath = GetDatabaseFilePath();
         if (!System.IO.File.Exists(databasePath))
             return NotFound("No se encontro la base de datos.");
+
+        await _auditLogService.LogSecurityEventAsync(
+            actionType: "database-export",
+            resource: "database",
+            summary: "Descarga de base de datos",
+            details: "El administrador descargo una copia de la base SQLite.",
+            result: "success",
+            severity: "info",
+            changedByUsername: User.Identity?.Name ?? "admin");
 
         return DownloadDatabaseFile(databasePath, $"soteromap-backup-{DateTime.UtcNow:yyyyMMdd-HHmmss}.db");
     }
 
     [Authorize(Roles = AppRoles.Admin)]
     [HttpGet("/admin/database/backups/{fileName}")]
-    public IActionResult DownloadDatabaseBackup(string fileName)
+    public async Task<IActionResult> DownloadDatabaseBackup(string fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName))
             return NotFound();
@@ -132,13 +319,22 @@ public class AdminController : Controller
         if (!System.IO.File.Exists(backupPath))
             return NotFound("No se encontro el respaldo solicitado.");
 
+        await _auditLogService.LogSecurityEventAsync(
+            actionType: "backup-download",
+            resource: "database-backup",
+            summary: $"Descarga de respaldo {fileName}",
+            details: "El administrador descargo un respaldo de base de datos.",
+            result: "success",
+            severity: "info",
+            changedByUsername: User.Identity?.Name ?? "admin");
+
         return DownloadDatabaseFile(backupPath, Path.GetFileName(backupPath));
     }
 
     [Authorize(Roles = AppRoles.Admin)]
     [HttpPost("/admin/database/backups/{fileName}/restore")]
     [ValidateAntiForgeryToken]
-    public IActionResult RestoreDatabaseBackup(string fileName)
+    public async Task<IActionResult> RestoreDatabaseBackup(string fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName))
         {
@@ -156,12 +352,28 @@ public class AdminController : Controller
         try
         {
             ValidateSqliteFile(backupPath);
-            RestoreDatabaseFromFile(backupPath);
+            await RestoreDatabaseFromFileAsync(backupPath);
             TempData["SuccessMessage"] = $"Respaldo restaurado correctamente: {Path.GetFileName(backupPath)}";
+            await _auditLogService.LogSecurityEventAsync(
+                actionType: "database-restore",
+                resource: "database-backup",
+                summary: $"Respaldo restaurado {fileName}",
+                details: "Se reemplazo la base actual usando un respaldo.",
+                result: "success",
+                severity: "critical",
+                changedByUsername: User.Identity?.Name ?? "admin");
         }
         catch (Exception ex)
         {
             TempData["ErrorMessage"] = $"No se pudo restaurar el respaldo: {ex.Message}";
+            await _auditLogService.LogSecurityEventAsync(
+                actionType: "database-restore",
+                resource: "database-backup",
+                summary: $"Error al restaurar respaldo {fileName}",
+                details: ex.Message,
+                result: "failure",
+                severity: "critical",
+                changedByUsername: User.Identity?.Name ?? "admin");
         }
 
         return RedirectToAction(nameof(Index));
@@ -170,7 +382,7 @@ public class AdminController : Controller
     [Authorize(Roles = AppRoles.Admin)]
     [HttpPost("/admin/database/backups/{fileName}/delete")]
     [ValidateAntiForgeryToken]
-    public IActionResult DeleteDatabaseBackup(string fileName)
+    public async Task<IActionResult> DeleteDatabaseBackup(string fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName))
         {
@@ -189,10 +401,26 @@ public class AdminController : Controller
         {
             System.IO.File.Delete(backupPath);
             TempData["SuccessMessage"] = $"Respaldo eliminado correctamente: {Path.GetFileName(backupPath)}";
+            await _auditLogService.LogSecurityEventAsync(
+                actionType: "backup-delete",
+                resource: "database-backup",
+                summary: $"Respaldo eliminado {fileName}",
+                details: "El administrador elimino un archivo de respaldo.",
+                result: "success",
+                severity: "warning",
+                changedByUsername: User.Identity?.Name ?? "admin");
         }
         catch (Exception ex)
         {
             TempData["ErrorMessage"] = $"No se pudo eliminar el respaldo: {ex.Message}";
+            await _auditLogService.LogSecurityEventAsync(
+                actionType: "backup-delete",
+                resource: "database-backup",
+                summary: $"Error al eliminar respaldo {fileName}",
+                details: ex.Message,
+                result: "failure",
+                severity: "warning",
+                changedByUsername: User.Identity?.Name ?? "admin");
         }
 
         return RedirectToAction(nameof(Index));
@@ -231,12 +459,28 @@ public class AdminController : Controller
             }
 
             ValidateSqliteFile(tempPath);
-            RestoreDatabaseFromFile(tempPath);
+            await RestoreDatabaseFromFileAsync(tempPath);
             TempData["SuccessMessage"] = "Base de datos restaurada correctamente. Si tienes otra sesion abierta, recarga la pagina.";
+            await _auditLogService.LogSecurityEventAsync(
+                actionType: "database-import",
+                resource: "database",
+                summary: $"Base de datos cargada desde {databaseFile.FileName}",
+                details: "Se reemplazo la base actual con un archivo subido por el administrador.",
+                result: "success",
+                severity: "critical",
+                changedByUsername: User.Identity?.Name ?? "admin");
         }
         catch (Exception ex)
         {
             TempData["ErrorMessage"] = $"No se pudo restaurar la base de datos: {ex.Message}";
+            await _auditLogService.LogSecurityEventAsync(
+                actionType: "database-import",
+                resource: "database",
+                summary: $"Error al cargar base de datos {databaseFile.FileName}",
+                details: ex.Message,
+                result: "failure",
+                severity: "critical",
+                changedByUsername: User.Identity?.Name ?? "admin");
         }
         finally
         {
@@ -248,7 +492,17 @@ public class AdminController : Controller
     }
 
     [HttpGet("/admin/activity")]
-    public async Task<IActionResult> Activity(string? buildingExternalId, string? changedByUsername)
+    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Auditor}")]
+    public async Task<IActionResult> Activity(
+        string? buildingExternalId,
+        string? changedByUsername,
+        string? actionType,
+        string? resource,
+        string? result,
+        string? severity,
+        string? search,
+        string? from,
+        string? to)
     {
         var query = _context.AuditLogEntries.AsNoTracking().AsQueryable();
 
@@ -262,10 +516,58 @@ public class AdminController : Controller
             query = query.Where(x => x.ChangedByUsername.Contains(changedByUsername));
         }
 
+        if (!string.IsNullOrWhiteSpace(actionType))
+        {
+            query = query.Where(x => x.ActionType == actionType);
+        }
+
+        if (!string.IsNullOrWhiteSpace(resource))
+        {
+            query = query.Where(x => x.Resource.Contains(resource));
+        }
+
+        if (!string.IsNullOrWhiteSpace(result))
+        {
+            query = query.Where(x => x.Result == result);
+        }
+
+        if (!string.IsNullOrWhiteSpace(severity))
+        {
+            query = query.Where(x => x.Severity == severity);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(x =>
+                x.Summary.Contains(search) ||
+                x.Details.Contains(search) ||
+                x.PreviousValue.Contains(search) ||
+                x.NewValue.Contains(search) ||
+                x.ClientIp.Contains(search) ||
+                x.UserAgent.Contains(search));
+        }
+
+        if (DateTime.TryParse(from, out var fromDate))
+        {
+            query = query.Where(x => x.CreatedAtUtc >= fromDate);
+        }
+
+        if (DateTime.TryParse(to, out var toDate))
+        {
+            query = query.Where(x => x.CreatedAtUtc < toDate.AddDays(1));
+        }
+
         var model = new AdminActivityViewModel
         {
             BuildingExternalId = buildingExternalId ?? string.Empty,
             ChangedByUsername = changedByUsername ?? string.Empty,
+            ActionType = actionType ?? string.Empty,
+            Resource = resource ?? string.Empty,
+            Result = result ?? string.Empty,
+            Severity = severity ?? string.Empty,
+            Search = search ?? string.Empty,
+            DateFrom = from ?? string.Empty,
+            DateTo = to ?? string.Empty,
             Items = await query
                 .OrderByDescending(x => x.CreatedAtUtc)
                 .Take(250)
@@ -273,10 +575,17 @@ public class AdminController : Controller
                 {
                     Id = x.Id,
                     BuildingExternalId = x.BuildingExternalId,
+                    Resource = x.Resource,
+                    Result = x.Result,
+                    Severity = x.Severity,
                     Summary = x.Summary,
                     Details = x.Details,
+                    PreviousValue = x.PreviousValue,
+                    NewValue = x.NewValue,
                     ChangedByUsername = x.ChangedByUsername,
                     ActionType = x.ActionType,
+                    ClientIp = x.ClientIp,
+                    UserAgent = x.UserAgent,
                     CreatedAtUtc = x.CreatedAtUtc
                 })
                 .ToListAsync()
@@ -1522,6 +1831,16 @@ public class AdminController : Controller
         equipment.CreatedAt = DateTime.UtcNow;
         _context.Equipments.Add(equipment);
         await _context.SaveChangesAsync();
+        await _auditLogService.LogSecurityEventAsync(
+            actionType: "equipment-create",
+            resource: "equipment",
+            summary: $"Equipo creado: {equipment.Name}",
+            details: $"LocationId={equipment.LocationId}; Categoria={equipment.Category}; Estado={equipment.Status}",
+            result: "success",
+            severity: "info",
+            entityType: "equipment",
+            entityId: equipment.Id.ToString(),
+            changedByUsername: User.Identity?.Name ?? "admin");
         return RedirectToAction(nameof(Inventory));
     }
 
@@ -1533,6 +1852,16 @@ public class AdminController : Controller
         var equipment = await _context.Equipments.FindAsync(id);
         if (equipment != null)
         {
+            await _auditLogService.LogSecurityEventAsync(
+                actionType: "equipment-delete",
+                resource: "equipment",
+                summary: $"Equipo eliminado: {equipment.Name}",
+                details: $"Serial={equipment.SerialNumber}; LocationId={equipment.LocationId}",
+                result: "success",
+                severity: "warning",
+                entityType: "equipment",
+                entityId: equipment.Id.ToString(),
+                changedByUsername: User.Identity?.Name ?? "admin");
             _context.Equipments.Remove(equipment);
             await _context.SaveChangesAsync();
         }
@@ -2460,9 +2789,18 @@ public class AdminController : Controller
             return null;
         }
 
-        if (pdfFile.Length > 25_000_000)
+        var maxUploadBytes = _configuration.GetValue<long?>("PdfSettings:MaxUploadBytes") ?? 25_000_000;
+        if (pdfFile.Length > maxUploadBytes)
         {
-            return "El formulario PDF supera el limite de 25 MB.";
+            return $"El formulario PDF supera el limite de {maxUploadBytes / 1_000_000d:0.#} MB.";
+        }
+
+        var allowedMimeTypes = (_configuration["PdfSettings:AllowedMimeTypes"] ?? DefaultPdfAllowedMimeTypes)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (!allowedMimeTypes.Contains(pdfFile.ContentType, StringComparer.OrdinalIgnoreCase))
+        {
+            return "El formulario PDF debe subirse con un tipo MIME PDF valido.";
         }
 
         if (!string.Equals(Path.GetExtension(pdfFile.FileName), ".pdf", StringComparison.OrdinalIgnoreCase))
@@ -2998,7 +3336,7 @@ public class AdminController : Controller
         return File(bytes, "application/octet-stream", downloadFileName);
     }
 
-    private void RestoreDatabaseFromFile(string sourcePath)
+    private async Task RestoreDatabaseFromFileAsync(string sourcePath)
     {
         var databasePath = GetDatabaseFilePath();
         var databaseDirectory = Path.GetDirectoryName(databasePath) ?? AppContext.BaseDirectory;
@@ -3010,10 +3348,7 @@ public class AdminController : Controller
 
         if (System.IO.File.Exists(databasePath))
         {
-            var backupDirectory = GetDatabaseBackupDirectory();
-            Directory.CreateDirectory(backupDirectory);
-            var backupPath = Path.Combine(backupDirectory, $"soteromap-backup-{DateTime.UtcNow:yyyyMMdd-HHmmss}.db");
-            System.IO.File.Copy(databasePath, backupPath, overwrite: true);
+            await _databaseBackupService.CreateBackupFromCurrentDatabaseAsync(User.Identity?.Name ?? "admin", "pre-restore");
         }
 
         System.IO.File.Copy(sourcePath, databasePath, overwrite: true);

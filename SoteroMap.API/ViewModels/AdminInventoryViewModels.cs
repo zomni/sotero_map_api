@@ -161,6 +161,13 @@ public class AdminActivityViewModel
 {
     public string BuildingExternalId { get; set; } = string.Empty;
     public string ChangedByUsername { get; set; } = string.Empty;
+    public string ActionType { get; set; } = string.Empty;
+    public string Resource { get; set; } = string.Empty;
+    public string Result { get; set; } = string.Empty;
+    public string Severity { get; set; } = string.Empty;
+    public string Search { get; set; } = string.Empty;
+    public string DateFrom { get; set; } = string.Empty;
+    public string DateTo { get; set; } = string.Empty;
     public IReadOnlyList<ActivityLogListItemViewModel> Items { get; set; } = [];
 }
 

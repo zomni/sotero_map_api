@@ -16,6 +16,7 @@ public class AppDbContext : DbContext
     public DbSet<InventoryAliasRule> InventoryAliasRules => Set<InventoryAliasRule>();
     public DbSet<AuthUser> AuthUsers => Set<AuthUser>();
     public DbSet<AuditLogEntry> AuditLogEntries => Set<AuditLogEntry>();
+    public DbSet<BackupHistory> BackupHistories => Set<BackupHistory>();
     public DbSet<ManualBuilding> ManualBuildings => Set<ManualBuilding>();
     public DbSet<BuildingGeometryOverride> BuildingGeometryOverrides => Set<BuildingGeometryOverride>();
     public DbSet<WalkingRouteNode> WalkingRouteNodes => Set<WalkingRouteNode>();
@@ -230,9 +231,28 @@ public class AppDbContext : DbContext
             entity.Property(e => e.EntityType).IsRequired().HasMaxLength(50);
             entity.Property(e => e.EntityId).IsRequired().HasMaxLength(100);
             entity.Property(e => e.ActionType).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Resource).HasMaxLength(100);
+            entity.Property(e => e.Result).HasMaxLength(50);
+            entity.Property(e => e.Severity).HasMaxLength(30);
             entity.Property(e => e.Summary).IsRequired().HasMaxLength(300);
             entity.Property(e => e.Details).HasMaxLength(1000);
+            entity.Property(e => e.PreviousValue).HasMaxLength(1000);
+            entity.Property(e => e.NewValue).HasMaxLength(1000);
             entity.Property(e => e.ChangedByUsername).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.ClientIp).HasMaxLength(80);
+            entity.Property(e => e.UserAgent).HasMaxLength(300);
+        });
+
+        modelBuilder.Entity<BackupHistory>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.CreatedAtUtc);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(30);
+            entity.Property(e => e.FilePath).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.Hash).HasMaxLength(128);
+            entity.Property(e => e.ErrorMessage).HasMaxLength(1000);
+            entity.Property(e => e.CreatedByUsername).HasMaxLength(100);
+            entity.Property(e => e.Reason).HasMaxLength(200);
         });
 
         modelBuilder.Entity<ManualBuilding>(entity =>

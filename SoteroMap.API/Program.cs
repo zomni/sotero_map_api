@@ -47,6 +47,7 @@ if (builder.Environment.IsDevelopment())
 }
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddMemoryCache();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddSwaggerGen();
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -113,6 +114,8 @@ builder.Services.AddScoped<LdapAuthenticationService>();
 builder.Services.AddScoped<MfaService>();
 builder.Services.AddScoped<BackendAuthService>();
 builder.Services.AddScoped<AuditLogService>();
+builder.Services.AddScoped<DatabaseBackupService>();
+builder.Services.AddHostedService<DatabaseBackupHostedService>();
 builder.Services.AddScoped<FrontendSyncService>();
 builder.Services.AddScoped<ExcelInventoryImportService>();
 builder.Services.AddScoped<InventoryReconciliationService>();
@@ -226,6 +229,32 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.Use(async (context, next) =>
+{
+    await next();
+
+    if (context.Response.StatusCode == StatusCodes.Status403Forbidden && context.User.Identity?.IsAuthenticated == true)
+    {
+        try
+        {
+            var auditLogService = context.RequestServices.GetRequiredService<AuditLogService>();
+            await auditLogService.LogSecurityEventAsync(
+                actionType: "access-denied",
+                resource: context.Request.Path.Value ?? string.Empty,
+                summary: $"Acceso denegado a {context.Request.Path.Value ?? "/"}",
+                details: $"Metodo {context.Request.Method}; Query {context.Request.QueryString}",
+                result: "failure",
+                severity: "warning",
+                changedByUsername: context.User.Identity?.Name ?? "usuario",
+                cancellationToken: context.RequestAborted);
+        }
+        catch
+        {
+            // No interrumpimos la respuesta si la auditoria falla.
+        }
+    }
+});
 
 if (app.Environment.IsDevelopment())
 {

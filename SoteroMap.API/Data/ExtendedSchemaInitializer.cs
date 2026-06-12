@@ -262,9 +262,16 @@ public static class ExtendedSchemaInitializer
                     EntityType TEXT NOT NULL,
                     EntityId TEXT NOT NULL,
                     ActionType TEXT NOT NULL,
+                    Resource TEXT NOT NULL DEFAULT '',
+                    Result TEXT NOT NULL DEFAULT '',
+                    Severity TEXT NOT NULL DEFAULT '',
                     Summary TEXT NOT NULL,
                     Details TEXT NOT NULL,
+                    PreviousValue TEXT NOT NULL DEFAULT '',
+                    NewValue TEXT NOT NULL DEFAULT '',
                     ChangedByUsername TEXT NOT NULL,
+                    ClientIp TEXT NOT NULL DEFAULT '',
+                    UserAgent TEXT NOT NULL DEFAULT '',
                     CreatedAtUtc TEXT NOT NULL
                 );
                 """);
@@ -273,6 +280,41 @@ public static class ExtendedSchemaInitializer
                 CREATE INDEX IF NOT EXISTS IX_AuditLogEntries_BuildingExternalId_CreatedAtUtc
                 ON AuditLogEntries (BuildingExternalId, CreatedAtUtc);
                 """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS BackupHistories (
+                    Id INTEGER NOT NULL CONSTRAINT PK_BackupHistories PRIMARY KEY AUTOINCREMENT,
+                    CreatedAtUtc TEXT NOT NULL,
+                    Status TEXT NOT NULL,
+                    FilePath TEXT NOT NULL,
+                    SizeBytes INTEGER NOT NULL,
+                    Hash TEXT NOT NULL,
+                    ErrorMessage TEXT NOT NULL,
+                    CreatedByUsername TEXT NOT NULL,
+                    Reason TEXT NOT NULL
+                );
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_BackupHistories_CreatedAtUtc
+                ON BackupHistories (CreatedAtUtc);
+                """);
+
+            await EnsureColumnAsync(context, "AuditLogEntries", "Resource", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "AuditLogEntries", "Result", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "AuditLogEntries", "Severity", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "AuditLogEntries", "PreviousValue", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "AuditLogEntries", "NewValue", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "AuditLogEntries", "ClientIp", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "AuditLogEntries", "UserAgent", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "BackupHistories", "CreatedAtUtc", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "BackupHistories", "Status", "TEXT NOT NULL DEFAULT 'success'");
+            await EnsureColumnAsync(context, "BackupHistories", "FilePath", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "BackupHistories", "SizeBytes", "INTEGER NOT NULL DEFAULT 0");
+            await EnsureColumnAsync(context, "BackupHistories", "Hash", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "BackupHistories", "ErrorMessage", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "BackupHistories", "CreatedByUsername", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "BackupHistories", "Reason", "TEXT NOT NULL DEFAULT ''");
 
             await context.Database.ExecuteSqlRawAsync("""
                 CREATE TABLE IF NOT EXISTS ManualBuildings (

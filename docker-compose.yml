@@ -36,6 +36,10 @@ services:
       - MfaSettings__PeriodSeconds=${MFA_PERIOD_SECONDS:-30}
       - MfaSettings__Digits=${MFA_DIGITS:-6}
       - MfaSettings__WindowSteps=${MFA_WINDOW_STEPS:-6}
+      - BackupSettings__Enabled=${BACKUP_ENABLED:-true}
+      - BackupSettings__Cron=${BACKUP_CRON:-}
+      - BackupSettings__IntervalHours=${BACKUP_INTERVAL_HOURS:-24}
+      - BackupSettings__RetentionDays=${BACKUP_RETENTION_DAYS:-30}
       - LDAP_HOST=${LDAP_HOST:-HELIOS.ssmso.cl}
       - LDAP_FALLBACK_HOST=${LDAP_FALLBACK_HOST:-10.6.50.6}
       - LDAP_PORT=${LDAP_PORT:-636}

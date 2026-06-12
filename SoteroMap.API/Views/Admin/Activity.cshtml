@@ -1,51 +1,90 @@
 @model SoteroMap.API.ViewModels.AdminActivityViewModel
 @{
-    ViewData["Title"] = "Actividad";
+    ViewData["Title"] = "Auditoria";
     Layout = "~/Views/Shared/_Layout.cshtml";
     var activeFilters = new List<string>();
-    if (!string.IsNullOrWhiteSpace(Model.BuildingExternalId))
-    {
-        activeFilters.Add($"Edificio: {Model.BuildingExternalId}");
-    }
-    if (!string.IsNullOrWhiteSpace(Model.ChangedByUsername))
-    {
-        activeFilters.Add($"Usuario: {Model.ChangedByUsername}");
-    }
-    var hasActiveFilters = activeFilters.Count > 0;
+    if (!string.IsNullOrWhiteSpace(Model.BuildingExternalId)) { activeFilters.Add($"Edificio: {Model.BuildingExternalId}"); }
+    if (!string.IsNullOrWhiteSpace(Model.ChangedByUsername)) { activeFilters.Add($"Usuario: {Model.ChangedByUsername}"); }
+    if (!string.IsNullOrWhiteSpace(Model.ActionType)) { activeFilters.Add($"Accion: {Model.ActionType}"); }
+    if (!string.IsNullOrWhiteSpace(Model.Resource)) { activeFilters.Add($"Recurso: {Model.Resource}"); }
+    if (!string.IsNullOrWhiteSpace(Model.Result)) { activeFilters.Add($"Resultado: {Model.Result}"); }
+    if (!string.IsNullOrWhiteSpace(Model.Severity)) { activeFilters.Add($"Severidad: {Model.Severity}"); }
+    if (!string.IsNullOrWhiteSpace(Model.Search)) { activeFilters.Add($"Texto: {Model.Search}"); }
+    if (!string.IsNullOrWhiteSpace(Model.DateFrom)) { activeFilters.Add($"Desde: {Model.DateFrom}"); }
+    if (!string.IsNullOrWhiteSpace(Model.DateTo)) { activeFilters.Add($"Hasta: {Model.DateTo}"); }
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h2 class="fw-bold mb-1">Actividad reciente</h2>
-        <div class="text-muted">Bitacora completa de cambios registrados en el backend.</div>
+        <h2 class="fw-bold mb-1">Auditoria formal</h2>
+        <div class="text-muted">Eventos sensibles con usuario, IP, agente, resultado y valores previos/nuevos.</div>
     </div>
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
-        <form method="get" class="row g-3 align-items-end">
-            <div class="col-md-5">
-                <label class="form-label small fw-semibold">Edificio</label>
-                <input type="text" name="buildingExternalId" value="@Model.BuildingExternalId" class="form-control" placeholder="Ej: SR-BLD-069" />
-            </div>
-            <div class="col-md-5">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
                 <label class="form-label small fw-semibold">Usuario</label>
-                <input type="text" name="changedByUsername" value="@Model.ChangedByUsername" class="form-control" placeholder="Ej: admin" />
+                <input type="text" name="changedByUsername" value="@Model.ChangedByUsername" class="form-control" placeholder="admin" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Edificio</label>
+                <input type="text" name="buildingExternalId" value="@Model.BuildingExternalId" class="form-control" placeholder="SR-BLD-069" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Accion</label>
+                <input type="text" name="actionType" value="@Model.ActionType" class="form-control" placeholder="login-success" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Recurso</label>
+                <input type="text" name="resource" value="@Model.Resource" class="form-control" placeholder="auth/login" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Resultado</label>
+                <select name="result" class="form-select">
+                    <option value="" selected="@(string.IsNullOrWhiteSpace(Model.Result))">Todos</option>
+                    <option value="success" selected="@(Model.Result == "success")">Exito</option>
+                    <option value="failure" selected="@(Model.Result == "failure")">Fallo</option>
+                    <option value="challenge" selected="@(Model.Result == "challenge")">Pendiente</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Severidad</label>
+                <select name="severity" class="form-select">
+                    <option value="" selected="@(string.IsNullOrWhiteSpace(Model.Severity))">Todas</option>
+                    <option value="info" selected="@(Model.Severity == "info")">Info</option>
+                    <option value="warning" selected="@(Model.Severity == "warning")">Advertencia</option>
+                    <option value="critical" selected="@(Model.Severity == "critical")">Critico</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold">Buscar texto</label>
+                <input type="text" name="search" value="@Model.Search" class="form-control" placeholder="IP, agente, resumen, detalle..." />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Desde</label>
+                <input type="date" name="from" value="@Model.DateFrom" class="form-control" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Hasta</label>
+                <input type="date" name="to" value="@Model.DateTo" class="form-control" />
             </div>
             <div class="col-md-12">
                 <div class="d-flex gap-2">
-                    <button type="submit" class="btn btn-outline-primary flex-grow-1">
+                    <button type="submit" class="btn btn-primary flex-grow-1">
                         <i class="bi bi-funnel me-1"></i> Filtrar
                     </button>
                     <a href="/admin/activity" class="btn btn-outline-secondary">
-                        <i class="bi bi-x-circle me-1"></i> Limpiar filtros
+                        <i class="bi bi-x-circle me-1"></i> Limpiar
                     </a>
                 </div>
             </div>
         </form>
+
         <div class="mt-3">
             <div class="small text-muted mb-2">Filtros aplicados (@activeFilters.Count)</div>
-            @if (hasActiveFilters)
+            @if (activeFilters.Count > 0)
             {
                 <div class="d-flex flex-wrap gap-2">
                     @foreach (var filter in activeFilters)
@@ -70,17 +109,23 @@
                     <tr>
                         <th>Fecha</th>
                         <th>Usuario</th>
-                        <th>Edificio</th>
                         <th>Accion</th>
+                        <th>Recurso</th>
+                        <th>Resultado</th>
+                        <th>Severidad</th>
+                        <th>Edificio</th>
                         <th>Resumen</th>
-                        <th>Detalle</th>
+                        <th>Previo</th>
+                        <th>Nuevo</th>
+                        <th>IP</th>
+                        <th>Agente</th>
                     </tr>
                 </thead>
                 <tbody>
                     @if (Model.Items.Count == 0)
                     {
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-4">No hay registros para ese filtro.</td>
+                            <td colspan="12" class="text-center text-muted py-4">No hay registros para ese filtro.</td>
                         </tr>
                     }
                     else
@@ -90,10 +135,24 @@
                             <tr>
                                 <td class="small text-nowrap">@item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
                                 <td class="small">@item.ChangedByUsername</td>
-                                <td class="small">@item.BuildingExternalId</td>
                                 <td><span class="badge bg-secondary">@item.ActionType</span></td>
-                                <td>@item.Summary</td>
-                                <td class="small text-muted">@item.Details</td>
+                                <td class="small">@item.Resource</td>
+                                <td class="small">
+                                    <span class="badge @(item.Result == "failure" ? "bg-danger" : item.Result == "challenge" ? "bg-warning text-dark" : "bg-success")">
+                                        @item.Result
+                                    </span>
+                                </td>
+                                <td class="small">
+                                    <span class="badge @(item.Severity == "critical" ? "bg-danger" : item.Severity == "warning" ? "bg-warning text-dark" : "bg-info text-dark")">
+                                        @item.Severity
+                                    </span>
+                                </td>
+                                <td class="small">@item.BuildingExternalId</td>
+                                <td class="small">@item.Summary</td>
+                                <td class="small text-muted">@item.PreviousValue</td>
+                                <td class="small text-muted">@item.NewValue</td>
+                                <td class="small text-nowrap">@item.ClientIp</td>
+                                <td class="small text-muted">@item.UserAgent</td>
                             </tr>
                         }
                     }

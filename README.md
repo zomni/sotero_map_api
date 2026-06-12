@@ -8,7 +8,7 @@ Este repositorio administra el inventario real, usuarios, roles, dashboard, audi
 
 - Dashboard principal en `http://localhost:5000/dashboard`.
 - Login obligatorio para entrar al dashboard.
-- Roles `admin` y `viewer`.
+- Roles locales `admin`, `editor`, `viewer` y `auditor`.
 - Inventario de equipos con asignacion manual a edificio, piso y sala.
 - Ubicaciones sincronizadas desde el frontend, con overrides editables desde el dashboard.
 - Edificios manuales y geometria editada desde el mapa.
@@ -17,6 +17,8 @@ Este repositorio administra el inventario real, usuarios, roles, dashboard, audi
 - Formularios de entrega con vista previa PDF y opcion de agregar al inventario.
 - Sesion normal con timeout de 15 minutos.
 - Opcion `Mantener sesion iniciada`, que evita el timeout visual y usa una cookie persistente.
+- Panel de cumplimiento para Admin y Auditor con semaforo SGSI, backups, accesos, MFA, HTTPS, Swagger y LDAPS.
+- Endpoint tecnico de integridad en `GET /api/health/integrity`.
 
 ## Inicio rapido con Docker
 
@@ -59,6 +61,7 @@ docker compose down -v
 - Ubicaciones: `http://localhost:5000/dashboard/locations`
 - Actividad: `http://localhost:5000/dashboard/activity`
 - Formulario de entrega: `http://localhost:5000/dashboard/delivery-form`
+- Cumplimiento: `http://localhost:5000/admin/compliance`
 - Swagger: `http://localhost:5000/swagger`
 
 Nota: `/admin` se mantiene como compatibilidad interna y redirige visualmente a `/dashboard` en solicitudes GET.
@@ -75,6 +78,35 @@ Estas credenciales se pueden cambiar con variables de entorno:
 - `SEED_VIEWER_USERNAME`
 - `SEED_VIEWER_PASSWORD`
 
+## Autenticacion, roles y MFA
+
+El login puede validar usuarios contra Active Directory por LDAPS y mantiene la autorizacion con roles locales en la base SQLite.
+
+Configuracion principal:
+
+- `AuthSettings:UseLdapAuthentication`: habilita autenticacion LDAP/LDAPS.
+- `AuthSettings:AllowLocalBreakGlass`: permite usuario local de emergencia.
+- `AuthSettings:BreakGlassUsernames`: usuarios locales permitidos aunque LDAP este activo.
+- `AuthSettings:AutoProvisionLdapUsers`: crea usuarios LDAP validos en la tabla local.
+- `AuthSettings:DefaultLdapRole`: rol inicial para usuarios LDAP nuevos.
+- `LdapSettings:Host`: controlador de dominio principal.
+- `LdapSettings:FallbackHost`: controlador alternativo o IP.
+- `LdapSettings:Port`: puerto LDAP. Para LDAPS debe ser `636`.
+- `LdapSettings:Domain`: dominio NetBIOS.
+- `LdapSettings:BaseDn`: base DN del directorio.
+- `LdapSettings:UpnSuffixes`: sufijos UPN permitidos.
+- `LdapSettings:UseSsl`: debe quedar en `true` para LDAPS.
+- `LdapSettings:TrustServerCertificate`: usar solo si el certificado del DC no esta confiado en el entorno.
+
+Roles:
+
+- `admin`: acceso completo, MFA obligatorio.
+- `editor`: reservado para edicion operativa controlada.
+- `viewer`: solo visualizacion.
+- `auditor`: acceso a auditoria, cumplimiento e integridad sin modificar inventario.
+
+MFA se configura en `MfaSettings`. Para administradores, `RequireForAdmins` debe quedar en `true`. Es compatible con Microsoft Authenticator y Google Authenticator mediante TOTP.
+
 ## Base de datos
 
 El proyecto usa SQLite. En Docker, la base queda dentro del volumen `sqlite_data`, no dentro del repositorio.
@@ -88,6 +120,7 @@ El repositorio debe mantenerse sin una base real versionada. Para mover datos en
 5. Sube/restaura la DB descargada.
 
 El dashboard crea respaldos automaticos antes de reemplazar la base actual.
+Tambien expone el historial de backups y el panel de cumplimiento para administradores y auditores.
 
 ## Variables opcionales
 
@@ -96,6 +129,20 @@ El `docker-compose.yml` permite personalizar rutas y URLs:
 - `FRONTEND_APP_URL`: URL del mapa que se muestra en el dashboard.
 - `FRONTEND_DATA_HOST_PATH`: carpeta local `src/data` del frontend donde se guardan los respaldos estaticos del mapa.
 - `IMPORT_HOST_PATH`: carpeta local para archivos de importacion.
+- `PdfSettings:MaxUploadBytes`: tamano maximo permitido para PDFs adjuntos.
+- `PdfSettings:AllowedMimeTypes`: MIME permitidos para formularios PDF.
+
+Tambien se controlan desde configuracion:
+
+- `SecuritySettings:ForceHttps`: fuerza HTTPS fuera de desarrollo.
+- `SecuritySettings:EnableSwaggerInProduction`: controla exposicion de Swagger en produccion.
+- `SecuritySettings:CookieSecurePolicy`: politica `Secure` de cookies.
+- `SecuritySettings:CookieSameSite`: politica SameSite.
+- `SecuritySettings:ContentSecurityPolicy`: CSP basica.
+- `BackupSettings:Enabled`: activa respaldos programados.
+- `BackupSettings:Cron`: expresion cron opcional.
+- `BackupSettings:IntervalHours`: intervalo si no se usa cron.
+- `BackupSettings:RetentionDays`: retencion de backups.
 
 Si no se definen, se usan:
 
@@ -154,6 +201,7 @@ El backend expone endpoints para que el frontend pueda:
 - ocultar edificios eliminados
 - consultar sesion y permisos
 - sincronizar inventario, historial y estado de BDD
+- consultar integridad y cumplimiento tecnico
 
 ### Formularios
 
@@ -187,3 +235,46 @@ Con ambos levantados:
 
 - Frontend: `http://localhost:8080`
 - Backend: `http://localhost:5000/dashboard`
+
+## Cumplimiento
+
+El panel de cumplimiento concentra:
+
+- estado de base de datos
+- HTTPS
+- Swagger en produccion
+- MFA obligatorio para administradores
+- backups recientes
+- LDAPS
+- eventos criticos y accesos recientes
+
+Para monitoreo tecnico existe `GET /api/health/integrity`, pensado para administradores y auditores.
+
+## Endpoints sensibles
+
+- `POST /api/backups/run`: crea backup manual, solo admin.
+- `GET /api/backups/latest`: lista respaldos, solo admin.
+- `POST /api/backups/cleanup`: limpia respaldos expirados, solo admin.
+- `GET /api/health/integrity`: health e integridad, admin/auditor.
+- `GET /api/audit-log`: auditoria formal, admin/auditor.
+- `POST /admin/database/upload`: restaura base SQLite, solo admin.
+- `GET /admin/database/download`: exporta base SQLite, solo admin.
+- `POST /admin/inventory/create`: crea equipo, solo admin.
+- `POST /admin/editinventoryitem/{id}`: edita equipo, solo admin.
+- `POST /admin/deleteinventoryitem/{id}`: elimina equipo, solo admin.
+
+## Checklist produccion
+
+- Confirmar `ASPNETCORE_ENVIRONMENT=Production`.
+- Usar HTTPS real con certificado confiable.
+- Mantener `SecuritySettings:ForceHttps=true`.
+- Mantener `SecuritySettings:EnableSwaggerInProduction=false`, salvo proteccion explicita por admin.
+- Mantener `LdapSettings:UseSsl=true` y puerto `636`.
+- Validar confianza del certificado LDAPS del DC.
+- Mantener `MfaSettings:RequireForAdmins=true`.
+- Crear al menos un admin activo con MFA enrolado.
+- Mantener `AuthSettings:AllowLocalBreakGlass=true` solo si existe procedimiento interno controlado.
+- Configurar `BackupSettings:Enabled=true`, ruta persistente y retencion.
+- Revisar `GET /api/health/integrity` antes de entregar.
+- Revisar panel `Cumplimiento` y eventos criticos recientes.
+- No versionar la base SQLite real ni archivos PDF productivos.

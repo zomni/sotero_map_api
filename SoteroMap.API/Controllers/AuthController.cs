@@ -23,17 +23,20 @@ public class AuthController : Controller
     private const string MfaModeChallenge = "challenge";
     private readonly BackendAuthService _authService;
     private readonly MfaService _mfaService;
+    private readonly AuditLogService _auditLogService;
     private readonly IConfiguration _configuration;
     private readonly IWebHostEnvironment _environment;
 
     public AuthController(
         BackendAuthService authService,
         MfaService mfaService,
+        AuditLogService auditLogService,
         IConfiguration configuration,
         IWebHostEnvironment environment)
     {
         _authService = authService;
         _mfaService = mfaService;
+        _auditLogService = auditLogService;
         _configuration = configuration;
         _environment = environment;
     }
@@ -65,6 +68,16 @@ public class AuthController : Controller
 
         if (!result.Succeeded || result.User is null)
         {
+            await _auditLogService.LogSecurityEventAsync(
+                actionType: "login-failed",
+                resource: "auth/login",
+                summary: $"Intento de login fallido para {model.Username}",
+                details: result.ErrorMessage ?? "Credenciales invalidas",
+                result: "failure",
+                severity: "warning",
+                changedByUsername: model.Username,
+                cancellationToken: cancellationToken);
+
             if (result.LockedUntilUtc.HasValue)
             {
                 ModelState.AddModelError(string.Empty,
@@ -72,7 +85,7 @@ public class AuthController : Controller
             }
             else
             {
-                ModelState.AddModelError(string.Empty, result.ErrorMessage);
+                ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "No se pudo completar el inicio de sesion.");
             }
 
             return View(model);
@@ -80,10 +93,29 @@ public class AuthController : Controller
 
         if (_mfaService.IsRequiredForRole(result.User.Role))
         {
+            await _auditLogService.LogSecurityEventAsync(
+                actionType: "login-challenge",
+                resource: "auth/mfa",
+                summary: $"Login validado para {result.User.Username}, pendiente MFA",
+                details: $"Rol {BackendAuthService.NormalizeRole(result.User.Role)}",
+                result: "challenge",
+                severity: "info",
+                changedByUsername: result.User.Username,
+                cancellationToken: cancellationToken);
+
             return await BeginMfaFlowAsync(result.User, model, cancellationToken);
         }
 
         await SignInFinalUserAsync(result.User, model.RememberMe, cancellationToken);
+        await _auditLogService.LogSecurityEventAsync(
+            actionType: "login-success",
+            resource: "auth/login",
+            summary: $"Login exitoso de {result.User.Username}",
+            details: $"Rol {BackendAuthService.NormalizeRole(result.User.Role)}",
+            result: "success",
+            severity: "info",
+            changedByUsername: result.User.Username,
+            cancellationToken: cancellationToken);
         return RedirectToLocal(model.ReturnUrl);
     }
 
@@ -94,6 +126,15 @@ public class AuthController : Controller
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         await HttpContext.SignOutAsync(PendingMfaScheme);
+        await _auditLogService.LogSecurityEventAsync(
+            actionType: "logout",
+            resource: "auth/logout",
+            summary: $"Logout de {User.Identity?.Name ?? "usuario"}",
+            details: "Sesion cerrada por el usuario.",
+            result: "success",
+            severity: "info",
+            changedByUsername: User.Identity?.Name,
+            cancellationToken: default);
         return RedirectToAction(nameof(Login));
     }
 
@@ -103,6 +144,15 @@ public class AuthController : Controller
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         await HttpContext.SignOutAsync(PendingMfaScheme);
+        await _auditLogService.LogSecurityEventAsync(
+            actionType: "logout",
+            resource: "auth/logout",
+            summary: $"Logout API de {User.Identity?.Name ?? "usuario"}",
+            details: "Sesion cerrada por API.",
+            result: "success",
+            severity: "info",
+            changedByUsername: User.Identity?.Name,
+            cancellationToken: default);
         return Ok(new { signedOut = true });
     }
 
@@ -222,6 +272,15 @@ public class AuthController : Controller
         }
 
         await SignInFinalUserAsync(user, pending.RememberMe, cancellationToken);
+        await _auditLogService.LogSecurityEventAsync(
+            actionType: "mfa-enrolled",
+            resource: "auth/mfa",
+            summary: $"MFA enrolado para {user.Username}",
+            details: "El usuario completo el enrolamiento MFA exitosamente.",
+            result: "success",
+            severity: "info",
+            changedByUsername: user.Username,
+            cancellationToken: cancellationToken);
         return RedirectToLocal(model.ReturnUrl);
     }
 
@@ -336,6 +395,15 @@ public class AuthController : Controller
         await _authService.UpdateUserAsync(user, cancellationToken);
         await HttpContext.SignOutAsync(PendingMfaScheme);
         await SignInFinalUserAsync(user, pending.RememberMe, cancellationToken);
+        await _auditLogService.LogSecurityEventAsync(
+            actionType: "mfa-verified",
+            resource: "auth/mfa",
+            summary: $"MFA verificado para {user.Username}",
+            details: "El usuario completo la segunda validacion.",
+            result: "success",
+            severity: "info",
+            changedByUsername: user.Username,
+            cancellationToken: cancellationToken);
         return RedirectToLocal(model.ReturnUrl);
     }
 
