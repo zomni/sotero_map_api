@@ -12,15 +12,18 @@ public class BackendAuthService
 
     private readonly AppDbContext _context;
     private readonly IPasswordHasher<AuthUser> _passwordHasher;
+    private readonly LdapAuthenticationService _ldapAuthenticationService;
     private readonly IConfiguration _configuration;
 
     public BackendAuthService(
         AppDbContext context,
         IPasswordHasher<AuthUser> passwordHasher,
+        LdapAuthenticationService ldapAuthenticationService,
         IConfiguration configuration)
     {
         _context = context;
         _passwordHasher = passwordHasher;
+        _ldapAuthenticationService = ldapAuthenticationService;
         _configuration = configuration;
     }
 
@@ -35,8 +38,10 @@ public class BackendAuthService
         await EnsureUserAsync(
             _configuration["SeedUsers:Viewer:Username"],
             _configuration["SeedUsers:Viewer:Password"],
-            AppRoles.User,
+            AppRoles.Viewer,
             cancellationToken);
+
+        await NormalizeLegacyRolesAsync(cancellationToken);
     }
 
     public async Task<LoginResult> AuthenticateAsync(
@@ -46,6 +51,56 @@ public class BackendAuthService
     {
         var normalizedUsername = Normalize(username);
         if (string.IsNullOrWhiteSpace(normalizedUsername) || string.IsNullOrWhiteSpace(password))
+        {
+            return LoginResult.CreateFailed("Credenciales invalidas.");
+        }
+
+        var useLdap = GetBool("AuthSettings:UseLdapAuthentication", "AUTH_USE_LDAP", true);
+        var allowLocalBreakGlass = GetBool("AuthSettings:AllowLocalBreakGlass", "ALLOW_LOCAL_BREAK_GLASS", true);
+
+        if (useLdap)
+        {
+            var ldapResult = await _ldapAuthenticationService.AuthenticateAsync(normalizedUsername, password, cancellationToken);
+            if (ldapResult.Succeeded)
+            {
+                var directoryUser = await _context.AuthUsers
+                    .SingleOrDefaultAsync(u => u.NormalizedUsername == ldapResult.NormalizedUsername, cancellationToken);
+
+                if (directoryUser is null || !directoryUser.IsActive)
+                {
+                    directoryUser = await CreateOrReactivateLdapUserIfEnabledAsync(ldapResult.NormalizedUsername, cancellationToken);
+                    if (directoryUser is null)
+                    {
+                        return LoginResult.CreateFailed("Usuario autenticado en AD pero no tiene perfil local habilitado.");
+                    }
+                }
+
+                if (directoryUser.LockedUntilUtc.HasValue && directoryUser.LockedUntilUtc > DateTime.UtcNow)
+                {
+                    return LoginResult.CreateLocked(directoryUser.LockedUntilUtc.Value);
+                }
+
+                directoryUser.FailedLoginAttempts = 0;
+                directoryUser.LockedUntilUtc = null;
+                directoryUser.LastLoginAtUtc = DateTime.UtcNow;
+                directoryUser.UpdatedAtUtc = DateTime.UtcNow;
+                await _context.SaveChangesAsync(cancellationToken);
+
+                return LoginResult.CreateSucceeded(directoryUser);
+            }
+
+            if (!ldapResult.IsAvailable)
+            {
+                return LoginResult.CreateFailed(ldapResult.Message);
+            }
+
+            if (!allowLocalBreakGlass)
+            {
+                return LoginResult.CreateFailed(ldapResult.Message);
+            }
+        }
+
+        if (!allowLocalBreakGlass || !IsBreakGlassUser(normalizedUsername))
         {
             return LoginResult.CreateFailed("Credenciales invalidas.");
         }
@@ -161,6 +216,119 @@ public class BackendAuthService
     }
 
     private static string Normalize(string? value) => (value ?? string.Empty).Trim().ToUpperInvariant();
+
+    public static string NormalizeRole(string? role)
+    {
+        return (role ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            AppRoles.Admin => AppRoles.Admin,
+            AppRoles.Editor => AppRoles.Editor,
+            AppRoles.Viewer => AppRoles.Viewer,
+            AppRoles.Auditor => AppRoles.Auditor,
+            "user" => AppRoles.Viewer,
+            _ => AppRoles.Viewer
+        };
+    }
+
+    private async Task NormalizeLegacyRolesAsync(CancellationToken cancellationToken)
+    {
+        var legacyUsers = await _context.AuthUsers
+            .Where(user => user.Role == "user")
+            .ToListAsync(cancellationToken);
+
+        if (legacyUsers.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var user in legacyUsers)
+        {
+            user.Role = AppRoles.Viewer;
+            user.UpdatedAtUtc = DateTime.UtcNow;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<AuthUser?> GetUserByIdAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        return await _context.AuthUsers.SingleOrDefaultAsync(user => user.Id == userId, cancellationToken);
+    }
+
+    public async Task UpdateUserAsync(AuthUser user, CancellationToken cancellationToken = default)
+    {
+        user.UpdatedAtUtc = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<AuthUser?> CreateOrReactivateLdapUserIfEnabledAsync(
+        string normalizedUsername,
+        CancellationToken cancellationToken)
+    {
+        var autoProvision = GetBool("AuthSettings:AutoProvisionLdapUsers", "AUTO_PROVISION_LDAP_USERS", true);
+        if (!autoProvision)
+        {
+            return null;
+        }
+
+        var defaultRole = NormalizeRole(_configuration["AuthSettings:DefaultLdapRole"]);
+        var existing = await _context.AuthUsers
+            .SingleOrDefaultAsync(user => user.NormalizedUsername == normalizedUsername, cancellationToken);
+
+        if (existing is not null)
+        {
+            existing.IsActive = true;
+            if (string.IsNullOrWhiteSpace(existing.Role))
+            {
+                existing.Role = defaultRole;
+            }
+
+            existing.UpdatedAtUtc = DateTime.UtcNow;
+            await _context.SaveChangesAsync(cancellationToken);
+            return existing;
+        }
+
+        var user = new AuthUser
+        {
+            Username = normalizedUsername.ToLowerInvariant(),
+            NormalizedUsername = normalizedUsername,
+            Role = defaultRole,
+            IsActive = true,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow,
+            LastLoginAtUtc = DateTime.UtcNow
+        };
+
+        user.PasswordHash = _passwordHasher.HashPassword(user, Guid.NewGuid().ToString("N"));
+        _context.AuthUsers.Add(user);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return user;
+    }
+
+    private bool IsBreakGlassUser(string normalizedUsername)
+    {
+        var configuredUsers = (_configuration["AuthSettings:BreakGlassUsernames"] ?? _configuration["SeedUsers:Admin:Username"] ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (configuredUsers.Length == 0)
+        {
+            return true;
+        }
+
+        return configuredUsers.Any(user => string.Equals(Normalize(user), normalizedUsername, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool GetBool(string configKey, string envKey, bool fallback)
+    {
+        var envValue = Environment.GetEnvironmentVariable(envKey);
+        if (bool.TryParse(envValue, out var parsedEnv))
+        {
+            return parsedEnv;
+        }
+
+        return bool.TryParse(_configuration[configKey], out var parsedConfig) ? parsedConfig : fallback;
+    }
 }
 
 public sealed class LoginResult

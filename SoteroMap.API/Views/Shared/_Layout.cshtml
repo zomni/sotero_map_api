@@ -79,7 +79,18 @@
                 <div class="bg-dark bg-opacity-25 rounded-3 p-3 mb-4 text-white">
                     <div class="small text-uppercase text-secondary mb-1">Sesion</div>
                     <div class="fw-semibold">@(User.Identity?.Name ?? "Sin sesion")</div>
-                    <div class="small text-info">Rol: @(User.IsInRole(SoteroMap.API.Models.AppRoles.Admin) ? "admin" : "user")</div>
+                    <div class="small text-info">
+                        @{
+                            var roleLabel = User.IsInRole(SoteroMap.API.Models.AppRoles.Admin)
+                                ? "admin"
+                                : User.IsInRole("editor")
+                                    ? "editor"
+                                    : User.IsInRole("auditor")
+                                        ? "auditor"
+                                        : "viewer";
+                        }
+                        Rol: @roleLabel
+                    </div>
                 </div>
                 <ul class="nav flex-column gap-1">
                     <li class="nav-item">

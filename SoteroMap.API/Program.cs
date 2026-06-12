@@ -10,6 +10,7 @@ using SoteroMap.API.Services;
 var builder = WebApplication.CreateBuilder(args);
 var securitySettings = builder.Configuration.GetSection("SecuritySettings");
 var corsSettings = builder.Configuration.GetSection("CorsSettings");
+var mfaSettings = builder.Configuration.GetSection("MfaSettings");
 var forceHttps = securitySettings.GetValue<bool?>("ForceHttps") ?? !builder.Environment.IsDevelopment();
 var enableSwaggerInProduction = securitySettings.GetValue<bool?>("EnableSwaggerInProduction") ?? false;
 var referrerPolicy = securitySettings["ReferrerPolicy"] ?? "strict-origin-when-cross-origin";
@@ -83,6 +84,21 @@ builder.Services
             }
         };
     });
+builder.Services.AddAuthentication()
+    .AddCookie("MfaPending", options =>
+    {
+        var pendingMinutes = mfaSettings.GetValue<double?>("PendingMinutes") ?? 10;
+        options.Cookie.Name = "SoteroMap.MfaPending";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
+        options.SlidingExpiration = false;
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(pendingMinutes);
+        options.LoginPath = "/Auth/Login";
+        options.AccessDeniedPath = "/Auth/Login";
+    });
 builder.Services.AddAuthorization();
 
 // SQLite local: usa una ruta unica y portable, tambien en Docker.
@@ -93,6 +109,8 @@ builder.Configuration["ConnectionStrings:Default"] = resolvedSqliteConnectionStr
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(resolvedSqliteConnectionString));
 builder.Services.AddScoped<IPasswordHasher<AuthUser>, PasswordHasher<AuthUser>>();
+builder.Services.AddScoped<LdapAuthenticationService>();
+builder.Services.AddScoped<MfaService>();
 builder.Services.AddScoped<BackendAuthService>();
 builder.Services.AddScoped<AuditLogService>();
 builder.Services.AddScoped<FrontendSyncService>();

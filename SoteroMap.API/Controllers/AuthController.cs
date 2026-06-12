@@ -13,14 +13,29 @@ namespace SoteroMap.API.Controllers;
 [AllowAnonymous]
 public class AuthController : Controller
 {
+    private const string PendingMfaScheme = "MfaPending";
     private const string RememberMeClaimType = "sotero:remember_me";
+    private const string MfaModeClaimType = "sotero:mfa_mode";
+    private const string MfaSetupKeyClaimType = "sotero:mfa_setup_key";
+    private const string MfaUserIdClaimType = "sotero:mfa_user_id";
+    private const string MfaReturnUrlClaimType = "sotero:mfa_return_url";
+    private const string MfaModeSetup = "setup";
+    private const string MfaModeChallenge = "challenge";
     private readonly BackendAuthService _authService;
+    private readonly MfaService _mfaService;
     private readonly IConfiguration _configuration;
+    private readonly IWebHostEnvironment _environment;
 
-    public AuthController(BackendAuthService authService, IConfiguration configuration)
+    public AuthController(
+        BackendAuthService authService,
+        MfaService mfaService,
+        IConfiguration configuration,
+        IWebHostEnvironment environment)
     {
         _authService = authService;
+        _mfaService = mfaService;
         _configuration = configuration;
+        _environment = environment;
     }
 
     [HttpGet]
@@ -63,31 +78,12 @@ public class AuthController : Controller
             return View(model);
         }
 
-        var claims = new List<Claim>
+        if (_mfaService.IsRequiredForRole(result.User.Role))
         {
-            new(ClaimTypes.NameIdentifier, result.User.Id.ToString()),
-            new(ClaimTypes.Name, result.User.Username),
-            new(ClaimTypes.Role, result.User.Role),
-            new(RememberMeClaimType, model.RememberMe ? "true" : "false")
-        };
+            return await BeginMfaFlowAsync(result.User, model, cancellationToken);
+        }
 
-        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-        var principal = new ClaimsPrincipal(identity);
-
-        var expiresUtc = model.RememberMe
-            ? DateTimeOffset.UtcNow.AddDays(_configuration.GetValue<double?>("SessionSettings:RememberMeDays") ?? 30)
-            : DateTimeOffset.UtcNow.AddMinutes(_configuration.GetValue<double?>("SessionSettings:IdleMinutes") ?? 15);
-
-        await HttpContext.SignInAsync(
-            CookieAuthenticationDefaults.AuthenticationScheme,
-            principal,
-            new AuthenticationProperties
-            {
-                IsPersistent = model.RememberMe,
-                AllowRefresh = true,
-                ExpiresUtc = expiresUtc
-            });
-
+        await SignInFinalUserAsync(result.User, model.RememberMe, cancellationToken);
         return RedirectToLocal(model.ReturnUrl);
     }
 
@@ -97,6 +93,7 @@ public class AuthController : Controller
     public async Task<IActionResult> Logout()
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        await HttpContext.SignOutAsync(PendingMfaScheme);
         return RedirectToAction(nameof(Login));
     }
 
@@ -105,7 +102,241 @@ public class AuthController : Controller
     public async Task<IActionResult> ApiLogout()
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        await HttpContext.SignOutAsync(PendingMfaScheme);
         return Ok(new { signedOut = true });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> MfaSetup(string? returnUrl = null, bool reset = false, CancellationToken cancellationToken = default)
+    {
+        var pending = await GetPendingMfaContextAsync(cancellationToken);
+        if (pending is null || !string.Equals(pending.Mode, MfaModeSetup, StringComparison.OrdinalIgnoreCase))
+        {
+            return RedirectToAction(nameof(Login), new { returnUrl });
+        }
+
+        if (reset)
+        {
+            var user = await _authService.GetUserByIdAsync(pending.UserId, cancellationToken);
+            if (user is null)
+            {
+                await HttpContext.SignOutAsync(PendingMfaScheme);
+                return RedirectToAction(nameof(Login), new { returnUrl });
+            }
+
+            var newSession = await _mfaService.BeginEnrollmentAsync(user, cancellationToken);
+            if (newSession is null)
+            {
+                await HttpContext.SignOutAsync(PendingMfaScheme);
+                return RedirectToAction(nameof(Login), new { returnUrl });
+            }
+
+            await SignInPendingMfaAsync(user, pending.RememberMe, MfaModeSetup, newSession.SetupKey, pending.ReturnUrl ?? returnUrl, cancellationToken);
+            return RedirectToAction(nameof(MfaSetup), new { returnUrl = pending.ReturnUrl ?? returnUrl });
+        }
+
+        var session = _mfaService.GetEnrollmentSession(pending.SetupKey);
+        if (session is null)
+        {
+            await HttpContext.SignOutAsync(PendingMfaScheme);
+            return RedirectToAction(nameof(Login), new { returnUrl });
+        }
+
+        return View(new MfaSetupViewModel
+        {
+            Username = pending.Username,
+            Issuer = session.Issuer,
+            AccountName = session.AccountName,
+            SecretDisplay = session.SecretDisplay,
+            QrSvg = session.QrSvg,
+            SetupKey = pending.SetupKey,
+            ReturnUrl = pending.ReturnUrl ?? returnUrl,
+            ExpiresAtUtc = session.ExpiresAtUtc,
+            ServerTimeUtc = DateTimeOffset.UtcNow,
+            DevelopmentExpectedCode = _environment.IsDevelopment()
+                ? _mfaService.GetCurrentDevelopmentCode(pending.SetupKey)
+                : null
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MfaSetup(MfaSetupViewModel model, CancellationToken cancellationToken)
+    {
+        var pending = await GetPendingMfaContextAsync(cancellationToken);
+        if (pending is null || !string.Equals(pending.Mode, MfaModeSetup, StringComparison.OrdinalIgnoreCase))
+        {
+            return RedirectToAction(nameof(Login), new { returnUrl = model.ReturnUrl });
+        }
+
+        if (!ModelState.IsValid)
+        {
+            var session = _mfaService.GetEnrollmentSession(pending.SetupKey);
+            if (session is not null)
+            {
+                model.Username = pending.Username;
+                model.Issuer = session.Issuer;
+                model.AccountName = session.AccountName;
+                model.SecretDisplay = session.SecretDisplay;
+                model.QrSvg = session.QrSvg;
+                model.SetupKey = pending.SetupKey;
+                model.ExpiresAtUtc = session.ExpiresAtUtc;
+            }
+
+            return View(model);
+        }
+
+        var success = await _mfaService.CompleteEnrollmentAsync(
+            pending.UserId,
+            pending.SetupKey,
+            model.Code,
+            cancellationToken);
+
+        if (!success)
+        {
+            ModelState.AddModelError(string.Empty, "El codigo MFA no es valido. Verifica que estes usando la entrada nueva de SoteroMap/admin y que la hora del telefono este sincronizada automaticamente.");
+            var session = _mfaService.GetEnrollmentSession(pending.SetupKey);
+            if (session is not null)
+            {
+                model.Username = pending.Username;
+                model.Issuer = session.Issuer;
+                model.AccountName = session.AccountName;
+                model.SecretDisplay = session.SecretDisplay;
+                model.QrSvg = session.QrSvg;
+                model.SetupKey = pending.SetupKey;
+                model.ExpiresAtUtc = session.ExpiresAtUtc;
+                model.ServerTimeUtc = DateTimeOffset.UtcNow;
+                model.DevelopmentExpectedCode = _environment.IsDevelopment()
+                    ? _mfaService.GetCurrentDevelopmentCode(pending.SetupKey)
+                    : null;
+            }
+
+            return View(model);
+        }
+
+        await HttpContext.SignOutAsync(PendingMfaScheme);
+        var user = await _authService.GetUserByIdAsync(pending.UserId, cancellationToken);
+        if (user is null)
+        {
+            return RedirectToAction(nameof(Login), new { returnUrl = model.ReturnUrl });
+        }
+
+        await SignInFinalUserAsync(user, pending.RememberMe, cancellationToken);
+        return RedirectToLocal(model.ReturnUrl);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> MfaMethod(string? returnUrl = null, CancellationToken cancellationToken = default)
+    {
+        var pending = await GetPendingMfaContextAsync(cancellationToken);
+        if (pending is null || !string.Equals(pending.Mode, MfaModeChallenge, StringComparison.OrdinalIgnoreCase))
+        {
+            return RedirectToAction(nameof(Login), new { returnUrl });
+        }
+
+        return View(new MfaMethodViewModel
+        {
+            Username = pending.Username,
+            ReturnUrl = pending.ReturnUrl ?? returnUrl,
+            CanResetInDevelopment = _environment.IsDevelopment()
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MfaMethod(MfaMethodViewModel model, CancellationToken cancellationToken)
+    {
+        var pending = await GetPendingMfaContextAsync(cancellationToken);
+        if (pending is null || !string.Equals(pending.Mode, MfaModeChallenge, StringComparison.OrdinalIgnoreCase))
+        {
+            return RedirectToAction(nameof(Login), new { returnUrl = model.ReturnUrl });
+        }
+
+        if (!string.Equals(model.Method, "authenticator", StringComparison.OrdinalIgnoreCase))
+        {
+            ModelState.AddModelError(string.Empty, "Metodo MFA no disponible.");
+            model.Username = pending.Username;
+            model.CanResetInDevelopment = _environment.IsDevelopment();
+            return View(model);
+        }
+
+        return RedirectToAction(nameof(MfaVerify), new { returnUrl = pending.ReturnUrl ?? model.ReturnUrl });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MfaResetDevelopment(MfaMethodViewModel model, CancellationToken cancellationToken)
+    {
+        if (!_environment.IsDevelopment())
+        {
+            return NotFound();
+        }
+
+        var pending = await GetPendingMfaContextAsync(cancellationToken);
+        if (pending is null || !string.Equals(pending.Mode, MfaModeChallenge, StringComparison.OrdinalIgnoreCase))
+        {
+            return RedirectToAction(nameof(Login), new { returnUrl = model.ReturnUrl });
+        }
+
+        var user = await _authService.GetUserByIdAsync(pending.UserId, cancellationToken);
+        if (user is null)
+        {
+            await HttpContext.SignOutAsync(PendingMfaScheme);
+            return RedirectToAction(nameof(Login), new { returnUrl = model.ReturnUrl });
+        }
+
+        await _mfaService.ResetEnrollmentAsync(user.Id, cancellationToken);
+        await HttpContext.SignOutAsync(PendingMfaScheme);
+
+        var session = await _mfaService.BeginEnrollmentAsync(user, cancellationToken);
+        if (session is null)
+        {
+            return RedirectToAction(nameof(Login), new { returnUrl = model.ReturnUrl });
+        }
+
+        await SignInPendingMfaAsync(user, pending.RememberMe, MfaModeSetup, session.SetupKey, pending.ReturnUrl ?? model.ReturnUrl, cancellationToken);
+        return RedirectToAction(nameof(MfaSetup), new { returnUrl = pending.ReturnUrl ?? model.ReturnUrl });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> MfaVerify(string? returnUrl = null, CancellationToken cancellationToken = default)
+    {
+        var pending = await GetPendingMfaContextAsync(cancellationToken);
+        if (pending is null || !string.Equals(pending.Mode, MfaModeChallenge, StringComparison.OrdinalIgnoreCase))
+        {
+            return RedirectToAction(nameof(Login), new { returnUrl });
+        }
+
+        return View(new MfaVerifyViewModel
+        {
+            Username = pending.Username,
+            ReturnUrl = pending.ReturnUrl ?? returnUrl
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MfaVerify(MfaVerifyViewModel model, CancellationToken cancellationToken)
+    {
+        var pending = await GetPendingMfaContextAsync(cancellationToken);
+        if (pending is null || !string.Equals(pending.Mode, MfaModeChallenge, StringComparison.OrdinalIgnoreCase))
+        {
+            return RedirectToAction(nameof(Login), new { returnUrl = model.ReturnUrl });
+        }
+
+        var user = await _authService.GetUserByIdAsync(pending.UserId, cancellationToken);
+        if (user is null || !_mfaService.VerifyExistingCode(user, model.Code))
+        {
+            ModelState.AddModelError(string.Empty, "El codigo MFA no es valido.");
+            model.Username = pending.Username;
+            return View(model);
+        }
+
+        _mfaService.MarkMfaVerified(user);
+        await _authService.UpdateUserAsync(user, cancellationToken);
+        await HttpContext.SignOutAsync(PendingMfaScheme);
+        await SignInFinalUserAsync(user, pending.RememberMe, cancellationToken);
+        return RedirectToLocal(model.ReturnUrl);
     }
 
     [Authorize]
@@ -176,4 +407,127 @@ public class AuthController : Controller
 
         return Redirect("/dashboard");
     }
+
+    private async Task<IActionResult> BeginMfaFlowAsync(AuthUser user, LoginViewModel model, CancellationToken cancellationToken)
+    {
+        var rememberMe = model.RememberMe;
+        var role = BackendAuthService.NormalizeRole(user.Role);
+
+        if (!user.MfaEnabled || string.IsNullOrWhiteSpace(user.MfaSecretProtected))
+        {
+            var session = await _mfaService.BeginEnrollmentAsync(user, cancellationToken);
+            if (session is null)
+            {
+                ModelState.AddModelError(string.Empty, "No se pudo iniciar el enrolamiento MFA.");
+                return View(nameof(Login), model);
+            }
+
+            await SignInPendingMfaAsync(user, rememberMe, MfaModeSetup, session.SetupKey, model.ReturnUrl, cancellationToken);
+            return RedirectToAction(nameof(MfaSetup), new { returnUrl = model.ReturnUrl });
+        }
+
+        await SignInPendingMfaAsync(user, rememberMe, MfaModeChallenge, setupKey: string.Empty, model.ReturnUrl, cancellationToken);
+        return RedirectToAction(nameof(MfaMethod), new { returnUrl = model.ReturnUrl });
+    }
+
+    private async Task SignInFinalUserAsync(AuthUser user, bool rememberMe, CancellationToken cancellationToken)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new(ClaimTypes.Name, user.Username),
+            new(ClaimTypes.Role, BackendAuthService.NormalizeRole(user.Role)),
+            new(RememberMeClaimType, rememberMe ? "true" : "false")
+        };
+
+        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        var principal = new ClaimsPrincipal(identity);
+        var expiresUtc = rememberMe
+            ? DateTimeOffset.UtcNow.AddDays(_configuration.GetValue<double?>("SessionSettings:RememberMeDays") ?? 30)
+            : DateTimeOffset.UtcNow.AddMinutes(_configuration.GetValue<double?>("SessionSettings:IdleMinutes") ?? 15);
+
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            principal,
+            new AuthenticationProperties
+            {
+                IsPersistent = rememberMe,
+                AllowRefresh = true,
+                ExpiresUtc = expiresUtc
+            });
+    }
+
+    private async Task SignInPendingMfaAsync(
+        AuthUser user,
+        bool rememberMe,
+        string mode,
+        string setupKey,
+        string? returnUrl,
+        CancellationToken cancellationToken)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new(ClaimTypes.Name, user.Username),
+            new(ClaimTypes.Role, BackendAuthService.NormalizeRole(user.Role)),
+            new(RememberMeClaimType, rememberMe ? "true" : "false"),
+            new(MfaModeClaimType, mode),
+            new(MfaUserIdClaimType, user.Id.ToString()),
+            new(MfaReturnUrlClaimType, returnUrl ?? string.Empty)
+        };
+
+        if (!string.IsNullOrWhiteSpace(setupKey))
+        {
+            claims.Add(new Claim(MfaSetupKeyClaimType, setupKey));
+        }
+
+        var identity = new ClaimsIdentity(claims, PendingMfaScheme);
+        var principal = new ClaimsPrincipal(identity);
+        var expiresUtc = DateTimeOffset.UtcNow.AddMinutes(_configuration.GetValue<double?>("MfaSettings:PendingMinutes") ?? 10);
+
+        await HttpContext.SignInAsync(
+            PendingMfaScheme,
+            principal,
+            new AuthenticationProperties
+            {
+                IsPersistent = false,
+                AllowRefresh = false,
+                ExpiresUtc = expiresUtc
+            });
+    }
+
+    private async Task<PendingMfaContext?> GetPendingMfaContextAsync(CancellationToken cancellationToken)
+    {
+        var authResult = await HttpContext.AuthenticateAsync(PendingMfaScheme);
+        if (!authResult.Succeeded || authResult.Principal is null)
+        {
+            return null;
+        }
+
+        var userIdValue = authResult.Principal.FindFirstValue(MfaUserIdClaimType);
+        if (!int.TryParse(userIdValue, out var userId))
+        {
+            return null;
+        }
+
+        return new PendingMfaContext(
+            userId,
+            authResult.Principal.FindFirstValue(ClaimTypes.Name) ?? string.Empty,
+            authResult.Principal.FindFirstValue(ClaimTypes.Role) ?? string.Empty,
+            authResult.Principal.FindFirstValue(MfaModeClaimType) ?? string.Empty,
+            authResult.Principal.FindFirstValue(MfaSetupKeyClaimType) ?? string.Empty,
+            authResult.Principal.FindFirstValue(MfaReturnUrlClaimType) ?? string.Empty,
+            string.Equals(authResult.Principal.FindFirstValue(RememberMeClaimType), "true", StringComparison.OrdinalIgnoreCase),
+            authResult.Properties?.ExpiresUtc);
+    }
+
+    private sealed record PendingMfaContext(
+        int UserId,
+        string Username,
+        string Role,
+        string Mode,
+        string SetupKey,
+        string ReturnUrl,
+        bool RememberMe,
+        DateTimeOffset? ExpiresUtc);
 }

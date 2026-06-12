@@ -219,6 +219,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.NormalizedUsername).IsRequired().HasMaxLength(100);
             entity.Property(e => e.PasswordHash).IsRequired().HasMaxLength(500);
             entity.Property(e => e.Role).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.MfaSecretProtected).HasMaxLength(1000);
         });
 
         modelBuilder.Entity<AuditLogEntry>(entity =>

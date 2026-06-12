@@ -5,6 +5,13 @@ services:
       dockerfile: Dockerfile.dev
     ports:
       - "5000:8080"
+    extra_hosts:
+      - "HELIOS:10.6.50.6"
+      - "HELIOS.ssmso.cl:10.6.50.6"
+    dns:
+      - 10.6.50.6
+    dns_search:
+      - ssmso.cl
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - DOTNET_USE_POLLING_FILE_WATCHER=1
@@ -17,6 +24,27 @@ services:
       - SeedUsers__Admin__Password=${SEED_ADMIN_PASSWORD:-Admin!Sotero2026Map}
       - SeedUsers__Viewer__Username=${SEED_VIEWER_USERNAME:-viewer}
       - SeedUsers__Viewer__Password=${SEED_VIEWER_PASSWORD:-Viewer!Sotero2026Map}
+      - AuthSettings__UseLdapAuthentication=${AUTH_USE_LDAP:-true}
+      - AuthSettings__AllowLocalBreakGlass=${ALLOW_LOCAL_BREAK_GLASS:-true}
+      - AuthSettings__BreakGlassUsernames=${BREAK_GLASS_USERNAMES:-admin}
+      - AuthSettings__AutoProvisionLdapUsers=${AUTO_PROVISION_LDAP_USERS:-true}
+      - AuthSettings__DefaultLdapRole=${DEFAULT_LDAP_ROLE:-viewer}
+      - MfaSettings__Issuer=${MFA_ISSUER:-SoteroMap}
+      - MfaSettings__RequireForAdmins=${MFA_REQUIRE_FOR_ADMINS:-true}
+      - MfaSettings__RequireForNonAdmins=${MFA_REQUIRE_FOR_NON_ADMINS:-false}
+      - MfaSettings__PendingMinutes=${MFA_PENDING_MINUTES:-10}
+      - MfaSettings__PeriodSeconds=${MFA_PERIOD_SECONDS:-30}
+      - MfaSettings__Digits=${MFA_DIGITS:-6}
+      - MfaSettings__WindowSteps=${MFA_WINDOW_STEPS:-6}
+      - LDAP_HOST=${LDAP_HOST:-HELIOS.ssmso.cl}
+      - LDAP_FALLBACK_HOST=${LDAP_FALLBACK_HOST:-10.6.50.6}
+      - LDAP_PORT=${LDAP_PORT:-636}
+      - LDAP_DOMAIN=${LDAP_DOMAIN:-SSMSO}
+      - LDAP_BASE_DN=${LDAP_BASE_DN:-DC=ssmso,DC=cl}
+      - LDAP_UPN_SUFFIXES=${LDAP_UPN_SUFFIXES:-hsr.cl,ssmso.cl,sotero.cl}
+      - LDAP_USE_SSL=${LDAP_USE_SSL:-true}
+      - LDAP_TRUST_SERVER_CERTIFICATE=${LDAP_TRUST_SERVER_CERTIFICATE:-true}
+      - LDAPTLS_REQCERT=${LDAPTLS_REQCERT:-never}
     volumes:
       - ./:/app
       - sqlite_data:/app/data

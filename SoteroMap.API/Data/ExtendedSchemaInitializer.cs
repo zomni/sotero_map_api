@@ -182,6 +182,10 @@ public static class ExtendedSchemaInitializer
             await EnsureColumnAsync(context, "ImportedInventoryItems", "AssignmentNotes", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "ImportedInventoryItems", "AssignmentUpdatedAtUtc", "TEXT NULL");
             await EnsureColumnAsync(context, "ImportedInventoryItems", "DeliveryFormPdfFileName", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "AuthUsers", "MfaEnabled", "INTEGER NOT NULL DEFAULT 0");
+            await EnsureColumnAsync(context, "AuthUsers", "MfaSecretProtected", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "AuthUsers", "MfaEnrolledAtUtc", "TEXT NULL");
+            await EnsureColumnAsync(context, "AuthUsers", "MfaLastVerifiedAtUtc", "TEXT NULL");
             await EnsureColumnAsync(context, "SyncedBuildings", "ManualCampus", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "SyncedBuildings", "ManualDisplayName", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "SyncedBuildings", "ManualFloorsJson", "TEXT NOT NULL DEFAULT ''");
@@ -233,6 +237,10 @@ public static class ExtendedSchemaInitializer
                     NormalizedUsername TEXT NOT NULL,
                     PasswordHash TEXT NOT NULL,
                     Role TEXT NOT NULL,
+                    MfaEnabled INTEGER NOT NULL DEFAULT 0,
+                    MfaSecretProtected TEXT NOT NULL DEFAULT '',
+                    MfaEnrolledAtUtc TEXT NULL,
+                    MfaLastVerifiedAtUtc TEXT NULL,
                     IsActive INTEGER NOT NULL,
                     FailedLoginAttempts INTEGER NOT NULL,
                     LockedUntilUtc TEXT NULL,
