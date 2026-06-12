@@ -8,6 +8,35 @@ using SoteroMap.API.Models;
 using SoteroMap.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+var securitySettings = builder.Configuration.GetSection("SecuritySettings");
+var corsSettings = builder.Configuration.GetSection("CorsSettings");
+var forceHttps = securitySettings.GetValue<bool?>("ForceHttps") ?? !builder.Environment.IsDevelopment();
+var enableSwaggerInProduction = securitySettings.GetValue<bool?>("EnableSwaggerInProduction") ?? false;
+var referrerPolicy = securitySettings["ReferrerPolicy"] ?? "strict-origin-when-cross-origin";
+var permissionsPolicy = securitySettings["PermissionsPolicy"] ?? "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
+var contentSecurityPolicy = securitySettings["ContentSecurityPolicy"] ?? "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; connect-src 'self' https: http: ws: wss:; font-src 'self' data: https:";
+var cookieSecurePolicyValue = securitySettings["CookieSecurePolicy"];
+var cookieSameSiteValue = securitySettings["CookieSameSite"];
+
+static CookieSecurePolicy ParseCookieSecurePolicy(string? value, CookieSecurePolicy fallback)
+{
+    if (Enum.TryParse<CookieSecurePolicy>(value, ignoreCase: true, out var parsed))
+    {
+        return parsed;
+    }
+
+    return fallback;
+}
+
+static SameSiteMode ParseSameSiteMode(string? value, SameSiteMode fallback)
+{
+    if (Enum.TryParse<SameSiteMode>(value, ignoreCase: true, out var parsed))
+    {
+        return parsed;
+    }
+
+    return fallback;
+}
 
 // Controllers con vistas Razor (MVC) + API
 var mvcBuilder = builder.Services.AddControllersWithViews();
@@ -27,8 +56,10 @@ builder.Services
         options.AccessDeniedPath = "/Auth/AccessDenied";
         options.Cookie.Name = "SoteroMap.Auth";
         options.Cookie.HttpOnly = true;
-        options.Cookie.SameSite = SameSiteMode.Lax;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.Cookie.SameSite = ParseSameSiteMode(cookieSameSiteValue, SameSiteMode.Lax);
+        options.Cookie.SecurePolicy = ParseCookieSecurePolicy(
+            cookieSecurePolicyValue,
+            builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always);
         options.SlidingExpiration = true;
         options.ExpireTimeSpan = TimeSpan.FromMinutes(sessionMinutes);
         options.Events = new CookieAuthenticationEvents
@@ -74,7 +105,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontendPolicy", policy =>
     {
-        var allowedOrigins = (builder.Configuration["AllowedOrigins"] ?? "http://localhost:3000")
+        var allowedOrigins = (corsSettings["AllowedOrigins"] ?? builder.Configuration["AllowedOrigins"] ?? "http://localhost:8080,http://localhost:3000")
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         policy.WithOrigins(allowedOrigins)
@@ -109,6 +140,12 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.UseCors("FrontendPolicy");
+if (forceHttps && !app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
+
 app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments("/dashboard", out var dashboardRemaining))
@@ -153,6 +190,20 @@ app.Use(async (context, next) =>
 
     await next();
 });
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        context.Response.Headers["X-Frame-Options"] = "DENY";
+        context.Response.Headers["Referrer-Policy"] = referrerPolicy;
+        context.Response.Headers["Permissions-Policy"] = permissionsPolicy;
+        context.Response.Headers["Content-Security-Policy"] = contentSecurityPolicy;
+        return Task.CompletedTask;
+    });
+
+    await next();
+});
 app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
@@ -169,6 +220,33 @@ if (app.Environment.IsDevelopment())
                 if (context.User.Identity?.IsAuthenticated != true)
                 {
                     await context.ChallengeAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                    return;
+                }
+
+                await next();
+            });
+        });
+
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+else if (enableSwaggerInProduction)
+{
+    app.UseWhen(
+        context => context.Request.Path.StartsWithSegments("/swagger"),
+        branch =>
+        {
+            branch.Use(async (context, next) =>
+            {
+                if (context.User.Identity?.IsAuthenticated != true)
+                {
+                    await context.ChallengeAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                    return;
+                }
+
+                if (!context.User.IsInRole(AppRoles.Admin))
+                {
+                    await context.ForbidAsync(CookieAuthenticationDefaults.AuthenticationScheme);
                     return;
                 }
 
