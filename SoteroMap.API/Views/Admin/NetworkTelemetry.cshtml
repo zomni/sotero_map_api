@@ -217,48 +217,77 @@
 <div class="card telemetry-card mt-4">
     <div class="card-body">
         <h5 class="mb-3">Riesgos destacados</h5>
-        @if (Model.TopRiskObservations.Count == 0)
-        {
-            <div class="text-muted">Aun no hay observaciones con riesgo para mostrar.</div>
-        }
-        else
-        {
-            <div class="table-responsive">
-                <table class="table align-middle">
-                    <thead>
-                        <tr>
-                            <th>Tipo</th>
-                            <th>Elemento</th>
-                            <th>Usuario</th>
-                            <th>IP</th>
-                            <th>MAC</th>
-                            <th>Riesgo</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var item in Model.TopRiskObservations)
-                        {
-                            <tr>
-                                <td>@item.ObservationType</td>
-                                <td>
-                                    <div class="fw-semibold">@item.DeviceName</div>
-                                    <div class="small text-muted">@item.ExternalKey</div>
-                                </td>
-                                <td>@item.Username</td>
-                                <td>@item.IpAddress</td>
-                                <td>@item.MacAddress</td>
-                                <td>
-                                    <div class="fw-semibold">@item.RiskLevel (@item.RiskScore)</div>
-                                    @if (item.RiskReasons.Count > 0)
-                                    {
-                                        <div class="small text-muted">@string.Join(", ", item.RiskReasons)</div>
-                                    }
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
+        <div id="network-telemetry-observations" class="text-muted">Cargando observaciones destacadas...</div>
     </div>
 </div>
+
+<script>
+    (function () {
+        const container = document.getElementById("network-telemetry-observations");
+        if (!container) return;
+
+        const latestSnapshotId = Number(@(Model.RecentSnapshots.Count > 0 ? Model.RecentSnapshots[0].Id : 0));
+        if (!latestSnapshotId) {
+            container.textContent = "Aun no hay observaciones con riesgo para mostrar.";
+            return;
+        }
+
+        fetch(`/api/network-telemetry/snapshots/${latestSnapshotId}/observations?take=10`, {
+            credentials: "include",
+            cache: "no-store"
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error(`La API respondio ${response.status}`);
+                }
+
+                return response.json();
+            })
+            .then((items) => {
+                if (!Array.isArray(items) || items.length === 0) {
+                    container.textContent = "Aun no hay observaciones con riesgo para mostrar.";
+                    return;
+                }
+
+                const rows = items.map((item) => {
+                    const reasons = Array.isArray(item.riskReasons) ? item.riskReasons.join(", ") : "";
+                    return `
+                        <tr>
+                            <td>${item.observationType || ""}</td>
+                            <td>
+                                <div class="fw-semibold">${item.deviceName || "Sin nombre"}</div>
+                                <div class="small text-muted">${item.externalKey || ""}</div>
+                            </td>
+                            <td>${item.username || ""}</td>
+                            <td>${item.ipAddress || ""}</td>
+                            <td>${item.macAddress || ""}</td>
+                            <td>
+                                <div class="fw-semibold">${item.riskLevel || ""} (${item.riskScore ?? 0})</div>
+                                ${reasons ? `<div class="small text-muted">${reasons}</div>` : ""}
+                            </td>
+                        </tr>`;
+                }).join("");
+
+                container.innerHTML = `
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Tipo</th>
+                                    <th>Elemento</th>
+                                    <th>Usuario</th>
+                                    <th>IP</th>
+                                    <th>MAC</th>
+                                    <th>Riesgo</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>`;
+            })
+            .catch((error) => {
+                console.error("Error cargando observaciones de telemetria:", error);
+                container.textContent = "No fue posible cargar las observaciones destacadas.";
+            });
+    })();
+</script>
