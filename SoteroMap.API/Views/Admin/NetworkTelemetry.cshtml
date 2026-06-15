@@ -213,3 +213,52 @@
         }
     </div>
 </div>
+
+<div class="card telemetry-card mt-4">
+    <div class="card-body">
+        <h5 class="mb-3">Riesgos destacados</h5>
+        @if (Model.TopRiskObservations.Count == 0)
+        {
+            <div class="text-muted">Aun no hay observaciones con riesgo para mostrar.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Tipo</th>
+                            <th>Elemento</th>
+                            <th>Usuario</th>
+                            <th>IP</th>
+                            <th>MAC</th>
+                            <th>Riesgo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in Model.TopRiskObservations)
+                        {
+                            <tr>
+                                <td>@item.ObservationType</td>
+                                <td>
+                                    <div class="fw-semibold">@item.DeviceName</div>
+                                    <div class="small text-muted">@item.ExternalKey</div>
+                                </td>
+                                <td>@item.Username</td>
+                                <td>@item.IpAddress</td>
+                                <td>@item.MacAddress</td>
+                                <td>
+                                    <div class="fw-semibold">@item.RiskLevel (@item.RiskScore)</div>
+                                    @if (item.RiskReasons.Count > 0)
+                                    {
+                                        <div class="small text-muted">@string.Join(", ", item.RiskReasons)</div>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>

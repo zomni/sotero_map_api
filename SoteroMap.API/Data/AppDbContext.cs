@@ -22,6 +22,7 @@ public class AppDbContext : DbContext
     public DbSet<WalkingRouteNode> WalkingRouteNodes => Set<WalkingRouteNode>();
     public DbSet<WalkingRouteEdge> WalkingRouteEdges => Set<WalkingRouteEdge>();
     public DbSet<NetworkTelemetrySnapshot> NetworkTelemetrySnapshots => Set<NetworkTelemetrySnapshot>();
+    public DbSet<NetworkTelemetryObservation> NetworkTelemetryObservations => Set<NetworkTelemetryObservation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -175,6 +176,38 @@ public class AppDbContext : DbContext
             entity.Property(e => e.RiskLevel).IsRequired().HasMaxLength(30);
             entity.Property(e => e.Notes).HasMaxLength(500);
             entity.Property(e => e.CreatedByUsername).HasMaxLength(100);
+        });
+
+        modelBuilder.Entity<NetworkTelemetryObservation>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.NetworkTelemetrySnapshotId);
+            entity.HasIndex(e => e.ObservedAtUtc);
+            entity.HasIndex(e => new { e.ObservationType, e.RiskLevel });
+            entity.HasIndex(e => e.IpAddress);
+            entity.HasIndex(e => e.MacAddress);
+            entity.HasIndex(e => e.SerialNumber);
+            entity.HasIndex(e => e.Username);
+            entity.Property(e => e.ObservationType).IsRequired().HasMaxLength(40);
+            entity.Property(e => e.ExternalKey).HasMaxLength(120);
+            entity.Property(e => e.DeviceName).HasMaxLength(200);
+            entity.Property(e => e.Username).HasMaxLength(200);
+            entity.Property(e => e.Domain).HasMaxLength(80);
+            entity.Property(e => e.IpAddress).HasMaxLength(100);
+            entity.Property(e => e.MacAddress).HasMaxLength(100);
+            entity.Property(e => e.SerialNumber).HasMaxLength(120);
+            entity.Property(e => e.HostName).HasMaxLength(200);
+            entity.Property(e => e.BuildingExternalId).HasMaxLength(100);
+            entity.Property(e => e.RoomExternalId).HasMaxLength(120);
+            entity.Property(e => e.Status).HasMaxLength(40);
+            entity.Property(e => e.RiskLevel).HasMaxLength(40);
+            entity.Property(e => e.RiskReasonsJson).HasMaxLength(2000);
+            entity.Property(e => e.RawJson).HasMaxLength(8000);
+
+            entity.HasOne(e => e.NetworkTelemetrySnapshot)
+                .WithMany()
+                .HasForeignKey(e => e.NetworkTelemetrySnapshotId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ImportedInventoryItem>(entity =>

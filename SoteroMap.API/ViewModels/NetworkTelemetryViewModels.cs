@@ -24,6 +24,7 @@ public class NetworkTelemetryDashboardViewModel
     public DateTime? LatestWindowEndUtc { get; set; }
     public DateTime GeneratedAtUtc { get; set; } = DateTime.UtcNow;
     public IReadOnlyList<NetworkTelemetrySnapshotViewModel> RecentSnapshots { get; set; } = [];
+    public IReadOnlyList<NetworkTelemetryObservationViewModel> TopRiskObservations { get; set; } = [];
 }
 
 public class NetworkTelemetrySnapshotViewModel

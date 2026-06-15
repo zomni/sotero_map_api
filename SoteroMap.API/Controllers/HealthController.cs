@@ -43,6 +43,7 @@ public class HealthController : ControllerBase
             "SyncedRooms",
             "BackupHistories",
             "NetworkTelemetrySnapshots",
+            "NetworkTelemetryObservations",
             "WalkingRouteNodes",
             "WalkingRouteEdges"
         };

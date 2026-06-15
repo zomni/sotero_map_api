@@ -350,6 +350,66 @@ public static class ExtendedSchemaInitializer
                 """);
 
             await context.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS NetworkTelemetryObservations (
+                    Id INTEGER NOT NULL CONSTRAINT PK_NetworkTelemetryObservations PRIMARY KEY AUTOINCREMENT,
+                    NetworkTelemetrySnapshotId INTEGER NOT NULL,
+                    ObservationType TEXT NOT NULL,
+                    ExternalKey TEXT NOT NULL,
+                    DeviceName TEXT NOT NULL,
+                    Username TEXT NOT NULL,
+                    Domain TEXT NOT NULL,
+                    IpAddress TEXT NOT NULL,
+                    MacAddress TEXT NOT NULL,
+                    SerialNumber TEXT NOT NULL,
+                    HostName TEXT NOT NULL,
+                    BuildingExternalId TEXT NOT NULL,
+                    RoomExternalId TEXT NOT NULL,
+                    ImportedInventoryItemId INTEGER NULL,
+                    SyncedEquipmentId INTEGER NULL,
+                    AuthUserId INTEGER NULL,
+                    Status TEXT NOT NULL,
+                    RiskLevel TEXT NOT NULL,
+                    RiskScore INTEGER NOT NULL,
+                    RiskReasonsJson TEXT NOT NULL,
+                    RawJson TEXT NOT NULL,
+                    ObservedAtUtc TEXT NOT NULL,
+                    CreatedAtUtc TEXT NOT NULL,
+                    CONSTRAINT FK_NetworkTelemetryObservations_NetworkTelemetrySnapshots_NetworkTelemetrySnapshotId
+                        FOREIGN KEY (NetworkTelemetrySnapshotId) REFERENCES NetworkTelemetrySnapshots (Id) ON DELETE CASCADE
+                );
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_NetworkTelemetryObservations_NetworkTelemetrySnapshotId
+                ON NetworkTelemetryObservations (NetworkTelemetrySnapshotId);
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_NetworkTelemetryObservations_ObservedAtUtc
+                ON NetworkTelemetryObservations (ObservedAtUtc);
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_NetworkTelemetryObservations_ObservationType_RiskLevel
+                ON NetworkTelemetryObservations (ObservationType, RiskLevel);
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_NetworkTelemetryObservations_IpAddress
+                ON NetworkTelemetryObservations (IpAddress);
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_NetworkTelemetryObservations_MacAddress
+                ON NetworkTelemetryObservations (MacAddress);
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_NetworkTelemetryObservations_SerialNumber
+                ON NetworkTelemetryObservations (SerialNumber);
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
                 CREATE TABLE IF NOT EXISTS ManualBuildings (
                     Id INTEGER NOT NULL CONSTRAINT PK_ManualBuildings PRIMARY KEY AUTOINCREMENT,
                     ExternalId TEXT NOT NULL,
