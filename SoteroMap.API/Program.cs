@@ -120,6 +120,7 @@ builder.Services.AddScoped<FrontendSyncService>();
 builder.Services.AddScoped<ExcelInventoryImportService>();
 builder.Services.AddScoped<InventoryReconciliationService>();
 builder.Services.AddScoped<EquipmentDeliveryDocumentService>();
+builder.Services.AddScoped<NetworkTelemetryService>();
 
 // CORS para que el frontend (sotero_map) pueda consumir la API
 builder.Services.AddCors(options =>
@@ -171,6 +172,12 @@ app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments("/dashboard", out var dashboardRemaining))
     {
+        if (dashboardRemaining.Equals("/network-telemetry", StringComparison.OrdinalIgnoreCase))
+        {
+            await next();
+            return;
+        }
+
         context.Request.Headers["X-Sotero-Public-Path"] = context.Request.Path.ToString();
         context.Request.Path = new PathString($"/admin{dashboardRemaining}");
         await next();

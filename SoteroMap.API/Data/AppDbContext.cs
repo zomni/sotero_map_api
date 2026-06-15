@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<BuildingGeometryOverride> BuildingGeometryOverrides => Set<BuildingGeometryOverride>();
     public DbSet<WalkingRouteNode> WalkingRouteNodes => Set<WalkingRouteNode>();
     public DbSet<WalkingRouteEdge> WalkingRouteEdges => Set<WalkingRouteEdge>();
+    public DbSet<NetworkTelemetrySnapshot> NetworkTelemetrySnapshots => Set<NetworkTelemetrySnapshot>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -161,6 +162,19 @@ public class AppDbContext : DbContext
                 .WithMany(r => r.Equipments)
                 .HasForeignKey(e => e.SyncedRoomId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<NetworkTelemetrySnapshot>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.ObservedAtUtc);
+            entity.HasIndex(e => new { e.SourceName, e.ObservedAtUtc });
+            entity.Property(e => e.SourceName).IsRequired().HasMaxLength(120);
+            entity.Property(e => e.SourceType).IsRequired().HasMaxLength(80);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(30);
+            entity.Property(e => e.RiskLevel).IsRequired().HasMaxLength(30);
+            entity.Property(e => e.Notes).HasMaxLength(500);
+            entity.Property(e => e.CreatedByUsername).HasMaxLength(100);
         });
 
         modelBuilder.Entity<ImportedInventoryItem>(entity =>

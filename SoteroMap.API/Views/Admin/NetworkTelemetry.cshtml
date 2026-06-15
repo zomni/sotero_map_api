@@ -1,0 +1,215 @@
+@model SoteroMap.API.ViewModels.NetworkTelemetryDashboardViewModel
+@{
+    ViewData["Title"] = "Red y riesgo";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<style>
+    .telemetry-hero {
+        border: 0;
+        border-radius: 22px;
+        background:
+            radial-gradient(circle at top right, rgba(14, 165, 233, 0.18), transparent 34%),
+            linear-gradient(135deg, #0f172a 0%, #1f3b57 52%, #184e77 100%);
+        color: #fff;
+        overflow: hidden;
+    }
+
+    .telemetry-card {
+        border: 0;
+        border-radius: 18px;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    }
+
+    .telemetry-kpi {
+        width: 52px;
+        height: 52px;
+        display: grid;
+        place-items: center;
+        border-radius: 16px;
+    }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0">Red y riesgo</h2>
+    <span class="text-muted">Base lista para snapshots, conectores y mapa de calor</span>
+</div>
+
+<div class="card telemetry-hero shadow-sm mb-4">
+    <div class="card-body p-4 p-lg-5">
+        <div class="row g-4 align-items-center">
+            <div class="col-lg-7">
+                <div class="text-uppercase small fw-semibold text-muted mb-2">Estado del modulo</div>
+                <h1 class="fw-bold mb-3">@Model.HealthLabel</h1>
+                <p class="text-white-50 mb-4">
+                    Esta fase deja preparada la base para recibir snapshots de red, usuarios conectados y señales de riesgo. 
+                    Cuando exista un colector, el mismo dashboard mostrará el mapa de calor sin cambiar la estructura.
+                </p>
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="/admin/compliance" class="btn btn-light fw-semibold">
+                        <i class="bi bi-shield-check me-1"></i> Ver cumplimiento
+                    </a>
+                    <a href="/dashboard" class="btn btn-outline-light fw-semibold">
+                        <i class="bi bi-speedometer2 me-1"></i> Volver al dashboard
+                    </a>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="bg-white bg-opacity-10 rounded-4 p-4">
+                    <div class="row g-3 text-center">
+                        <div class="col-6">
+                            <div class="fs-3 fw-bold">@Model.TotalSnapshots</div>
+                            <div class="small text-muted">Snapshots</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="fs-3 fw-bold">@Model.LatestConnectedUserCount</div>
+                            <div class="small text-muted">Usuarios conectados</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="fs-3 fw-bold">@Model.LatestDeviceCount</div>
+                            <div class="small text-muted">Equipos observados</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="fs-3 fw-bold">@Model.LatestRiskScore</div>
+                            <div class="small text-muted">Riesgo base</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="card telemetry-card">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="telemetry-kpi bg-primary bg-opacity-10">
+                    <i class="bi bi-broadcast text-primary fs-4"></i>
+                </div>
+                <div>
+                    <div class="text-muted small">Fuente</div>
+                    <div class="fw-semibold">@((string.IsNullOrWhiteSpace(Model.LatestSourceName) ? "Sin fuente" : Model.LatestSourceName))</div>
+                    <div class="small text-muted">@((string.IsNullOrWhiteSpace(Model.LatestSourceType) ? "Esperando colector" : Model.LatestSourceType))</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card telemetry-card">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="telemetry-kpi bg-warning bg-opacity-10">
+                    <i class="bi bi-exclamation-triangle text-warning fs-4"></i>
+                </div>
+                <div>
+                    <div class="text-muted small">Estado</div>
+                    <div class="fw-semibold">@Model.LatestStatus</div>
+                    <div class="small text-muted">Nivel @Model.LatestRiskLevel</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card telemetry-card">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="telemetry-kpi bg-success bg-opacity-10">
+                    <i class="bi bi-clock-history text-success fs-4"></i>
+                </div>
+                <div>
+                    <div class="text-muted small">Ultima captura</div>
+                    <div class="fw-semibold">@((Model.LatestObservedAtUtc is null) ? "Sin datos" : Model.LatestObservedAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm"))</div>
+                    <div class="small text-muted">@((Model.IsFresh ? "Al dia" : "Pendiente de refresco"))</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card telemetry-card mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Resumen de la ultima observacion</h5>
+            <span class="badge bg-@Model.HealthTone">@Model.HealthLabel</span>
+        </div>
+
+        @if (!Model.HasData)
+        {
+            <div class="alert alert-secondary mb-0">
+                Aun no existen snapshots de red. En la siguiente fase conectaremos los colectores y empezara a poblarse este panel.
+            </div>
+        }
+        else
+        {
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <div class="p-3 bg-light rounded-3">
+                        <div class="text-muted small">Equipos</div>
+                        <div class="fs-4 fw-bold">@Model.LatestDeviceCount</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="p-3 bg-light rounded-3">
+                        <div class="text-muted small">Usuarios</div>
+                        <div class="fs-4 fw-bold">@Model.LatestConnectedUserCount</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="p-3 bg-light rounded-3">
+                        <div class="text-muted small">Criticos</div>
+                        <div class="fs-4 fw-bold">@Model.LatestHighRiskDeviceCount</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="p-3 bg-light rounded-3">
+                        <div class="text-muted small">Moderados</div>
+                        <div class="fs-4 fw-bold">@Model.LatestMediumRiskDeviceCount</div>
+                    </div>
+                </div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(Model.Notes))
+            {
+                <div class="mt-3 text-muted">@Model.Notes</div>
+            }
+        }
+    </div>
+</div>
+
+<div class="card telemetry-card">
+    <div class="card-body">
+        <h5 class="mb-3">Snapshots recientes</h5>
+        @if (Model.RecentSnapshots.Count == 0)
+        {
+            <div class="text-muted">No hay snapshots guardados todavia.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Fuente</th>
+                            <th>Estado</th>
+                            <th>Usuarios</th>
+                            <th>Equipos</th>
+                            <th>Riesgo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in Model.RecentSnapshots)
+                        {
+                            <tr>
+                                <td>@item.ObservedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                <td>@item.SourceName</td>
+                                <td>@item.Status</td>
+                                <td>@item.ConnectedUserCount</td>
+                                <td>@item.DeviceCount</td>
+                                <td>@item.RiskLevel (@item.RiskScore)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>

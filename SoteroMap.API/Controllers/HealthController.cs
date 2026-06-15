@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SoteroMap.API.Data;
 using SoteroMap.API.Models;
 using SoteroMap.API.Services;
+using SoteroMap.API.ViewModels;
 
 namespace SoteroMap.API.Controllers;
 
@@ -14,15 +15,18 @@ public class HealthController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly DatabaseBackupService _backupService;
+    private readonly NetworkTelemetryService _networkTelemetryService;
     private readonly IConfiguration _configuration;
 
     public HealthController(
         AppDbContext context,
         DatabaseBackupService backupService,
+        NetworkTelemetryService networkTelemetryService,
         IConfiguration configuration)
     {
         _context = context;
         _backupService = backupService;
+        _networkTelemetryService = networkTelemetryService;
         _configuration = configuration;
     }
 
@@ -38,6 +42,7 @@ public class HealthController : ControllerBase
             "SyncedBuildings",
             "SyncedRooms",
             "BackupHistories",
+            "NetworkTelemetrySnapshots",
             "WalkingRouteNodes",
             "WalkingRouteEdges"
         };
@@ -63,12 +68,30 @@ public class HealthController : ControllerBase
             && string.Equals(latestBackup.Status, "success", StringComparison.OrdinalIgnoreCase)
             && latestBackup.CreatedAtUtc >= DateTime.UtcNow.AddDays(-2);
 
+        NetworkTelemetryDashboardViewModel networkTelemetry;
+        try
+        {
+            networkTelemetry = await _networkTelemetryService.GetDashboardAsync(1, cancellationToken);
+        }
+        catch
+        {
+            networkTelemetry = new NetworkTelemetryDashboardViewModel
+            {
+                Enabled = _configuration.GetValue<bool?>("NetworkTelemetrySettings:Enabled") ?? true,
+                HealthLabel = "Error",
+                HealthTone = "danger"
+            };
+        }
+
+        var networkTelemetryHealthy = !networkTelemetry.Enabled
+            || (networkTelemetry.HasData && networkTelemetry.IsFresh);
+
         var pdfMaxBytes = _configuration.GetValue<long?>("PdfSettings:MaxUploadBytes") ?? 25_000_000;
         var status = !databaseConnected || missingTables.Count > 0 || activeAdmins == 0 || criticalEventsLast7Days > 0
             ? "Critical"
-            : backupHealthy
-                ? "OK"
-                : "Advertencia";
+            : (!backupHealthy || (networkTelemetry.Enabled && !networkTelemetryHealthy))
+                ? "Advertencia"
+                : "OK";
 
         return Ok(new
         {
@@ -90,6 +113,14 @@ public class HealthController : ControllerBase
             },
             backupHealthy,
             backupEnabled = _backupService.IsEnabled(),
+            networkTelemetryEnabled = networkTelemetry.Enabled,
+            networkTelemetryHealthy,
+            networkTelemetryHasData = networkTelemetry.HasData,
+            networkTelemetryIsFresh = networkTelemetry.IsFresh,
+            latestNetworkTelemetryAtUtc = networkTelemetry.LatestObservedAtUtc,
+            latestNetworkTelemetryRiskLevel = networkTelemetry.LatestRiskLevel,
+            latestNetworkTelemetryRiskScore = networkTelemetry.LatestRiskScore,
+            networkTelemetryTotalSnapshots = networkTelemetry.TotalSnapshots,
             criticalEventsLast7Days,
             pdfMaxBytes,
             generatedAtUtc = DateTime.UtcNow

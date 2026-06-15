@@ -22,6 +22,7 @@ public class AdminController : Controller
     private readonly IConfiguration _configuration;
     private readonly IMemoryCache _memoryCache;
     private readonly EquipmentDeliveryDocumentService _equipmentDeliveryDocumentService;
+    private readonly NetworkTelemetryService _networkTelemetryService;
     private const string ManualInventorySourceFile = "manual-admin";
     private const string DeliveryFormPreviewCachePrefix = "delivery-form-preview:";
     private const string DefaultPdfAllowedMimeTypes = "application/pdf,application/x-pdf";
@@ -32,7 +33,8 @@ public class AdminController : Controller
         DatabaseBackupService databaseBackupService,
         IConfiguration configuration,
         IMemoryCache memoryCache,
-        EquipmentDeliveryDocumentService equipmentDeliveryDocumentService)
+        EquipmentDeliveryDocumentService equipmentDeliveryDocumentService,
+        NetworkTelemetryService networkTelemetryService)
     {
         _context = context;
         _auditLogService = auditLogService;
@@ -40,6 +42,7 @@ public class AdminController : Controller
         _configuration = configuration;
         _memoryCache = memoryCache;
         _equipmentDeliveryDocumentService = equipmentDeliveryDocumentService;
+        _networkTelemetryService = networkTelemetryService;
     }
 
     public async Task<IActionResult> Index()
@@ -286,6 +289,29 @@ public class AdminController : Controller
     public IActionResult ComplianceLegacy()
     {
         return RedirectToAction(nameof(Compliance));
+    }
+
+    [Authorize]
+    [HttpGet("/dashboard/network-telemetry")]
+    public async Task<IActionResult> NetworkTelemetry(CancellationToken cancellationToken)
+    {
+        return View("NetworkTelemetry", await BuildNetworkTelemetryViewModelAsync(cancellationToken));
+    }
+
+    private async Task<NetworkTelemetryDashboardViewModel> BuildNetworkTelemetryViewModelAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _networkTelemetryService.GetDashboardAsync(10, cancellationToken);
+        }
+        catch
+        {
+            return new NetworkTelemetryDashboardViewModel
+            {
+                HealthLabel = "Error",
+                HealthTone = "danger"
+            };
+        }
     }
 
     [Authorize(Roles = AppRoles.Admin)]

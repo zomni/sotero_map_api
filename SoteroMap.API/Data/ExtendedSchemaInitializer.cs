@@ -317,6 +317,39 @@ public static class ExtendedSchemaInitializer
             await EnsureColumnAsync(context, "BackupHistories", "Reason", "TEXT NOT NULL DEFAULT ''");
 
             await context.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS NetworkTelemetrySnapshots (
+                    Id INTEGER NOT NULL CONSTRAINT PK_NetworkTelemetrySnapshots PRIMARY KEY AUTOINCREMENT,
+                    SourceName TEXT NOT NULL,
+                    SourceType TEXT NOT NULL,
+                    Status TEXT NOT NULL,
+                    RiskLevel TEXT NOT NULL,
+                    RiskScore INTEGER NOT NULL,
+                    DeviceCount INTEGER NOT NULL,
+                    ConnectedUserCount INTEGER NOT NULL,
+                    HighRiskDeviceCount INTEGER NOT NULL,
+                    MediumRiskDeviceCount INTEGER NOT NULL,
+                    LowRiskDeviceCount INTEGER NOT NULL,
+                    ObservedAtUtc TEXT NOT NULL,
+                    WindowStartUtc TEXT NULL,
+                    WindowEndUtc TEXT NULL,
+                    Notes TEXT NOT NULL,
+                    PayloadJson TEXT NOT NULL,
+                    CreatedByUsername TEXT NOT NULL,
+                    CreatedAtUtc TEXT NOT NULL
+                );
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_NetworkTelemetrySnapshots_ObservedAtUtc
+                ON NetworkTelemetrySnapshots (ObservedAtUtc);
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_NetworkTelemetrySnapshots_SourceName_ObservedAtUtc
+                ON NetworkTelemetrySnapshots (SourceName, ObservedAtUtc);
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
                 CREATE TABLE IF NOT EXISTS ManualBuildings (
                     Id INTEGER NOT NULL CONSTRAINT PK_ManualBuildings PRIMARY KEY AUTOINCREMENT,
                     ExternalId TEXT NOT NULL,
