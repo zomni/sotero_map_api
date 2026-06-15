@@ -527,61 +527,32 @@ public class AdminController : Controller
         string? result,
         string? severity,
         string? search,
+        string? clientIp,
+        string? userAgent,
         string? from,
-        string? to)
+        string? to,
+        int page = 1,
+        int pageSize = 50)
     {
-        var query = _context.AuditLogEntries.AsNoTracking().AsQueryable();
+        page = Math.Max(1, page);
+        pageSize = NormalizePageSize(pageSize);
 
-        if (!string.IsNullOrWhiteSpace(buildingExternalId))
+        var queryResult = await _auditLogService.QueryAsync(new AuditLogQueryRequest
         {
-            query = query.Where(x => x.BuildingExternalId == buildingExternalId);
-        }
-
-        if (!string.IsNullOrWhiteSpace(changedByUsername))
-        {
-            query = query.Where(x => x.ChangedByUsername.Contains(changedByUsername));
-        }
-
-        if (!string.IsNullOrWhiteSpace(actionType))
-        {
-            query = query.Where(x => x.ActionType == actionType);
-        }
-
-        if (!string.IsNullOrWhiteSpace(resource))
-        {
-            query = query.Where(x => x.Resource.Contains(resource));
-        }
-
-        if (!string.IsNullOrWhiteSpace(result))
-        {
-            query = query.Where(x => x.Result == result);
-        }
-
-        if (!string.IsNullOrWhiteSpace(severity))
-        {
-            query = query.Where(x => x.Severity == severity);
-        }
-
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            query = query.Where(x =>
-                x.Summary.Contains(search) ||
-                x.Details.Contains(search) ||
-                x.PreviousValue.Contains(search) ||
-                x.NewValue.Contains(search) ||
-                x.ClientIp.Contains(search) ||
-                x.UserAgent.Contains(search));
-        }
-
-        if (DateTime.TryParse(from, out var fromDate))
-        {
-            query = query.Where(x => x.CreatedAtUtc >= fromDate);
-        }
-
-        if (DateTime.TryParse(to, out var toDate))
-        {
-            query = query.Where(x => x.CreatedAtUtc < toDate.AddDays(1));
-        }
+            BuildingExternalId = buildingExternalId ?? string.Empty,
+            ChangedByUsername = changedByUsername ?? string.Empty,
+            ActionType = actionType ?? string.Empty,
+            Resource = resource ?? string.Empty,
+            Result = result ?? string.Empty,
+            Severity = severity ?? string.Empty,
+            Search = search ?? string.Empty,
+            ClientIp = clientIp ?? string.Empty,
+            UserAgent = userAgent ?? string.Empty,
+            DateFrom = from ?? string.Empty,
+            DateTo = to ?? string.Empty,
+            Page = page,
+            PageSize = pageSize
+        });
 
         var model = new AdminActivityViewModel
         {
@@ -592,29 +563,19 @@ public class AdminController : Controller
             Result = result ?? string.Empty,
             Severity = severity ?? string.Empty,
             Search = search ?? string.Empty,
+            ClientIp = clientIp ?? string.Empty,
+            UserAgent = userAgent ?? string.Empty,
             DateFrom = from ?? string.Empty,
             DateTo = to ?? string.Empty,
-            Items = await query
-                .OrderByDescending(x => x.CreatedAtUtc)
-                .Take(250)
-                .Select(x => new ActivityLogListItemViewModel
-                {
-                    Id = x.Id,
-                    BuildingExternalId = x.BuildingExternalId,
-                    Resource = x.Resource,
-                    Result = x.Result,
-                    Severity = x.Severity,
-                    Summary = x.Summary,
-                    Details = x.Details,
-                    PreviousValue = x.PreviousValue,
-                    NewValue = x.NewValue,
-                    ChangedByUsername = x.ChangedByUsername,
-                    ActionType = x.ActionType,
-                    ClientIp = x.ClientIp,
-                    UserAgent = x.UserAgent,
-                    CreatedAtUtc = x.CreatedAtUtc
-                })
-                .ToListAsync()
+            Page = queryResult.Page,
+            PageSize = queryResult.PageSize,
+            TotalCount = queryResult.TotalCount,
+            TotalPages = queryResult.TotalPages,
+            SuccessCount = queryResult.SuccessCount,
+            FailureCount = queryResult.FailureCount,
+            CriticalCount = queryResult.CriticalCount,
+            WarningCount = queryResult.WarningCount,
+            Items = queryResult.Items
         };
 
         return View(model);

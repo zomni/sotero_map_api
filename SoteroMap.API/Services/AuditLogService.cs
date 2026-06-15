@@ -1,5 +1,7 @@
 using SoteroMap.API.Data;
 using SoteroMap.API.Models;
+using SoteroMap.API.ViewModels;
+using Microsoft.EntityFrameworkCore;
 
 namespace SoteroMap.API.Services;
 
@@ -12,6 +14,37 @@ public class AuditLogService
     {
         _context = context;
         _httpContextAccessor = httpContextAccessor;
+    }
+
+    public async Task<AuditLogQueryResultViewModel> QueryAsync(
+        AuditLogQueryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var query = BuildQuery(request);
+        var totalCount = await query.CountAsync(cancellationToken);
+        var pageSize = NormalizePageSize(request.PageSize);
+        var page = Math.Max(1, request.Page);
+        var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
+
+        var items = await query
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(x => MapItem(x))
+            .ToListAsync(cancellationToken);
+
+        return new AuditLogQueryResultViewModel
+        {
+            Items = items,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = totalPages,
+            SuccessCount = await query.CountAsync(x => x.Result == "success", cancellationToken),
+            FailureCount = await query.CountAsync(x => x.Result == "failure", cancellationToken),
+            CriticalCount = await query.CountAsync(x => x.Severity == "critical", cancellationToken),
+            WarningCount = await query.CountAsync(x => x.Severity == "warning", cancellationToken)
+        };
     }
 
     public async Task LogSecurityEventAsync(
@@ -188,6 +221,108 @@ public class AuditLogService
     }
 
     private static string ValueOrDash(string? value) => string.IsNullOrWhiteSpace(value) ? "-" : value.Trim();
+
+    private IQueryable<AuditLogEntry> BuildQuery(AuditLogQueryRequest request)
+    {
+        var query = _context.AuditLogEntries.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(request.BuildingExternalId))
+        {
+            query = query.Where(x => x.BuildingExternalId == request.BuildingExternalId.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ChangedByUsername))
+        {
+            var value = request.ChangedByUsername.Trim();
+            query = query.Where(x => x.ChangedByUsername.Contains(value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ActionType))
+        {
+            var value = request.ActionType.Trim();
+            query = query.Where(x => x.ActionType == value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Resource))
+        {
+            var value = request.Resource.Trim();
+            query = query.Where(x => x.Resource.Contains(value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Result))
+        {
+            query = query.Where(x => x.Result == request.Result.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Severity))
+        {
+            query = query.Where(x => x.Severity == request.Severity.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Search))
+        {
+            var value = request.Search.Trim();
+            query = query.Where(x =>
+                x.Summary.Contains(value) ||
+                x.Details.Contains(value) ||
+                x.PreviousValue.Contains(value) ||
+                x.NewValue.Contains(value) ||
+                x.ClientIp.Contains(value) ||
+                x.UserAgent.Contains(value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ClientIp))
+        {
+            query = query.Where(x => x.ClientIp.Contains(request.ClientIp.Trim()));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.UserAgent))
+        {
+            query = query.Where(x => x.UserAgent.Contains(request.UserAgent.Trim()));
+        }
+
+        if (DateTime.TryParse(request.DateFrom, out var fromDate))
+        {
+            query = query.Where(x => x.CreatedAtUtc >= fromDate);
+        }
+
+        if (DateTime.TryParse(request.DateTo, out var toDate))
+        {
+            query = query.Where(x => x.CreatedAtUtc < toDate.AddDays(1));
+        }
+
+        return query;
+    }
+
+    private static int NormalizePageSize(int pageSize)
+    {
+        return pageSize switch
+        {
+            20 or 30 or 50 or 100 or 200 or 500 => pageSize,
+            _ => 50
+        };
+    }
+
+    private static ActivityLogListItemViewModel MapItem(AuditLogEntry x)
+    {
+        return new ActivityLogListItemViewModel
+        {
+            Id = x.Id,
+            BuildingExternalId = x.BuildingExternalId,
+            Resource = x.Resource,
+            Result = x.Result,
+            Severity = x.Severity,
+            Summary = x.Summary,
+            Details = x.Details,
+            PreviousValue = x.PreviousValue,
+            NewValue = x.NewValue,
+            ChangedByUsername = x.ChangedByUsername,
+            ActionType = x.ActionType,
+            ClientIp = x.ClientIp,
+            UserAgent = x.UserAgent,
+            CreatedAtUtc = x.CreatedAtUtc
+        };
+    }
 
     private AuditLogEntry CreateEntry(
         string buildingExternalId,

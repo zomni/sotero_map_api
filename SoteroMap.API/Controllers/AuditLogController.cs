@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using SoteroMap.API.Data;
 using SoteroMap.API.Models;
+using SoteroMap.API.Services;
+using SoteroMap.API.ViewModels;
 
 namespace SoteroMap.API.Controllers;
 
@@ -11,11 +11,20 @@ namespace SoteroMap.API.Controllers;
 [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Auditor}")]
 public class AuditLogController : ControllerBase
 {
-    private readonly AppDbContext _context;
+    private readonly AuditLogService _auditLogService;
 
-    public AuditLogController(AppDbContext context)
+    public AuditLogController(AuditLogService auditLogService)
     {
-        _context = context;
+        _auditLogService = auditLogService;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Query(
+        [FromQuery] AuditLogQueryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _auditLogService.QueryAsync(request, cancellationToken);
+        return Ok(result);
     }
 
     [AllowAnonymous]
@@ -32,32 +41,13 @@ public class AuditLogController : ControllerBase
 
         take = Math.Clamp(take, 1, 20);
 
-        var items = await _context.AuditLogEntries
-            .AsNoTracking()
-            .Where(x => x.BuildingExternalId == buildingExternalId)
-            .OrderByDescending(x => x.CreatedAtUtc)
-            .Take(take)
-            .Select(x => new
-            {
-                x.Id,
-                x.BuildingExternalId,
-                x.EntityType,
-                x.EntityId,
-                x.ActionType,
-                x.Resource,
-                x.Result,
-                x.Severity,
-                x.Summary,
-                x.Details,
-                x.PreviousValue,
-                x.NewValue,
-                x.ChangedByUsername,
-                x.ClientIp,
-                x.UserAgent,
-                x.CreatedAtUtc
-            })
-            .ToListAsync(cancellationToken);
+        var result = await _auditLogService.QueryAsync(new AuditLogQueryRequest
+        {
+            BuildingExternalId = buildingExternalId,
+            Page = 1,
+            PageSize = take
+        }, cancellationToken);
 
-        return Ok(items);
+        return Ok(result.Items);
     }
 }
