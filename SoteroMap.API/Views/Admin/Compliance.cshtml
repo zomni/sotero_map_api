@@ -225,3 +225,138 @@
         </div>
     </div>
 </div>
+
+<div class="row g-4 mt-1">
+    <div class="col-12">
+        <div class="card compliance-card h-100">
+            <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center gap-2">
+                <span>Integridad tecnica</span>
+                <span id="integrity-status-pill" class="status-pill status-warning"><i class="bi bi-hourglass-split"></i>Cargando</span>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <div class="border rounded-3 p-3 h-100">
+                            <div class="text-muted small">Estado general</div>
+                            <div id="integrity-status" class="fw-bold">Cargando...</div>
+                            <div id="integrity-updated-at" class="text-muted small mt-1"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded-3 p-3 h-100">
+                            <div class="text-muted small">Equipos</div>
+                            <div id="integrity-equipment-count" class="fs-4 fw-bold">-</div>
+                            <div class="text-muted small">Inventario total detectado</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded-3 p-3 h-100">
+                            <div class="text-muted small">Admins activos</div>
+                            <div id="integrity-admin-count" class="fs-4 fw-bold">-</div>
+                            <div id="integrity-mfa-text" class="text-muted small mt-1"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded-3 p-3 h-100">
+                            <div class="text-muted small">Backup / PDF</div>
+                            <div id="integrity-backup-text" class="fw-semibold">-</div>
+                            <div id="integrity-pdf-text" class="text-muted small mt-1"></div>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="border rounded-3 p-3">
+                            <div class="text-muted small mb-2">Tablas criticas</div>
+                            <div id="integrity-tables" class="d-flex flex-wrap gap-2"></div>
+                            <div id="integrity-missing" class="small text-muted mt-2"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+window.addEventListener("DOMContentLoaded", () => {
+    const statusPill = document.getElementById("integrity-status-pill");
+    const statusText = document.getElementById("integrity-status");
+    const updatedAt = document.getElementById("integrity-updated-at");
+    const equipmentCount = document.getElementById("integrity-equipment-count");
+    const adminCount = document.getElementById("integrity-admin-count");
+    const mfaText = document.getElementById("integrity-mfa-text");
+    const backupText = document.getElementById("integrity-backup-text");
+    const pdfText = document.getElementById("integrity-pdf-text");
+    const tables = document.getElementById("integrity-tables");
+    const missing = document.getElementById("integrity-missing");
+
+    const setPill = (status) => {
+        if (!statusPill) return;
+        const normalized = (status || "").toLowerCase();
+        const map = {
+            "ok": ["status-ok", "bi-check-circle", "OK"],
+            "critical": ["status-critical", "bi-x-circle", "Crítico"],
+            "advertencia": ["status-warning", "bi-exclamation-circle", "Advertencia"]
+        };
+        const selected = map[normalized] || map["advertencia"];
+        statusPill.className = `status-pill ${selected[0]}`;
+        statusPill.innerHTML = `<i class="bi ${selected[1]}"></i>${selected[2]}`;
+    };
+
+    fetch("/api/health/integrity", { credentials: "same-origin", cache: "no-store" })
+        .then(async (response) => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.json();
+        })
+        .then((data) => {
+            setPill(data.status);
+            if (statusText) {
+                statusText.textContent = data.status || "Advertencia";
+            }
+            if (updatedAt) {
+                updatedAt.textContent = data.generatedAtUtc ? `Actualizado: ${new Date(data.generatedAtUtc).toLocaleString()}` : "";
+            }
+            if (equipmentCount) {
+                equipmentCount.textContent = data.equipmentCount ?? "-";
+            }
+            if (adminCount) {
+                adminCount.textContent = data.activeAdmins ?? "-";
+            }
+            if (mfaText) {
+                mfaText.textContent = data.mfaCompliant ? "MFA admin OK" : `MFA pendiente en ${Math.max(0, (data.activeAdmins || 0) - (data.adminUsersWithMfa || 0))} admin(s)`;
+            }
+            if (backupText) {
+                backupText.textContent = data.backupHealthy ? "Backup reciente OK" : "Backup requiere revision";
+            }
+            if (pdfText) {
+                const maxMb = data.pdfMaxBytes ? (data.pdfMaxBytes / 1024 / 1024).toFixed(0) : "-";
+                pdfText.textContent = `PDF maximo permitido: ${maxMb} MB`;
+            }
+            if (tables) {
+                const required = Array.isArray(data.requiredTables) ? data.requiredTables : [];
+                tables.innerHTML = required.map((table) => `<span class="badge text-bg-light border">${table}</span>`).join("");
+            }
+            if (missing) {
+                const missingTables = Array.isArray(data.missingTables) ? data.missingTables : [];
+                missing.textContent = missingTables.length > 0
+                    ? `Faltan: ${missingTables.join(", ")}`
+                    : "Todas las tablas criticas estan presentes.";
+            }
+        })
+        .catch((error) => {
+            setPill("critical");
+            if (statusText) {
+                statusText.textContent = "No se pudo cargar la integridad";
+            }
+            if (updatedAt) {
+                updatedAt.textContent = error?.message || "";
+            }
+            if (missing) {
+                missing.textContent = "La consulta de integridad fallo.";
+            }
+        });
+});
+</script>
+}

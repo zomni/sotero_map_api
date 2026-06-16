@@ -60,6 +60,7 @@ public class HealthController : ControllerBase
 
         var equipmentCount = await _context.ImportedInventoryItems.CountAsync(cancellationToken);
         var activeAdmins = await _context.AuthUsers.CountAsync(user => user.IsActive && user.Role == AppRoles.Admin, cancellationToken);
+        var activeAdminsWithMfa = await _context.AuthUsers.CountAsync(user => user.IsActive && user.Role == AppRoles.Admin && user.MfaEnabled && user.MfaSecretProtected != string.Empty, cancellationToken);
         var criticalEventsLast7Days = await _context.AuditLogEntries.CountAsync(entry => entry.Severity == "critical" && entry.CreatedAtUtc >= DateTime.UtcNow.AddDays(-7), cancellationToken);
 
         var latestBackups = await _backupService.GetLatestBackupsAsync(1, cancellationToken);
@@ -106,6 +107,8 @@ public class HealthController : ControllerBase
             missingTables,
             equipmentCount,
             activeAdmins,
+            adminUsersWithMfa = activeAdminsWithMfa,
+            mfaCompliant = activeAdmins == 0 || activeAdminsWithMfa == activeAdmins,
             latestBackup = latestBackup is null ? null : new
             {
                 latestBackup.Id,
@@ -130,6 +133,17 @@ public class HealthController : ControllerBase
             networkTelemetryTotalSnapshots = networkTelemetry.TotalSnapshots,
             criticalEventsLast7Days,
             pdfMaxBytes,
+            hasMissingTables = missingTables.Count > 0,
+            healthChecks = new[]
+            {
+                new { key = "database", ok = databaseConnected, label = "Base de datos" },
+                new { key = "schema", ok = missingTables.Count == 0, label = "Tablas criticas" },
+                new { key = "admins", ok = activeAdmins > 0, label = "Admins activos" },
+                new { key = "mfa", ok = activeAdmins == 0 || activeAdminsWithMfa == activeAdmins, label = "MFA admin" },
+                new { key = "backup", ok = backupHealthy, label = "Backup reciente" },
+                new { key = "backup-integrity", ok = backupIntegrityHealthy, label = "Integridad backup" },
+                new { key = "telemetry", ok = !networkTelemetry.Enabled || networkTelemetryHealthy, label = "Red y riesgo" }
+            },
             generatedAtUtc = DateTime.UtcNow
         });
     }
