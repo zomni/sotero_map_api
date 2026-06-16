@@ -68,6 +68,10 @@ public class HealthController : ControllerBase
             && latestBackup is not null
             && string.Equals(latestBackup.Status, "success", StringComparison.OrdinalIgnoreCase)
             && latestBackup.CreatedAtUtc >= DateTime.UtcNow.AddDays(-2);
+        var latestBackupVerification = latestBackup is null
+            ? null
+            : await _backupService.VerifyBackupAsync(latestBackup.FilePath, latestBackup.Hash, cancellationToken);
+        var backupIntegrityHealthy = latestBackupVerification is null || latestBackupVerification.IsHealthy;
 
         NetworkTelemetryDashboardViewModel networkTelemetry;
         try
@@ -113,7 +117,9 @@ public class HealthController : ControllerBase
                 latestBackup.ErrorMessage
             },
             backupHealthy,
+            backupIntegrityHealthy,
             backupEnabled = _backupService.IsEnabled(),
+            latestBackupVerification,
             networkTelemetryEnabled = networkTelemetry.Enabled,
             networkTelemetryHealthy,
             networkTelemetryHasData = networkTelemetry.HasData,

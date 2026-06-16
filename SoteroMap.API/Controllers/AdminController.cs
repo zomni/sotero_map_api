@@ -3312,6 +3312,19 @@ public class AdminController : Controller
 
     private string GetDatabaseBackupDirectory()
     {
+        var configuredPath = _configuration["BackupSettings:Path"] ?? Environment.GetEnvironmentVariable("BACKUP_PATH");
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            var trimmed = configuredPath.Trim();
+            if (!Path.IsPathRooted(trimmed))
+            {
+                var environment = HttpContext.RequestServices.GetRequiredService<IWebHostEnvironment>();
+                return Path.GetFullPath(Path.Combine(environment.ContentRootPath, trimmed));
+            }
+
+            return trimmed;
+        }
+
         var databasePath = GetDatabaseFilePath();
         var databaseDirectory = Path.GetDirectoryName(databasePath) ?? AppContext.BaseDirectory;
         return Path.Combine(databaseDirectory, "backups");

@@ -2,18 +2,69 @@
 @{
     ViewData["Title"] = "Auditoria";
     Layout = "~/Views/Shared/_Layout.cshtml";
+
+    object activityModel = Model;
+    string GetModelString(string propertyName)
+    {
+        var value = activityModel.GetType().GetProperty(propertyName)?.GetValue(activityModel);
+        return value?.ToString() ?? string.Empty;
+    }
+
+    int GetModelInt(string propertyName, int fallback = 0)
+    {
+        var value = activityModel.GetType().GetProperty(propertyName)?.GetValue(activityModel);
+        return value is null ? fallback : Convert.ToInt32(value);
+    }
+
+    IReadOnlyList<object> GetModelItems()
+    {
+        var value = activityModel.GetType().GetProperty("Items")?.GetValue(activityModel);
+        if (value is System.Collections.IEnumerable enumerable)
+        {
+            return enumerable.Cast<object>().ToList();
+        }
+
+        return Array.Empty<object>();
+    }
+
+    string GetItemString(object item, string propertyName)
+    {
+        var value = item.GetType().GetProperty(propertyName)?.GetValue(item);
+        return value?.ToString() ?? string.Empty;
+    }
+
+    var buildingExternalId = GetModelString("BuildingExternalId");
+    var changedByUsername = GetModelString("ChangedByUsername");
+    var actionType = GetModelString("ActionType");
+    var resource = GetModelString("Resource");
+    var result = GetModelString("Result");
+    var severity = GetModelString("Severity");
+    var search = GetModelString("Search");
+    var clientIp = GetModelString("ClientIp");
+    var userAgent = GetModelString("UserAgent");
+    var dateFrom = GetModelString("DateFrom");
+    var dateTo = GetModelString("DateTo");
+    var page = Math.Max(1, GetModelInt("Page", 1));
+    var pageSize = GetModelInt("PageSize", 50);
+    var totalCount = GetModelInt("TotalCount", Model.Items.Count);
+    var totalPages = Math.Max(1, GetModelInt("TotalPages", 1));
+    var successCount = GetModelInt("SuccessCount");
+    var failureCount = GetModelInt("FailureCount");
+    var criticalCount = GetModelInt("CriticalCount");
+    var items = GetModelItems();
+
     var activeFilters = new List<string>();
-    if (!string.IsNullOrWhiteSpace(Model.BuildingExternalId)) { activeFilters.Add($"Edificio: {Model.BuildingExternalId}"); }
-    if (!string.IsNullOrWhiteSpace(Model.ChangedByUsername)) { activeFilters.Add($"Usuario: {Model.ChangedByUsername}"); }
-    if (!string.IsNullOrWhiteSpace(Model.ActionType)) { activeFilters.Add($"Accion: {Model.ActionType}"); }
-    if (!string.IsNullOrWhiteSpace(Model.Resource)) { activeFilters.Add($"Recurso: {Model.Resource}"); }
-    if (!string.IsNullOrWhiteSpace(Model.Result)) { activeFilters.Add($"Resultado: {Model.Result}"); }
-    if (!string.IsNullOrWhiteSpace(Model.Severity)) { activeFilters.Add($"Severidad: {Model.Severity}"); }
-    if (!string.IsNullOrWhiteSpace(Model.Search)) { activeFilters.Add($"Texto: {Model.Search}"); }
-    if (!string.IsNullOrWhiteSpace(Model.ClientIp)) { activeFilters.Add($"IP: {Model.ClientIp}"); }
-    if (!string.IsNullOrWhiteSpace(Model.UserAgent)) { activeFilters.Add($"Agente: {Model.UserAgent}"); }
-    if (!string.IsNullOrWhiteSpace(Model.DateFrom)) { activeFilters.Add($"Desde: {Model.DateFrom}"); }
-    if (!string.IsNullOrWhiteSpace(Model.DateTo)) { activeFilters.Add($"Hasta: {Model.DateTo}"); }
+    if (!string.IsNullOrWhiteSpace(buildingExternalId)) { activeFilters.Add($"Edificio: {buildingExternalId}"); }
+    if (!string.IsNullOrWhiteSpace(changedByUsername)) { activeFilters.Add($"Usuario: {changedByUsername}"); }
+    if (!string.IsNullOrWhiteSpace(actionType)) { activeFilters.Add($"Accion: {actionType}"); }
+    if (!string.IsNullOrWhiteSpace(resource)) { activeFilters.Add($"Recurso: {resource}"); }
+    if (!string.IsNullOrWhiteSpace(result)) { activeFilters.Add($"Resultado: {result}"); }
+    if (!string.IsNullOrWhiteSpace(severity)) { activeFilters.Add($"Severidad: {severity}"); }
+    if (!string.IsNullOrWhiteSpace(search)) { activeFilters.Add($"Texto: {search}"); }
+    if (!string.IsNullOrWhiteSpace(clientIp)) { activeFilters.Add($"IP: {clientIp}"); }
+    if (!string.IsNullOrWhiteSpace(userAgent)) { activeFilters.Add($"Agente: {userAgent}"); }
+    if (!string.IsNullOrWhiteSpace(dateFrom)) { activeFilters.Add($"Desde: {dateFrom}"); }
+    if (!string.IsNullOrWhiteSpace(dateTo)) { activeFilters.Add($"Hasta: {dateTo}"); }
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -28,66 +79,66 @@
         <form method="get" class="row g-3">
             <div class="col-md-3">
                 <label class="form-label small fw-semibold">Usuario</label>
-                <input type="text" name="changedByUsername" value="@Model.ChangedByUsername" class="form-control" placeholder="admin" />
+                <input type="text" name="changedByUsername" value="@changedByUsername" class="form-control" placeholder="admin" />
             </div>
             <div class="col-md-3">
                 <label class="form-label small fw-semibold">Edificio</label>
-                <input type="text" name="buildingExternalId" value="@Model.BuildingExternalId" class="form-control" placeholder="SR-BLD-069" />
+                <input type="text" name="buildingExternalId" value="@buildingExternalId" class="form-control" placeholder="SR-BLD-069" />
             </div>
             <div class="col-md-2">
                 <label class="form-label small fw-semibold">Accion</label>
-                <input type="text" name="actionType" value="@Model.ActionType" class="form-control" placeholder="login-success" />
+                <input type="text" name="actionType" value="@actionType" class="form-control" placeholder="login-success" />
             </div>
             <div class="col-md-2">
                 <label class="form-label small fw-semibold">Recurso</label>
-                <input type="text" name="resource" value="@Model.Resource" class="form-control" placeholder="auth/login" />
+                <input type="text" name="resource" value="@resource" class="form-control" placeholder="auth/login" />
             </div>
             <div class="col-md-2">
                 <label class="form-label small fw-semibold">Resultado</label>
                 <select name="result" class="form-select">
-                    <option value="" selected="@(string.IsNullOrWhiteSpace(Model.Result))">Todos</option>
-                    <option value="success" selected="@(Model.Result == "success")">Exito</option>
-                    <option value="failure" selected="@(Model.Result == "failure")">Fallo</option>
-                    <option value="challenge" selected="@(Model.Result == "challenge")">Pendiente</option>
+                    <option value="" selected="@(string.IsNullOrWhiteSpace(result))">Todos</option>
+                    <option value="success" selected="@(result == "success")">Exito</option>
+                    <option value="failure" selected="@(result == "failure")">Fallo</option>
+                    <option value="challenge" selected="@(result == "challenge")">Pendiente</option>
                 </select>
             </div>
             <div class="col-md-2">
                 <label class="form-label small fw-semibold">Severidad</label>
                 <select name="severity" class="form-select">
-                    <option value="" selected="@(string.IsNullOrWhiteSpace(Model.Severity))">Todas</option>
-                    <option value="info" selected="@(Model.Severity == "info")">Info</option>
-                    <option value="warning" selected="@(Model.Severity == "warning")">Advertencia</option>
-                    <option value="critical" selected="@(Model.Severity == "critical")">Critico</option>
+                    <option value="" selected="@(string.IsNullOrWhiteSpace(severity))">Todas</option>
+                    <option value="info" selected="@(severity == "info")">Info</option>
+                    <option value="warning" selected="@(severity == "warning")">Advertencia</option>
+                    <option value="critical" selected="@(severity == "critical")">Critico</option>
                 </select>
             </div>
             <div class="col-md-4">
                 <label class="form-label small fw-semibold">Buscar texto</label>
-                <input type="text" name="search" value="@Model.Search" class="form-control" placeholder="IP, agente, resumen, detalle..." />
+                <input type="text" name="search" value="@search" class="form-control" placeholder="IP, agente, resumen, detalle..." />
             </div>
             <div class="col-md-3">
                 <label class="form-label small fw-semibold">IP</label>
-                <input type="text" name="clientIp" value="@Model.ClientIp" class="form-control" placeholder="10.6.50.6" />
+                <input type="text" name="clientIp" value="@clientIp" class="form-control" placeholder="10.6.50.6" />
             </div>
             <div class="col-md-3">
                 <label class="form-label small fw-semibold">Agente</label>
-                <input type="text" name="userAgent" value="@Model.UserAgent" class="form-control" placeholder="Chrome..." />
+                <input type="text" name="userAgent" value="@userAgent" class="form-control" placeholder="Chrome..." />
             </div>
             <div class="col-md-2">
                 <label class="form-label small fw-semibold">Desde</label>
-                <input type="date" name="from" value="@Model.DateFrom" class="form-control" />
+                <input type="date" name="from" value="@dateFrom" class="form-control" />
             </div>
             <div class="col-md-2">
                 <label class="form-label small fw-semibold">Hasta</label>
-                <input type="date" name="to" value="@Model.DateTo" class="form-control" />
+                <input type="date" name="to" value="@dateTo" class="form-control" />
             </div>
             <div class="col-md-2">
                 <label class="form-label small fw-semibold">Por pagina</label>
                 <select name="pageSize" class="form-select">
-                    <option value="30" selected="@(Model.PageSize == 30)">30</option>
-                    <option value="50" selected="@(Model.PageSize == 50)">50</option>
-                    <option value="100" selected="@(Model.PageSize == 100)">100</option>
-                    <option value="200" selected="@(Model.PageSize == 200)">200</option>
-                    <option value="500" selected="@(Model.PageSize == 500)">500</option>
+                    <option value="30" selected="@(pageSize == 30)">30</option>
+                    <option value="50" selected="@(pageSize == 50)">50</option>
+                    <option value="100" selected="@(pageSize == 100)">100</option>
+                    <option value="200" selected="@(pageSize == 200)">200</option>
+                    <option value="500" selected="@(pageSize == 500)">500</option>
                 </select>
             </div>
             <div class="col-md-12">
@@ -123,25 +174,25 @@
             <div class="col-md-3">
                 <div class="p-3 rounded-3 bg-light border">
                     <div class="text-muted small">Total encontrados</div>
-                    <div class="fs-4 fw-bold">@Model.TotalCount</div>
+                    <div class="fs-4 fw-bold">@totalCount</div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="p-3 rounded-3 bg-light border">
                     <div class="text-muted small">Exitos</div>
-                    <div class="fs-4 fw-bold">@Model.SuccessCount</div>
+                    <div class="fs-4 fw-bold">@successCount</div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="p-3 rounded-3 bg-light border">
                     <div class="text-muted small">Fallos</div>
-                    <div class="fs-4 fw-bold">@Model.FailureCount</div>
+                    <div class="fs-4 fw-bold">@failureCount</div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="p-3 rounded-3 bg-light border">
                     <div class="text-muted small">Criticos</div>
-                    <div class="fs-4 fw-bold">@Model.CriticalCount</div>
+                    <div class="fs-4 fw-bold">@criticalCount</div>
                 </div>
             </div>
         </div>
@@ -169,7 +220,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @if (Model.Items.Count == 0)
+                    @if (items.Count == 0)
                     {
                         <tr>
                             <td colspan="12" class="text-center text-muted py-4">No hay registros para ese filtro.</td>
@@ -177,29 +228,33 @@
                     }
                     else
                     {
-                        @foreach (var item in Model.Items)
+                        @foreach (var item in items)
                         {
                             <tr>
-                                <td class="small text-nowrap">@item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
-                                <td class="small">@item.ChangedByUsername</td>
-                                <td><span class="badge bg-secondary">@item.ActionType</span></td>
-                                <td class="small">@item.Resource</td>
+                                <td class="small text-nowrap">@(DateTime.TryParse(GetItemString(item, "CreatedAtUtc"), out var createdAt) ? createdAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") : "")</td>
+                                <td class="small">@GetItemString(item, "ChangedByUsername")</td>
+                                <td><span class="badge bg-secondary">@GetItemString(item, "ActionType")</span></td>
+                                <td class="small">@GetItemString(item, "Resource")</td>
                                 <td class="small">
-                                    <span class="badge @(item.Result == "failure" ? "bg-danger" : item.Result == "challenge" ? "bg-warning text-dark" : "bg-success")">
-                                        @item.Result
+                                    @{
+                                        var itemResult = GetItemString(item, "Result");
+                                        var itemSeverity = GetItemString(item, "Severity");
+                                    }
+                                    <span class="badge @(itemResult == "failure" ? "bg-danger" : itemResult == "challenge" ? "bg-warning text-dark" : "bg-success")">
+                                        @itemResult
                                     </span>
                                 </td>
                                 <td class="small">
-                                    <span class="badge @(item.Severity == "critical" ? "bg-danger" : item.Severity == "warning" ? "bg-warning text-dark" : "bg-info text-dark")">
-                                        @item.Severity
+                                    <span class="badge @(itemSeverity == "critical" ? "bg-danger" : itemSeverity == "warning" ? "bg-warning text-dark" : "bg-info text-dark")">
+                                        @itemSeverity
                                     </span>
                                 </td>
-                                <td class="small">@item.BuildingExternalId</td>
-                                <td class="small">@item.Summary</td>
-                                <td class="small text-muted">@item.PreviousValue</td>
-                                <td class="small text-muted">@item.NewValue</td>
-                                <td class="small text-nowrap">@item.ClientIp</td>
-                                <td class="small text-muted">@item.UserAgent</td>
+                                <td class="small">@GetItemString(item, "BuildingExternalId")</td>
+                                <td class="small">@GetItemString(item, "Summary")</td>
+                                <td class="small text-muted">@GetItemString(item, "PreviousValue")</td>
+                                <td class="small text-muted">@GetItemString(item, "NewValue")</td>
+                                <td class="small text-nowrap">@GetItemString(item, "ClientIp")</td>
+                                <td class="small text-muted">@GetItemString(item, "UserAgent")</td>
                             </tr>
                         }
                     }
@@ -211,45 +266,45 @@
 
 <div class="d-flex justify-content-between align-items-center mt-3">
     <div class="small text-muted">
-        Pagina @Model.Page de @Math.Max(1, Model.TotalPages) | Mostrando @Model.Items.Count de @Model.TotalCount registros
+        Pagina @(page) de @Math.Max(1, totalPages) | Mostrando @items.Count de @totalCount registros
     </div>
     <div class="d-flex gap-2">
-        @if (Model.Page > 1)
+        @if (page > 1)
         {
             <a class="btn btn-outline-secondary btn-sm" href="@Url.Action("Activity", new {
-                buildingExternalId = Model.BuildingExternalId,
-                changedByUsername = Model.ChangedByUsername,
-                actionType = Model.ActionType,
-                resource = Model.Resource,
-                result = Model.Result,
-                severity = Model.Severity,
-                search = Model.Search,
-                clientIp = Model.ClientIp,
-                userAgent = Model.UserAgent,
-                from = Model.DateFrom,
-                to = Model.DateTo,
-                page = Model.Page - 1,
-                pageSize = Model.PageSize
+                buildingExternalId = buildingExternalId,
+                changedByUsername = changedByUsername,
+                actionType = actionType,
+                resource = resource,
+                result = result,
+                severity = severity,
+                search = search,
+                clientIp = clientIp,
+                userAgent = userAgent,
+                from = dateFrom,
+                to = dateTo,
+                page = page - 1,
+                pageSize = pageSize
             })">
                 <i class="bi bi-chevron-left"></i> Anterior
             </a>
         }
-        @if (Model.Page < Model.TotalPages)
+        @if (page < totalPages)
         {
             <a class="btn btn-outline-secondary btn-sm" href="@Url.Action("Activity", new {
-                buildingExternalId = Model.BuildingExternalId,
-                changedByUsername = Model.ChangedByUsername,
-                actionType = Model.ActionType,
-                resource = Model.Resource,
-                result = Model.Result,
-                severity = Model.Severity,
-                search = Model.Search,
-                clientIp = Model.ClientIp,
-                userAgent = Model.UserAgent,
-                from = Model.DateFrom,
-                to = Model.DateTo,
-                page = Model.Page + 1,
-                pageSize = Model.PageSize
+                buildingExternalId = buildingExternalId,
+                changedByUsername = changedByUsername,
+                actionType = actionType,
+                resource = resource,
+                result = result,
+                severity = severity,
+                search = search,
+                clientIp = clientIp,
+                userAgent = userAgent,
+                from = dateFrom,
+                to = dateTo,
+                page = page + 1,
+                pageSize = pageSize
             })">
                 Siguiente <i class="bi bi-chevron-right"></i>
             </a>

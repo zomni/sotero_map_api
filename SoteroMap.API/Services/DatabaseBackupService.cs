@@ -32,6 +32,11 @@ public class DatabaseBackupService
         return GetBool("BackupSettings:Enabled", "BACKUP_ENABLED", true);
     }
 
+    public string GetBackupPath()
+    {
+        return GetBackupDirectory();
+    }
+
     public async Task<BackupHistory> CreateBackupAsync(
         string? createdByUsername,
         string reason,
@@ -118,6 +123,55 @@ public class DatabaseBackupService
             .OrderByDescending(item => item.CreatedAtUtc)
             .Take(take)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<BackupHistory?> GetBackupByIdAsync(int backupId, CancellationToken cancellationToken = default)
+    {
+        return await _context.BackupHistories
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == backupId, cancellationToken);
+    }
+
+    public async Task<BackupVerificationResult> VerifyBackupAsync(string filePath, string? expectedHash = null, CancellationToken cancellationToken = default)
+    {
+        var result = new BackupVerificationResult
+        {
+            FilePath = filePath
+        };
+
+        if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
+        {
+            result.ErrorMessage = "El archivo de backup no existe.";
+            return result;
+        }
+
+        try
+        {
+            using var connection = new SqliteConnection($"Data Source={filePath}");
+            await connection.OpenAsync(cancellationToken);
+
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "PRAGMA integrity_check;";
+                var integrity = Convert.ToString(await command.ExecuteScalarAsync(cancellationToken)) ?? string.Empty;
+                result.IsSqliteHealthy = string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase);
+                result.IntegrityMessage = integrity;
+            }
+
+            result.FileExists = true;
+            result.FileSizeBytes = new FileInfo(filePath).Length;
+            result.CalculatedHash = ComputeSha256(filePath);
+            result.HashMatches = string.IsNullOrWhiteSpace(expectedHash) ||
+                                string.Equals(result.CalculatedHash, expectedHash, StringComparison.OrdinalIgnoreCase);
+            result.IsHealthy = result.IsSqliteHealthy && result.HashMatches;
+        }
+        catch (Exception ex)
+        {
+            result.ErrorMessage = ex.Message;
+            result.IsHealthy = false;
+        }
+
+        return result;
     }
 
     public async Task<int> CleanupExpiredBackupsAsync(CancellationToken cancellationToken = default)
@@ -208,6 +262,18 @@ public class DatabaseBackupService
 
     private string GetBackupDirectory()
     {
+        var configuredPath = GetString("BackupSettings:Path", "BACKUP_PATH");
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            var expandedPath = configuredPath.Trim();
+            if (!Path.IsPathRooted(expandedPath))
+            {
+                return Path.GetFullPath(Path.Combine(_environment.ContentRootPath, expandedPath));
+            }
+
+            return expandedPath;
+        }
+
         var databasePath = SqliteDatabasePathResolver.ResolveDatabasePath(_configuration, _environment.ContentRootPath);
         var databaseDirectory = Path.GetDirectoryName(databasePath) ?? AppContext.BaseDirectory;
         return Path.Combine(databaseDirectory, "backups");
@@ -270,4 +336,17 @@ public class DatabaseBackupService
 
         return bool.TryParse(_configuration[configKey], out parsed) ? parsed : fallback;
     }
+}
+
+public class BackupVerificationResult
+{
+    public string FilePath { get; set; } = string.Empty;
+    public bool FileExists { get; set; }
+    public long FileSizeBytes { get; set; }
+    public string CalculatedHash { get; set; } = string.Empty;
+    public bool HashMatches { get; set; }
+    public bool IsSqliteHealthy { get; set; }
+    public string IntegrityMessage { get; set; } = string.Empty;
+    public bool IsHealthy { get; set; }
+    public string ErrorMessage { get; set; } = string.Empty;
 }

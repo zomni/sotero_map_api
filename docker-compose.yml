@@ -37,6 +37,7 @@ services:
       - MfaSettings__Digits=${MFA_DIGITS:-6}
       - MfaSettings__WindowSteps=${MFA_WINDOW_STEPS:-6}
       - BackupSettings__Enabled=${BACKUP_ENABLED:-true}
+      - BackupSettings__Path=${BACKUP_PATH:-backups}
       - BackupSettings__Cron=${BACKUP_CRON:-}
       - BackupSettings__IntervalHours=${BACKUP_INTERVAL_HOURS:-24}
       - BackupSettings__RetentionDays=${BACKUP_RETENTION_DAYS:-30}
