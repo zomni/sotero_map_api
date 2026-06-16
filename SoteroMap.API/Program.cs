@@ -121,6 +121,9 @@ builder.Services.AddScoped<ExcelInventoryImportService>();
 builder.Services.AddScoped<InventoryReconciliationService>();
 builder.Services.AddScoped<EquipmentDeliveryDocumentService>();
 builder.Services.AddScoped<NetworkTelemetryService>();
+builder.Services.AddScoped<NetworkTelemetryLiveScanService>();
+builder.Services.AddScoped<NetworkTelemetryAgentBridgeService>();
+builder.Services.AddHostedService<NetworkTelemetryLiveScanHostedService>();
 
 // CORS para que el frontend (sotero_map) pueda consumir la API
 builder.Services.AddCors(options =>

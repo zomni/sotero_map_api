@@ -28,12 +28,46 @@
         place-items: center;
         border-radius: 16px;
     }
+
+    .telemetry-scan-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 2100;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(15, 23, 42, 0.5);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+    }
+
+    .telemetry-scan-modal.is-open {
+        display: flex;
+    }
+
+    .telemetry-scan-dialog {
+        width: min(640px, 100%);
+        max-height: calc(100vh - 40px);
+        overflow: auto;
+    }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2 class="fw-bold mb-0">Red y riesgo</h2>
-    <span class="text-muted">Base lista para snapshots, conectores y mapa de calor</span>
+    <span class="text-muted">Inventario tecnico observado por red</span>
 </div>
+
+@if (!string.Equals(Model.LatestSourceType, "windows-collector", StringComparison.OrdinalIgnoreCase))
+{
+    <div class="alert alert-warning border-0 shadow-sm">
+        <div class="fw-semibold mb-1">Sesiones reales de usuario</div>
+        <div>
+            El escaneo local del backend sirve para IP, host, puertos y latencia. Para capturar el usuario activo del equipo,
+            fabricante, modelo y datos Windows en vivo, instala el agente Windows del repo y dejalo corriendo en segundo plano.
+        </div>
+    </div>
+}
 
 <div class="card telemetry-hero shadow-sm mb-4">
     <div class="card-body p-4 p-lg-5">
@@ -42,17 +76,33 @@
                 <div class="text-uppercase small fw-semibold text-muted mb-2">Estado del modulo</div>
                 <h1 class="fw-bold mb-3">@Model.HealthLabel</h1>
                 <p class="text-white-50 mb-4">
-                    Esta fase deja preparada la base para recibir snapshots de red, usuarios conectados y señales de riesgo. 
-                    Cuando exista un colector, el mismo dashboard mostrará el mapa de calor sin cambiar la estructura.
+                    Este panel consolida los equipos vistos en red, sus rasgos tecnicos, la subred donde aparecen y el riesgo observado.
+                    La meta es revisar endpoints concretos y luego usar esos datos para calor por edificio y por subred.
                 </p>
                 <div class="d-flex flex-wrap gap-2">
                     <a href="/admin/compliance" class="btn btn-light fw-semibold">
                         <i class="bi bi-shield-check me-1"></i> Ver cumplimiento
                     </a>
+                    @if (User.IsInRole(SoteroMap.API.Models.AppRoles.Admin) || User.IsInRole(SoteroMap.API.Models.AppRoles.Auditor))
+                    {
+                        <button id="network-telemetry-scan" type="button" class="btn btn-warning fw-semibold">
+                            <i class="bi bi-radar me-1"></i> Escanear ahora
+                        </button>
+                        <button id="network-telemetry-pause" type="button" class="btn btn-outline-light fw-semibold" disabled>
+                            <i class="bi bi-pause-fill me-1"></i> Pausar
+                        </button>
+                        <button id="network-telemetry-resume" type="button" class="btn btn-outline-light fw-semibold" disabled>
+                            <i class="bi bi-play-fill me-1"></i> Reanudar
+                        </button>
+                        <button id="network-telemetry-stop" type="button" class="btn btn-outline-danger fw-semibold" disabled>
+                            <i class="bi bi-stop-fill me-1"></i> Detener
+                        </button>
+                    }
                     <a href="/dashboard" class="btn btn-outline-light fw-semibold">
                         <i class="bi bi-speedometer2 me-1"></i> Volver al dashboard
                     </a>
                 </div>
+                <div id="network-telemetry-agent-state" class="small text-white-50 mt-3"></div>
             </div>
             <div class="col-lg-5">
                 <div class="bg-white bg-opacity-10 rounded-4 p-4">
@@ -63,7 +113,7 @@
                         </div>
                         <div class="col-6">
                             <div class="fs-3 fw-bold">@Model.LatestConnectedUserCount</div>
-                            <div class="small text-muted">Usuarios conectados</div>
+                            <div class="small text-muted">Endpoints agrupados</div>
                         </div>
                         <div class="col-6">
                             <div class="fs-3 fw-bold">@Model.LatestDeviceCount</div>
@@ -135,7 +185,7 @@
         @if (!Model.HasData)
         {
             <div class="alert alert-secondary mb-0">
-                Aun no existen snapshots de red. En la siguiente fase conectaremos los colectores y empezara a poblarse este panel.
+                Aun no existen snapshots de red. Cuando ingrese la primera captura, aqui se mostraran los equipos observados y su riesgo.
             </div>
         }
         else
@@ -155,13 +205,13 @@
                 </div>
                 <div class="col-md-3">
                     <div class="p-3 bg-light rounded-3">
-                        <div class="text-muted small">Criticos</div>
+                        <div class="text-muted small">Altos y criticos</div>
                         <div class="fs-4 fw-bold">@Model.LatestHighRiskDeviceCount</div>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="p-3 bg-light rounded-3">
-                        <div class="text-muted small">Moderados</div>
+                        <div class="text-muted small">Medios</div>
                         <div class="fs-4 fw-bold">@Model.LatestMediumRiskDeviceCount</div>
                     </div>
                 </div>
@@ -174,7 +224,182 @@
     </div>
 </div>
 
-<div class="card telemetry-card">
+<div class="card telemetry-card mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Riesgo por edificio</h5>
+            <span class="text-muted small">Base para mapa de calor</span>
+        </div>
+        @if (Model.BuildingRiskSummaries.Count == 0)
+        {
+            <div class="text-muted">No hay edificios con equipos observados en el ultimo snapshot.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Edificio</th>
+                            <th>Equipos</th>
+                            <th>Criticos</th>
+                            <th>Altos</th>
+                            <th>Medios</th>
+                            <th>Bajos</th>
+                            <th>Maximo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in Model.BuildingRiskSummaries.Take(12))
+                        {
+                            <tr>
+                                <td>@item.BuildingExternalId</td>
+                                <td>@item.DeviceCount</td>
+                                <td>@item.CriticalCount</td>
+                                <td>@item.HighCount</td>
+                                <td>@item.MediumCount</td>
+                                <td>@item.LowCount</td>
+                                <td>@item.MaxRiskLevel (@item.MaxRiskScore)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="card telemetry-card mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Riesgo por subred</h5>
+            <span class="text-muted small">Mapa de calor mas fino</span>
+        </div>
+        @if (Model.SubnetRiskSummaries.Count == 0)
+        {
+            <div class="text-muted">No hay subredes con equipos observados en el ultimo snapshot.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Subred</th>
+                            <th>Equipos</th>
+                            <th>Criticos</th>
+                            <th>Altos</th>
+                            <th>Medios</th>
+                            <th>Bajos</th>
+                            <th>Maximo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in Model.SubnetRiskSummaries.Take(12))
+                        {
+                            <tr>
+                                <td>@item.SubnetCidr</td>
+                                <td>@item.DeviceCount</td>
+                                <td>@item.CriticalCount</td>
+                                <td>@item.HighCount</td>
+                                <td>@item.MediumCount</td>
+                                <td>@item.LowCount</td>
+                                <td>@item.MaxRiskLevel (@item.MaxRiskScore)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card telemetry-card">
+            <div class="card-body">
+                <div class="text-muted small">Conectados</div>
+                <div class="fs-3 fw-bold">@Model.SessionOverview.ActiveUserCount</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card telemetry-card">
+            <div class="card-body">
+                <div class="text-muted small">Riesgo alto</div>
+                <div class="fs-3 fw-bold">@Model.SessionOverview.LockedUserCount</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card telemetry-card">
+            <div class="card-body">
+                <div class="text-muted small">Identidad incierta</div>
+                <div class="fs-3 fw-bold">@Model.SessionOverview.PendingMfaUserCount</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card telemetry-card">
+            <div class="card-body">
+                <div class="text-muted small">Inactivos</div>
+                <div class="fs-3 fw-bold">@Model.SessionOverview.ExpiredUserCount</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card telemetry-card mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Endpoints y estado de red</h5>
+            <span class="text-muted small">Trazado vivo desde IP, host y subred</span>
+        </div>
+        @if (Model.SessionOverview.Users.Count == 0)
+        {
+            <div class="text-muted">Todavia no hay endpoints de red con estado calculado.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Endpoint</th>
+                            <th>Perfil</th>
+                            <th>Estado</th>
+                            <th>Subred</th>
+                            <th>Ultima deteccion</th>
+                            
+                            <th>Latencia</th>
+                            <th>Puertos</th>
+                            <th>Riesgo</th>
+                            <th>Equipos</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var user in Model.SessionOverview.Users)
+                        {
+                            <tr>
+                                <td class="fw-semibold">@user.Username</td>
+                                <td>@user.Role</td>
+                                <td><span class="badge bg-@(user.SessionState == "active" ? "success" : user.SessionState == "locked" ? "danger" : user.SessionState == "mfa-pending" ? "warning text-dark" : "secondary")">@user.SessionStateLabel</span></td>
+                                <td>@user.SubnetCidr</td>
+                                <td>@(user.LastSeenAtUtc is null ? "-" : user.LastSeenAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm"))</td>
+                                <td>@(user.PingMs is null ? "-" : $"{user.PingMs} ms")</td>
+                                <td>@user.OpenPorts</td>
+                                <td>@user.RiskLevel (@user.RiskScore)</td>
+                                <td>@user.LinkedDeviceCount</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="card telemetry-card mb-4">
     <div class="card-body">
         <h5 class="mb-3">Snapshots recientes</h5>
         @if (Model.RecentSnapshots.Count == 0)
@@ -214,80 +439,523 @@
     </div>
 </div>
 
-<div class="card telemetry-card mt-4">
+<div class="card telemetry-card mb-4">
     <div class="card-body">
         <h5 class="mb-3">Riesgos destacados</h5>
         <div id="network-telemetry-observations" class="text-muted">Cargando observaciones destacadas...</div>
     </div>
 </div>
 
+<div class="card telemetry-card">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+            <div>
+                <h5 class="mb-1">Equipos observados en red</h5>
+                <div class="text-muted small">Listado tecnico de PCs y otros equipos capturados por snapshot.</div>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <input id="telemetry-device-search" type="text" class="form-control" placeholder="Buscar por serie, IP, host o usuario" style="min-width: 280px;" />
+                <select id="telemetry-device-risk" class="form-select" style="min-width: 180px;">
+                    <option value="">Todos los riesgos</option>
+                    <option value="critical">Critico</option>
+                    <option value="high">Alto</option>
+                    <option value="medium">Medio</option>
+                    <option value="low">Bajo</option>
+                </select>
+                <input id="telemetry-device-building" type="text" class="form-control" placeholder="Edificio SR-BLD-..." style="min-width: 180px;" />
+                <button id="telemetry-device-filter" type="button" class="btn btn-primary">Filtrar</button>
+            </div>
+        </div>
+        <div id="telemetry-device-summary" class="small text-muted mb-3"></div>
+        <div id="telemetry-device-table" class="text-muted">Cargando equipos observados...</div>
+        <div id="telemetry-device-pagination" class="d-flex justify-content-end gap-2 mt-3"></div>
+    </div>
+</div>
+
+@if (User.IsInRole(SoteroMap.API.Models.AppRoles.Admin) || User.IsInRole(SoteroMap.API.Models.AppRoles.Auditor))
+{
+    <div class="telemetry-scan-modal" id="networkTelemetryScanModal" aria-labelledby="networkTelemetryScanModalLabel" aria-hidden="true">
+        <div class="telemetry-scan-dialog">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="networkTelemetryScanModalLabel">Escaneo vivo de red</h5>
+                    <button type="button" class="btn-close" id="network-telemetry-close-scan" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        Este boton enviara una solicitud al agente Windows. Ese agente es el que debe capturar los usuarios reales de sesion,
+                        hostname, fabricante, modelo y datos Windows del equipo.
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" role="switch" id="telemetryResolveSessions" checked />
+                        <label class="form-check-label" for="telemetryResolveSessions">Intentar capturar sesion activa del equipo</label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" for="telemetryScanMode">Modo de escaneo</label>
+                        <select class="form-select" id="telemetryScanMode">
+                            <option value="simple" selected>Simple: usuario/sesion, IP y host. Mas rapido.</option>
+                            <option value="full">Completo: agrega puertos, perfil y enriquecimiento extendido.</option>
+                        </select>
+                        <div class="form-text">
+                            Usa <strong>Simple</strong> para obtener usuarios activos mas rapido. Usa <strong>Completo</strong> cuando quieras
+                            enriquecer el snapshot con mas detalles tecnicos.
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="form-text">
+                                Recomendado: instala el agente una sola vez con
+                                <code>.\tools\install-network-collector-agent.ps1</code>
+                                y luego usa solo este boton desde el dashboard.
+                            </div>
+                        </div>
+                    </div>
+                    <div id="telemetry-scan-feedback" class="small text-muted mt-3"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" id="network-telemetry-cancel-scan">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="network-telemetry-confirm-scan">
+                        <i class="bi bi-radar me-1"></i> Iniciar escaneo
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 <script>
     (function () {
-        const container = document.getElementById("network-telemetry-observations");
-        if (!container) return;
+        const latestSnapshotId = Number(@Model.LatestSnapshotId);
+        const riskContainer = document.getElementById("network-telemetry-observations");
+        const deviceTable = document.getElementById("telemetry-device-table");
+        const deviceSummary = document.getElementById("telemetry-device-summary");
+        const devicePagination = document.getElementById("telemetry-device-pagination");
+        const searchInput = document.getElementById("telemetry-device-search");
+        const riskSelect = document.getElementById("telemetry-device-risk");
+        const buildingInput = document.getElementById("telemetry-device-building");
+        const filterButton = document.getElementById("telemetry-device-filter");
+        const scanButton = document.getElementById("network-telemetry-scan");
+        const agentState = document.getElementById("network-telemetry-agent-state");
+        const pauseButton = document.getElementById("network-telemetry-pause");
+        const resumeButton = document.getElementById("network-telemetry-resume");
+        const stopButton = document.getElementById("network-telemetry-stop");
+        const scanModalElement = document.getElementById("networkTelemetryScanModal");
+        const scanConfirmButton = document.getElementById("network-telemetry-confirm-scan");
+        const scanCloseButton = document.getElementById("network-telemetry-close-scan");
+        const scanCancelButton = document.getElementById("network-telemetry-cancel-scan");
+        const scanFeedback = document.getElementById("telemetry-scan-feedback");
+        const resolveSessionsCheckbox = document.getElementById("telemetryResolveSessions");
+        const scanModeSelect = document.getElementById("telemetryScanMode");
 
-        const latestSnapshotId = Number(@(Model.RecentSnapshots.Count > 0 ? Model.RecentSnapshots[0].Id : 0));
-        if (!latestSnapshotId) {
-            container.textContent = "Aun no hay observaciones con riesgo para mostrar.";
+        const openScanModal = () => {
+            if (!scanModalElement) {
+                return false;
+            }
+
+            scanModalElement.classList.add("is-open");
+            scanModalElement.setAttribute("aria-hidden", "false");
+            document.body.classList.add("session-warning-open");
+            return true;
+        };
+
+        const closeScanModal = () => {
+            if (!scanModalElement) {
+                return;
+            }
+
+            scanModalElement.classList.remove("is-open");
+            scanModalElement.setAttribute("aria-hidden", "true");
+            document.body.classList.remove("session-warning-open");
+        };
+
+        if (!riskContainer || !deviceTable || !deviceSummary || !devicePagination) {
             return;
         }
 
-        fetch(`/api/network-telemetry/snapshots/${latestSnapshotId}/observations?take=10`, {
-            credentials: "include",
-            cache: "no-store"
-        })
-            .then((response) => {
+        filterButton?.addEventListener("click", () => loadDevices(1));
+        scanButton?.addEventListener("click", () => {
+            if (scanFeedback) {
+                scanFeedback.textContent = "";
+                scanFeedback.className = "small text-muted mt-3";
+            }
+
+            if (openScanModal()) {
+                return;
+            }
+
+            alert("No fue posible abrir la ventana de escaneo. Recarga la pagina e intentalo de nuevo.");
+        });
+
+        scanCloseButton?.addEventListener("click", closeScanModal);
+        scanCancelButton?.addEventListener("click", closeScanModal);
+        scanModalElement?.addEventListener("click", (event) => {
+            if (event.target === scanModalElement) {
+                closeScanModal();
+            }
+        });
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && scanModalElement?.classList.contains("is-open")) {
+                closeScanModal();
+            }
+        });
+
+        scanConfirmButton?.addEventListener("click", async () => {
+            const originalConfirmHtml = scanConfirmButton.innerHTML;
+            const originalScanHtml = scanButton ? scanButton.innerHTML : "";
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort(), 12000);
+            scanConfirmButton.disabled = true;
+            if (scanButton) {
+                scanButton.disabled = true;
+                scanButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Solicitando...';
+            }
+            scanConfirmButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Solicitando...';
+            if (scanFeedback) {
+                scanFeedback.textContent = "Enviando solicitud al agente Windows...";
+                scanFeedback.className = "small text-muted mt-3";
+            }
+            try {
+                const response = await fetch("/api/network-telemetry/scan", {
+                    method: "POST",
+                    credentials: "include",
+                    signal: controller.signal,
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        resolveInteractiveSessions: !!resolveSessionsCheckbox?.checked,
+                        scanMode: scanModeSelect?.value || "simple"
+                    })
+                });
+
                 if (!response.ok) {
                     throw new Error(`La API respondio ${response.status}`);
                 }
 
-                return response.json();
-            })
-            .then((items) => {
-                if (!Array.isArray(items) || items.length === 0) {
-                    container.textContent = "Aun no hay observaciones con riesgo para mostrar.";
-                    return;
+                const raw = await response.text();
+                const result = raw ? JSON.parse(raw) : {};
+                if (scanFeedback) {
+                    scanFeedback.textContent = result?.message || "Solicitud enviada al agente Windows.";
+                    scanFeedback.className = "small text-success mt-3";
+                }
+                if (agentState) {
+                    agentState.textContent = result?.message || "Solicitud enviada al agente Windows.";
+                }
+                window.clearTimeout(timeoutId);
+                scanConfirmButton.disabled = false;
+                scanConfirmButton.innerHTML = originalConfirmHtml;
+                if (scanButton) {
+                    scanButton.innerHTML = originalScanHtml;
+                }
+                closeScanModal();
+                window.setTimeout(() => loadAgentStatus(true), 1200);
+            } catch (error) {
+                console.error("Error ejecutando escaneo de telemetria:", error);
+                window.clearTimeout(timeoutId);
+                if (scanButton) {
+                    scanButton.disabled = false;
+                    scanButton.innerHTML = originalScanHtml;
+                }
+                scanConfirmButton.disabled = false;
+                scanConfirmButton.innerHTML = originalConfirmHtml;
+                if (scanFeedback) {
+                    scanFeedback.textContent = error?.name === "AbortError"
+                        ? "La solicitud tardo demasiado en responder. Revisa el estado del agente y vuelve a intentar."
+                        : "No fue posible ejecutar el escaneo de red.";
+                    scanFeedback.className = "small text-danger mt-3";
+                }
+            }
+        });
+
+        const sendAgentControl = async (action) => {
+            try {
+                const response = await fetch("/api/network-telemetry/agent/control", {
+                    method: "POST",
+                    credentials: "include",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ action })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`La API respondio ${response.status}`);
                 }
 
-                const rows = items.map((item) => {
-                    const reasons = Array.isArray(item.riskReasons) ? item.riskReasons.join(", ") : "";
-                    return `
-                        <tr>
-                            <td>${item.observationType || ""}</td>
-                            <td>
-                                <div class="fw-semibold">${item.deviceName || "Sin nombre"}</div>
-                                <div class="small text-muted">${item.externalKey || ""}</div>
-                            </td>
-                            <td>${item.username || ""}</td>
-                            <td>${item.ipAddress || ""}</td>
-                            <td>${item.macAddress || ""}</td>
-                            <td>
-                                <div class="fw-semibold">${item.riskLevel || ""} (${item.riskScore ?? 0})</div>
-                                ${reasons ? `<div class="small text-muted">${reasons}</div>` : ""}
-                            </td>
-                        </tr>`;
-                }).join("");
+                const status = await response.json();
+                renderAgentStatus(status, false);
+            } catch (error) {
+                console.error(`Error enviando control ${action} al agente:`, error);
+            }
+        };
 
-                container.innerHTML = `
+        pauseButton?.addEventListener("click", () => sendAgentControl("pause"));
+        resumeButton?.addEventListener("click", () => sendAgentControl("resume"));
+        stopButton?.addEventListener("click", () => sendAgentControl("stop"));
+
+        searchInput?.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                loadDevices(1);
+            }
+        });
+
+        if (!latestSnapshotId) {
+            riskContainer.textContent = "Aun no hay observaciones con riesgo para mostrar.";
+            deviceTable.textContent = "Aun no hay equipos observados para mostrar.";
+            return;
+        }
+
+        const renderRiskObservations = (items) => {
+            if (!Array.isArray(items) || items.length === 0) {
+                riskContainer.textContent = "Aun no hay observaciones con riesgo para mostrar.";
+                return;
+            }
+
+            const rows = items.map((item) => {
+                const reasons = Array.isArray(item.riskReasons) ? item.riskReasons.join(", ") : "";
+                return `
+                    <tr>
+                        <td>${item.observationType || ""}</td>
+                        <td>
+                            <div class="fw-semibold">${item.deviceName || item.hostName || "Sin nombre"}</div>
+                            <div class="small text-muted">${item.externalKey || ""}</div>
+                        </td>
+                        <td>${item.username || ""}</td>
+                        <td>${item.ipAddress || ""}</td>
+                        <td>${item.macAddress || ""}</td>
+                        <td>
+                            <div class="fw-semibold">${item.riskLevel || ""} (${item.riskScore ?? 0})</div>
+                            ${reasons ? `<div class="small text-muted">${reasons}</div>` : ""}
+                        </td>
+                    </tr>`;
+            }).join("");
+
+            riskContainer.innerHTML = `
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead>
+                            <tr>
+                                <th>Tipo</th>
+                                <th>Elemento</th>
+                                <th>Usuario</th>
+                                <th>IP</th>
+                                <th>MAC</th>
+                                <th>Riesgo</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>`;
+        };
+
+        const loadRiskObservations = () => {
+            fetch(`/api/network-telemetry/snapshots/${latestSnapshotId}/observations?take=10`, {
+                credentials: "include",
+                cache: "no-store"
+            })
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error(`La API respondio ${response.status}`);
+                    }
+
+                    return response.json();
+                })
+                .then(renderRiskObservations)
+                .catch((error) => {
+                    console.error("Error cargando observaciones de telemetria:", error);
+                    riskContainer.textContent = "No fue posible cargar las observaciones destacadas.";
+                });
+        };
+
+        const renderDevices = (data) => {
+            const items = Array.isArray(data?.items) ? data.items : [];
+            const totalCount = Number(data?.totalCount) || 0;
+            const page = Number(data?.page) || 1;
+            const totalPages = Number(data?.totalPages) || 1;
+
+            deviceSummary.textContent = `Mostrando ${items.length} de ${totalCount} equipos observados.`;
+
+            if (items.length === 0) {
+                deviceTable.innerHTML = `<div class="text-muted">No se encontraron equipos con ese filtro.</div>`;
+            } else {
+                const rows = items.map((item) => `
+                    <tr>
+                        <td>${item.serialNumber || ""}</td>
+                        <td>
+                            <div class="fw-semibold">${item.deviceName || item.hostName || "Sin nombre"}</div>
+                            <div class="small text-muted">${item.hostName || ""}</div>
+                        </td>
+                        <td>${item.username || ""}</td>
+                        <td>${item.buildingExternalId || ""}</td>
+                        <td>${item.subnetCidr || ""}</td>
+                        <td>${item.networkProfile || ""}</td>
+                        <td>${item.ipAddress || ""}</td>
+                        <td>${item.macAddress || ""}</td>
+                        <td>${item.operatingSystem || ""} ${item.operatingSystemVersion || ""}</td>
+                        <td>${item.manufacturer || ""} ${item.model || ""}</td>
+                        <td>${item.antivirusStatus || ""}</td>
+                        <td>${item.patchStatus || ""}</td>
+                        <td>${item.isOnline === true ? "Online" : item.isOnline === false ? "Offline" : ""}</td>
+                        <td>${item.pingMs ?? ""}</td>
+                        <td>${item.riskLevel || ""} (${item.riskScore ?? 0})</td>
+                    </tr>
+                `).join("");
+
+                deviceTable.innerHTML = `
                     <div class="table-responsive">
-                        <table class="table align-middle">
+                        <table class="table align-middle table-sm">
                             <thead>
                                 <tr>
-                                    <th>Tipo</th>
-                                    <th>Elemento</th>
+                                    <th>S/N</th>
+                                    <th>Equipo</th>
                                     <th>Usuario</th>
+                                    <th>Edificio</th>
+                                    <th>Subred</th>
+                                    <th>Perfil</th>
                                     <th>IP</th>
                                     <th>MAC</th>
+                                    <th>SO</th>
+                                    <th>Modelo</th>
+                                    <th>AV</th>
+                                    <th>Parches</th>
+                                    <th>Red</th>
+                                    <th>Ping</th>
                                     <th>Riesgo</th>
                                 </tr>
                             </thead>
                             <tbody>${rows}</tbody>
                         </table>
-                    </div>`;
-            })
-            .catch((error) => {
-                console.error("Error cargando observaciones de telemetria:", error);
-                container.textContent = "No fue posible cargar las observaciones destacadas.";
+                    </div>
+                `;
+            }
+
+            const previousDisabled = page <= 1 ? "disabled" : "";
+            const nextDisabled = page >= totalPages ? "disabled" : "";
+            devicePagination.innerHTML = `
+                <button type="button" class="btn btn-outline-secondary btn-sm" ${previousDisabled} data-page="${page - 1}">Anterior</button>
+                <span class="align-self-center small text-muted">Pagina ${page} de ${totalPages}</span>
+                <button type="button" class="btn btn-outline-secondary btn-sm" ${nextDisabled} data-page="${page + 1}">Siguiente</button>
+            `;
+
+            devicePagination.querySelectorAll("[data-page]").forEach((button) => {
+                button.addEventListener("click", () => {
+                    const nextPage = Number(button.getAttribute("data-page"));
+                    if (Number.isFinite(nextPage) && nextPage >= 1) {
+                        loadDevices(nextPage);
+                    }
+                });
             });
+        };
+
+        const loadDevices = (page = 1) => {
+            deviceTable.textContent = "Consultando equipos observados...";
+
+            const params = new URLSearchParams({
+                page: String(page),
+                pageSize: "50"
+            });
+
+            if (searchInput?.value?.trim()) {
+                params.set("search", searchInput.value.trim());
+            }
+            if (riskSelect?.value) {
+                params.set("riskLevel", riskSelect.value);
+            }
+            if (buildingInput?.value?.trim()) {
+                params.set("buildingExternalId", buildingInput.value.trim());
+            }
+
+            fetch(`/api/network-telemetry/snapshots/${latestSnapshotId}/devices?${params.toString()}`, {
+                credentials: "include",
+                cache: "no-store"
+            })
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error(`La API respondio ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(renderDevices)
+                .catch((error) => {
+                    console.error("Error cargando equipos de telemetria:", error);
+                    deviceTable.textContent = "No fue posible cargar el detalle de equipos.";
+                });
+        };
+
+        const renderAgentStatus = (status, reloadWhenCompleted = false) => {
+            if (!agentState) {
+                return;
+            }
+
+            const state = status?.state || "idle";
+            const message = status?.message || "Sin actividad reciente del agente Windows.";
+            const snapshotId = Number(status?.snapshotId) || 0;
+            const updatedAt = status?.updatedAtUtc ? new Date(status.updatedAtUtc).toLocaleString("es-CL") : "";
+            const heartbeatAt = status?.lastHeartbeatAtUtc ? new Date(status.lastHeartbeatAtUtc).toLocaleString("es-CL") : "";
+            const isConnected = !!status?.isConnected;
+            const agentId = status?.agentId || "sin agente";
+            const totalHosts = Number(status?.totalHosts) || 0;
+            const processedHosts = Number(status?.processedHosts) || 0;
+            const currentIpAddress = status?.currentIpAddress || "";
+            const currentHostName = status?.currentHostName || "";
+            const currentSubnetCidr = status?.currentSubnetCidr || "";
+            const progressText = totalHosts > 0
+                ? ` | progreso ${processedHosts}/${totalHosts}${currentSubnetCidr ? ` | subred ${currentSubnetCidr}` : ""}${currentIpAddress ? ` | IP ${currentIpAddress}` : ""}${currentHostName ? ` | host ${currentHostName}` : ""}`
+                : "";
+
+            agentState.textContent = heartbeatAt
+                ? `Agente ${agentId}: ${isConnected ? "conectado" : "desconectado"} | ${message}${progressText} | ultimo latido ${heartbeatAt}${updatedAt ? ` | estado ${updatedAt}` : ""}`
+                : `Agente ${agentId}: ${isConnected ? "conectado" : "desconectado"} | ${message}${progressText}`;
+
+            if (scanButton) {
+                scanButton.disabled = !isConnected || state === "running" || state === "pending";
+                if (!isConnected) {
+                    scanButton.title = "El agente Windows no esta conectado.";
+                } else if (state === "running" || state === "pending") {
+                    scanButton.title = "Ya existe un escaneo en curso.";
+                } else {
+                    scanButton.title = "";
+                }
+            }
+
+            if (pauseButton) {
+                pauseButton.disabled = !(isConnected && state === "running");
+            }
+
+            if (resumeButton) {
+                resumeButton.disabled = !(isConnected && state === "paused");
+            }
+
+            if (stopButton) {
+                stopButton.disabled = !(isConnected && (state === "running" || state === "paused" || state === "pending" || state === "stopping"));
+            }
+
+            if (reloadWhenCompleted && state === "completed" && snapshotId > 0 && snapshotId !== latestSnapshotId) {
+                window.location.reload();
+            }
+        };
+
+        const loadAgentStatus = (reloadWhenCompleted = false) => {
+            fetch("/api/network-telemetry/agent/status", {
+                credentials: "include",
+                cache: "no-store"
+            })
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error(`La API respondio ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then((status) => renderAgentStatus(status, reloadWhenCompleted))
+                .catch((error) => {
+                    console.error("Error cargando estado del agente de telemetria:", error);
+                });
+        };
+
+        loadRiskObservations();
+        loadDevices(1);
+        loadAgentStatus(false);
+        window.setInterval(() => loadAgentStatus(true), 5000);
     })();
 </script>

@@ -188,6 +188,7 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.MacAddress);
             entity.HasIndex(e => e.SerialNumber);
             entity.HasIndex(e => e.Username);
+            entity.HasIndex(e => e.SubnetCidr);
             entity.Property(e => e.ObservationType).IsRequired().HasMaxLength(40);
             entity.Property(e => e.ExternalKey).HasMaxLength(120);
             entity.Property(e => e.DeviceName).HasMaxLength(200);
@@ -197,6 +198,19 @@ public class AppDbContext : DbContext
             entity.Property(e => e.MacAddress).HasMaxLength(100);
             entity.Property(e => e.SerialNumber).HasMaxLength(120);
             entity.Property(e => e.HostName).HasMaxLength(200);
+            entity.Property(e => e.DeviceCategory).HasMaxLength(60);
+            entity.Property(e => e.OperatingSystem).HasMaxLength(120);
+            entity.Property(e => e.OperatingSystemVersion).HasMaxLength(120);
+            entity.Property(e => e.Manufacturer).HasMaxLength(120);
+            entity.Property(e => e.Model).HasMaxLength(160);
+            entity.Property(e => e.Processor).HasMaxLength(200);
+            entity.Property(e => e.AntivirusStatus).HasMaxLength(80);
+            entity.Property(e => e.AntivirusVersion).HasMaxLength(120);
+            entity.Property(e => e.PatchStatus).HasMaxLength(80);
+            entity.Property(e => e.AgentVersion).HasMaxLength(80);
+            entity.Property(e => e.OpenPorts).HasMaxLength(300);
+            entity.Property(e => e.SubnetCidr).HasMaxLength(40);
+            entity.Property(e => e.NetworkProfile).HasMaxLength(80);
             entity.Property(e => e.BuildingExternalId).HasMaxLength(100);
             entity.Property(e => e.RoomExternalId).HasMaxLength(120);
             entity.Property(e => e.Status).HasMaxLength(40);

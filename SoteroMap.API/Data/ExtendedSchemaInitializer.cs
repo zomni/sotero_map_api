@@ -362,6 +362,8 @@ public static class ExtendedSchemaInitializer
                     MacAddress TEXT NOT NULL,
                     SerialNumber TEXT NOT NULL,
                     HostName TEXT NOT NULL,
+                    SubnetCidr TEXT NOT NULL,
+                    NetworkProfile TEXT NOT NULL,
                     BuildingExternalId TEXT NOT NULL,
                     RoomExternalId TEXT NOT NULL,
                     ImportedInventoryItemId INTEGER NULL,
@@ -408,6 +410,28 @@ public static class ExtendedSchemaInitializer
                 CREATE INDEX IF NOT EXISTS IX_NetworkTelemetryObservations_SerialNumber
                 ON NetworkTelemetryObservations (SerialNumber);
                 """);
+
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "DeviceCategory", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "OperatingSystem", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "OperatingSystemVersion", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "Manufacturer", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "Model", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "Processor", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "MemoryGb", "REAL NULL");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "DiskTotalGb", "REAL NULL");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "DiskFreeGb", "REAL NULL");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "LastBootAtUtc", "TEXT NULL");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "IsOnline", "INTEGER NULL");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "DomainJoined", "INTEGER NULL");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "IsVirtualMachine", "INTEGER NULL");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "PingMs", "INTEGER NULL");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "AntivirusStatus", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "AntivirusVersion", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "PatchStatus", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "AgentVersion", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "OpenPorts", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "SubnetCidr", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "NetworkTelemetryObservations", "NetworkProfile", "TEXT NOT NULL DEFAULT ''");
 
             await context.Database.ExecuteSqlRawAsync("""
                 CREATE TABLE IF NOT EXISTS ManualBuildings (

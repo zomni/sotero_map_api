@@ -14,6 +14,27 @@ public class NetworkTelemetryObservation
     public string MacAddress { get; set; } = string.Empty;
     public string SerialNumber { get; set; } = string.Empty;
     public string HostName { get; set; } = string.Empty;
+    public string DeviceCategory { get; set; } = string.Empty;
+    public string OperatingSystem { get; set; } = string.Empty;
+    public string OperatingSystemVersion { get; set; } = string.Empty;
+    public string Manufacturer { get; set; } = string.Empty;
+    public string Model { get; set; } = string.Empty;
+    public string Processor { get; set; } = string.Empty;
+    public double? MemoryGb { get; set; }
+    public double? DiskTotalGb { get; set; }
+    public double? DiskFreeGb { get; set; }
+    public DateTime? LastBootAtUtc { get; set; }
+    public bool? IsOnline { get; set; }
+    public bool? DomainJoined { get; set; }
+    public bool? IsVirtualMachine { get; set; }
+    public int? PingMs { get; set; }
+    public string AntivirusStatus { get; set; } = string.Empty;
+    public string AntivirusVersion { get; set; } = string.Empty;
+    public string PatchStatus { get; set; } = string.Empty;
+    public string AgentVersion { get; set; } = string.Empty;
+    public string OpenPorts { get; set; } = string.Empty;
+    public string SubnetCidr { get; set; } = string.Empty;
+    public string NetworkProfile { get; set; } = string.Empty;
     public string BuildingExternalId { get; set; } = string.Empty;
     public string RoomExternalId { get; set; } = string.Empty;
     public int? ImportedInventoryItemId { get; set; }

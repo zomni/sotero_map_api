@@ -4,6 +4,19 @@ Backend de SoteroMap construido con ASP.NET Core 8, MVC/Razor, Entity Framework 
 
 Este repositorio administra el inventario real, usuarios, roles, dashboard, auditoria, formularios de entrega, respaldos de base de datos y la API que consume el mapa frontend.
 
+## Arquitectura rapida
+
+El proyecto se organiza asi:
+
+- `Program.cs`: pipeline, autenticacion, CORS, cookies, seguridad, rutas MVC y API.
+- `Controllers/`: login, dashboard, inventario, ubicaciones, cumplimiento, salud, backups y API para el frontend.
+- `Services/`: LDAP/LDAPS, MFA, auditoria, respaldos, sincronizacion, formularios PDF y telemetry.
+- `Models/`: entidades SQLite y contrato de datos.
+- `ViewModels/`: modelos que alimentan vistas Razor y endpoints.
+- `Views/`: dashboard MVC, formularios, inventario, ubicaciones y paneles administrativos.
+- `Data/`: `AppDbContext`, seed, inicializacion y esquema extendido.
+- `Infrastructure/`: utilidades de ruta SQLite, normalizadores y helpers de seguridad.
+
 ## Estado actual
 
 - Dashboard principal en `http://localhost:5000/dashboard`.
@@ -19,6 +32,8 @@ Este repositorio administra el inventario real, usuarios, roles, dashboard, audi
 - Opcion `Mantener sesion iniciada`, que evita el timeout visual y usa una cookie persistente.
 - Panel de cumplimiento para Admin y Auditor con semaforo SGSI, backups, accesos, MFA, HTTPS, Swagger y LDAPS.
 - Endpoint tecnico de integridad en `GET /api/health/integrity`.
+- Panel tecnico de cumplimiento visible en `GET /dashboard/compliance`.
+- Panel de red y riesgo en `GET /dashboard/network-telemetry`.
 
 ## Inicio rapido con Docker
 
@@ -56,12 +71,13 @@ docker compose down -v
 ## Rutas utiles
 
 - Dashboard: `http://localhost:5000/dashboard`
+- Cumplimiento: `http://localhost:5000/dashboard/compliance`
+- Red y riesgo: `http://localhost:5000/dashboard/network-telemetry`
 - Login: `http://localhost:5000/Auth/Login`
 - Inventario: `http://localhost:5000/dashboard/inventory`
 - Ubicaciones: `http://localhost:5000/dashboard/locations`
 - Actividad: `http://localhost:5000/dashboard/activity`
 - Formulario de entrega: `http://localhost:5000/dashboard/delivery-form`
-- Cumplimiento: `http://localhost:5000/admin/compliance`
 - Swagger: `http://localhost:5000/swagger`
 
 Nota: `/admin` se mantiene como compatibilidad interna y redirige visualmente a `/dashboard` en solicitudes GET.
@@ -131,6 +147,8 @@ El `docker-compose.yml` permite personalizar rutas y URLs:
 - `IMPORT_HOST_PATH`: carpeta local para archivos de importacion.
 - `PdfSettings:MaxUploadBytes`: tamano maximo permitido para PDFs adjuntos.
 - `PdfSettings:AllowedMimeTypes`: MIME permitidos para formularios PDF.
+- `NetworkTelemetrySettings:Enabled`: activa o desactiva la vista tecnica de red.
+- `NetworkTelemetrySettings:IngestApiKey`: clave para ingesta de telemetry si se usa.
 
 Tambien se controlan desde configuracion:
 
@@ -143,6 +161,7 @@ Tambien se controlan desde configuracion:
 - `BackupSettings:Cron`: expresion cron opcional.
 - `BackupSettings:IntervalHours`: intervalo si no se usa cron.
 - `BackupSettings:RetentionDays`: retencion de backups.
+- `BackupSettings:Path`: carpeta donde se almacenan los respaldos.
 
 Si no se definen, se usan:
 
@@ -236,6 +255,102 @@ Con ambos levantados:
 - Frontend: `http://localhost:8080`
 - Backend: `http://localhost:5000/dashboard`
 
+## Agente Windows para telemetria real
+
+Para capturar en vivo la sesion real del equipo, hostname, fabricante, modelo, memoria, disco y ultimo inicio, el repo incluye un agente Windows aparte:
+
+- proyecto: `tools/SoteroMap.NetworkCollector`
+- config ejemplo: `tools/SoteroMap.NetworkCollector/appsettings.example.json`
+- lanzador rapido: `tools/run-network-collector.ps1`
+- instalador automatico: `tools/install-network-collector-agent.ps1`
+- desinstalador: `tools/uninstall-network-collector-agent.ps1`
+
+### Modo recomendado institucional
+
+Instalalo una sola vez en el equipo Windows que tenga alcance real a la red interna y permisos para consultar endpoints.
+
+1. Si quieres que el agente quede para todo el equipo, abre PowerShell como administrador en el repo.
+2. Ejecuta:
+
+```powershell
+.\tools\install-network-collector-agent.ps1
+```
+
+Si el script se ejecuta sin privilegios de administrador, crea una tarea para tu usuario actual al iniciar sesion. Si se ejecuta como administrador, la crea como `SYSTEM` al arrancar Windows.
+
+Eso crea una tarea programada de Windows que:
+
+- arranca automaticamente al iniciar el equipo
+- mantiene el agente en modo escucha
+- responde a las solicitudes del boton `Escanear ahora`
+- publica latido de vida hacia el backend
+
+Durante la instalacion, el script ajusta la configuracion del agente para modo desatendido:
+
+- `WatchMode = true`
+- `PromptForCredential = false`
+- `SharedPath = ..\\..\\runtime\\network-telemetry-agent`
+- `ResolveHardware = false` por defecto para que el barrido termine mas rapido y no se atasque por consultas WMI pesadas
+
+Desde ese momento, cualquier usuario que entre a `http://10.8.93.101:5000/dashboard/network-telemetry` puede lanzar el escaneo desde la web, pero el trabajo real lo hara siempre ese agente central.
+
+### Modo manual o de soporte
+
+Si necesitas probarlo sin instalar la tarea programada:
+
+1. Copia `appsettings.example.json` a `appsettings.local.json`.
+2. Ajusta `ApiBaseUrl`, `ApiKey` y los rangos `ScanCidrs`.
+3. Si quieres que pida la clave al ejecutar, deja `PromptForCredential: true`.
+4. Ejecuta desde un Windows con visibilidad real a la red:
+
+```powershell
+.\tools\run-network-collector.ps1
+```
+
+Equivale a correr manualmente:
+
+```powershell
+dotnet run --project .\tools\SoteroMap.NetworkCollector\SoteroMap.NetworkCollector.csproj
+```
+
+Opcionalmente puedes indicar otro archivo:
+
+```powershell
+dotnet run --project .\tools\SoteroMap.NetworkCollector\SoteroMap.NetworkCollector.csproj -- --config .\tools\SoteroMap.NetworkCollector\appsettings.local.json
+```
+
+Notas importantes:
+
+- este colector esta pensado para correr fuera del contenedor Docker, directamente en Windows
+- asi puede usar `quser` y WMI remoto para leer sesion activa y datos del equipo
+- la clave no se guarda si usas `PromptForCredential`
+- el backend recibe el resultado por `POST /api/network-telemetry/ingest`
+- en modo agente, el backend escribe la solicitud en `runtime/network-telemetry-agent` y el agente Windows la procesa
+- la vista `Red y riesgo` muestra si el agente esta conectado o desconectado segun su ultimo latido
+
+### Flujo operativo
+
+1. El agente Windows queda instalado y corriendo en segundo plano.
+2. Un usuario abre `Red y riesgo`.
+3. La vista valida si el agente central esta conectado.
+4. Si esta conectado, el boton `Escanear ahora` queda habilitado.
+5. Al presionarlo, el backend encola la solicitud.
+6. El agente ejecuta el escaneo real en Windows.
+7. El dashboard se refresca cuando llega el nuevo snapshot.
+
+### Mantencion del agente
+
+- Instalar: `.\tools\install-network-collector-agent.ps1`
+- Desinstalar: `.\tools\uninstall-network-collector-agent.ps1`
+- Ejecutar manual: `.\tools\run-network-collector.ps1 -Watch`
+
+Si el dashboard muestra el agente como desconectado:
+
+- verifica que el equipo Windows este encendido
+- confirma que la tarea programada siga registrada
+- revisa que el repo exista en la misma ruta donde se instalo
+- valida que ese equipo tenga conectividad a `http://localhost:5000` o a la URL configurada en `ApiBaseUrl`
+
 ## Cumplimiento
 
 El panel de cumplimiento concentra:
@@ -247,6 +362,9 @@ El panel de cumplimiento concentra:
 - backups recientes
 - LDAPS
 - eventos criticos y accesos recientes
+- integridad tecnica de la BDD
+- estado de tablas criticas
+- conteo de equipos y admins activos
 
 Para monitoreo tecnico existe `GET /api/health/integrity`, pensado para administradores y auditores.
 
@@ -254,6 +372,7 @@ Para monitoreo tecnico existe `GET /api/health/integrity`, pensado para administ
 
 - `POST /api/backups/run`: crea backup manual, solo admin.
 - `GET /api/backups/latest`: lista respaldos, solo admin.
+- `GET /api/backups/latest/verify`: verifica el ultimo respaldo, solo admin.
 - `POST /api/backups/cleanup`: limpia respaldos expirados, solo admin.
 - `GET /api/health/integrity`: health e integridad, admin/auditor.
 - `GET /api/audit-log`: auditoria formal, admin/auditor.
@@ -278,3 +397,9 @@ Para monitoreo tecnico existe `GET /api/health/integrity`, pensado para administ
 - Revisar `GET /api/health/integrity` antes de entregar.
 - Revisar panel `Cumplimiento` y eventos criticos recientes.
 - No versionar la base SQLite real ni archivos PDF productivos.
+
+## Mantenimiento diario
+
+- Si cambias codigo mientras Docker esta corriendo, revisa que el contenedor se haya recompilado o recreado.
+- Si una vista Razor muestra error viejo, suele bastar con reconstruir la imagen o reiniciar el contenedor del backend.
+- Para respaldos entre equipos, usa exportacion/importacion desde el dashboard, no copies la base dentro del repo.

@@ -12,6 +12,15 @@ public class NetworkTelemetryIngestRequest
     public IReadOnlyList<NetworkTelemetryUserInput> Users { get; set; } = [];
 }
 
+public class NetworkTelemetryLiveScanRequest
+{
+    public bool ResolveInteractiveSessions { get; set; } = true;
+    public string ScanMode { get; set; } = "simple";
+    public string DirectoryUsername { get; set; } = string.Empty;
+    public string DirectoryPassword { get; set; } = string.Empty;
+    public string DirectoryDomain { get; set; } = string.Empty;
+}
+
 public class NetworkTelemetryDeviceInput
 {
     public string ExternalKey { get; set; } = string.Empty;
@@ -22,6 +31,27 @@ public class NetworkTelemetryDeviceInput
     public string MacAddress { get; set; } = string.Empty;
     public string SerialNumber { get; set; } = string.Empty;
     public string HostName { get; set; } = string.Empty;
+    public string DeviceCategory { get; set; } = string.Empty;
+    public string OperatingSystem { get; set; } = string.Empty;
+    public string OperatingSystemVersion { get; set; } = string.Empty;
+    public string Manufacturer { get; set; } = string.Empty;
+    public string Model { get; set; } = string.Empty;
+    public string Processor { get; set; } = string.Empty;
+    public double? MemoryGb { get; set; }
+    public double? DiskTotalGb { get; set; }
+    public double? DiskFreeGb { get; set; }
+    public DateTime? LastBootAtUtc { get; set; }
+    public bool? IsOnline { get; set; }
+    public bool? DomainJoined { get; set; }
+    public bool? IsVirtualMachine { get; set; }
+    public int? PingMs { get; set; }
+    public string AntivirusStatus { get; set; } = string.Empty;
+    public string AntivirusVersion { get; set; } = string.Empty;
+    public string PatchStatus { get; set; } = string.Empty;
+    public string AgentVersion { get; set; } = string.Empty;
+    public string OpenPorts { get; set; } = string.Empty;
+    public string SubnetCidr { get; set; } = string.Empty;
+    public string NetworkProfile { get; set; } = string.Empty;
     public string BuildingExternalId { get; set; } = string.Empty;
     public string RoomExternalId { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
@@ -69,6 +99,27 @@ public class NetworkTelemetryObservationViewModel
     public string MacAddress { get; set; } = string.Empty;
     public string SerialNumber { get; set; } = string.Empty;
     public string HostName { get; set; } = string.Empty;
+    public string DeviceCategory { get; set; } = string.Empty;
+    public string OperatingSystem { get; set; } = string.Empty;
+    public string OperatingSystemVersion { get; set; } = string.Empty;
+    public string Manufacturer { get; set; } = string.Empty;
+    public string Model { get; set; } = string.Empty;
+    public string Processor { get; set; } = string.Empty;
+    public double? MemoryGb { get; set; }
+    public double? DiskTotalGb { get; set; }
+    public double? DiskFreeGb { get; set; }
+    public DateTime? LastBootAtUtc { get; set; }
+    public bool? IsOnline { get; set; }
+    public bool? DomainJoined { get; set; }
+    public bool? IsVirtualMachine { get; set; }
+    public int? PingMs { get; set; }
+    public string AntivirusStatus { get; set; } = string.Empty;
+    public string AntivirusVersion { get; set; } = string.Empty;
+    public string PatchStatus { get; set; } = string.Empty;
+    public string AgentVersion { get; set; } = string.Empty;
+    public string OpenPorts { get; set; } = string.Empty;
+    public string SubnetCidr { get; set; } = string.Empty;
+    public string NetworkProfile { get; set; } = string.Empty;
     public string BuildingExternalId { get; set; } = string.Empty;
     public string RoomExternalId { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
@@ -76,4 +127,53 @@ public class NetworkTelemetryObservationViewModel
     public int RiskScore { get; set; }
     public IReadOnlyList<string> RiskReasons { get; set; } = [];
     public DateTime ObservedAtUtc { get; set; }
+}
+
+public class NetworkTelemetryObservationQueryRequest
+{
+    public string Search { get; set; } = string.Empty;
+    public string RiskLevel { get; set; } = string.Empty;
+    public string BuildingExternalId { get; set; } = string.Empty;
+    public string ObservationType { get; set; } = "device";
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 50;
+}
+
+public class NetworkTelemetryObservationPageViewModel
+{
+    public int SnapshotId { get; set; }
+    public string Search { get; set; } = string.Empty;
+    public string RiskLevel { get; set; } = string.Empty;
+    public string BuildingExternalId { get; set; } = string.Empty;
+    public string ObservationType { get; set; } = "device";
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 50;
+    public int TotalCount { get; set; }
+    public int TotalPages { get; set; } = 1;
+    public IReadOnlyList<NetworkTelemetryObservationViewModel> Items { get; set; } = [];
+    public IReadOnlyList<NetworkTelemetryBuildingRiskSummaryViewModel> BuildingRiskSummaries { get; set; } = [];
+}
+
+public class NetworkTelemetryBuildingRiskSummaryViewModel
+{
+    public string BuildingExternalId { get; set; } = string.Empty;
+    public int DeviceCount { get; set; }
+    public int CriticalCount { get; set; }
+    public int HighCount { get; set; }
+    public int MediumCount { get; set; }
+    public int LowCount { get; set; }
+    public int MaxRiskScore { get; set; }
+    public string MaxRiskLevel { get; set; } = "low";
+}
+
+public class NetworkTelemetrySubnetRiskSummaryViewModel
+{
+    public string SubnetCidr { get; set; } = string.Empty;
+    public int DeviceCount { get; set; }
+    public int CriticalCount { get; set; }
+    public int HighCount { get; set; }
+    public int MediumCount { get; set; }
+    public int LowCount { get; set; }
+    public int MaxRiskScore { get; set; }
+    public string MaxRiskLevel { get; set; } = "low";
 }

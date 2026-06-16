@@ -50,8 +50,11 @@ services:
       - LDAP_USE_SSL=${LDAP_USE_SSL:-true}
       - LDAP_TRUST_SERVER_CERTIFICATE=${LDAP_TRUST_SERVER_CERTIFICATE:-true}
       - LDAPTLS_REQCERT=${LDAPTLS_REQCERT:-never}
+      - NetworkTelemetrySettings__IngestApiKey=${NETWORK_TELEMETRY_INGEST_API_KEY:-SoteroMapNetworkCollector-2026}
     volumes:
       - ./:/app
+      - api_bin:/app/SoteroMap.API/bin
+      - api_obj:/app/SoteroMap.API/obj
       - sqlite_data:/app/data
       - nuget_cache:/root/.nuget/packages
       - ${FRONTEND_DATA_HOST_PATH:-../sotero_map/src/data}:/app/frontend-data
@@ -59,6 +62,8 @@ services:
     restart: unless-stopped
 
 volumes:
+  api_bin:
+  api_obj:
   sqlite_data:
   nuget_cache:
 
