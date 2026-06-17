@@ -1,0 +1,21 @@
+{
+  "files.watcherExclude": {
+    "**/.git/**": true,
+    "**/.vs/**": true,
+    "**/bin/**": true,
+    "**/obj/**": true,
+    "**/runtime/**": true
+  },
+  "files.exclude": {
+    "**/.vs": true,
+    "**/bin": true,
+    "**/obj": true,
+    "**/runtime": true
+  },
+  "search.exclude": {
+    "**/.vs": true,
+    "**/bin": true,
+    "**/obj": true,
+    "**/runtime": true
+  }
+}
