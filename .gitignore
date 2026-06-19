@@ -20,3 +20,12 @@ out/
 # SQLite locales residuales del backend
 SoteroMap.API/soteromap.db*
 
+# Respaldos locales de base
+SoteroMap.API/backups/
+
+# Runtime local del agente de telemetria
+runtime/network-telemetry-agent/
+
+# Archivos temporales de trabajo
+_tmp_*.cs
+
