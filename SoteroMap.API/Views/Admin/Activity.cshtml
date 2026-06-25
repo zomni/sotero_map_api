@@ -51,6 +51,7 @@
     var successCount = GetModelInt("SuccessCount");
     var failureCount = GetModelInt("FailureCount");
     var criticalCount = GetModelInt("CriticalCount");
+    var warningCount = GetModelInt("WarningCount");
     var items = GetModelItems();
 
     var activeFilters = new List<string>();
@@ -65,6 +66,41 @@
     if (!string.IsNullOrWhiteSpace(userAgent)) { activeFilters.Add($"Agente: {userAgent}"); }
     if (!string.IsNullOrWhiteSpace(dateFrom)) { activeFilters.Add($"Desde: {dateFrom}"); }
     if (!string.IsNullOrWhiteSpace(dateTo)) { activeFilters.Add($"Hasta: {dateTo}"); }
+    if (pageSize != 30) { activeFilters.Add($"Por pagina: {pageSize}"); }
+
+    List<KeyValuePair<string, string?>> BuildActivityQuery(int? pageOverride = null, int? pageSizeOverride = null)
+    {
+        var query = new List<KeyValuePair<string, string?>>();
+
+        void Add(string key, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                query.Add(new KeyValuePair<string, string?>(key, value));
+            }
+        }
+
+        Add("buildingExternalId", buildingExternalId);
+        Add("changedByUsername", changedByUsername);
+        Add("actionType", actionType);
+        Add("resource", resource);
+        Add("result", result);
+        Add("severity", severity);
+        Add("search", search);
+        Add("clientIp", clientIp);
+        Add("userAgent", userAgent);
+        Add("from", dateFrom);
+        Add("to", dateTo);
+
+        query.Add(new KeyValuePair<string, string?>("page", (pageOverride ?? 1).ToString()));
+        query.Add(new KeyValuePair<string, string?>("pageSize", (pageSizeOverride ?? pageSize).ToString()));
+        return query;
+    }
+
+    string BuildActivityUrl(int? pageOverride = null, int? pageSizeOverride = null)
+        => Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
+            "/admin/activity",
+            BuildActivityQuery(pageOverride, pageSizeOverride));
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -74,128 +110,208 @@
     </div>
 </div>
 
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="p-3 rounded-3 bg-light border h-100">
+            <div class="text-muted small">Total encontrados</div>
+            <div class="fs-4 fw-bold">@totalCount</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="p-3 rounded-3 bg-light border h-100">
+            <div class="text-muted small">Exitos</div>
+            <div class="fs-4 fw-bold">@successCount</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="p-3 rounded-3 bg-light border h-100">
+            <div class="text-muted small">Fallos</div>
+            <div class="fs-4 fw-bold">@failureCount</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="p-3 rounded-3 bg-light border h-100">
+            <div class="text-muted small">Criticos</div>
+            <div class="fs-4 fw-bold">@criticalCount</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="p-3 rounded-3 bg-light border h-100">
+            <div class="text-muted small">Advertencias</div>
+            <div class="fs-4 fw-bold">@warningCount</div>
+        </div>
+    </div>
+</div>
+
+<style>
+  .inventory-filter-panel {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 1rem;
+    background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
+    padding: 1.25rem;
+  }
+
+  .inventory-filter-fixed {
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 0.9rem;
+    background: #fff;
+    padding: 0.85rem;
+    height: 100%;
+  }
+
+  .inventory-filter-fixed .filter-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #475569;
+    margin-bottom: 0.55rem;
+  }
+
+  .inventory-filter-active-bar {
+    border: 1px dashed rgba(14, 116, 144, 0.18);
+    border-radius: 0.9rem;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 0.85rem;
+  }
+
+  .inventory-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.8rem;
+    border-radius: 0.9rem;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    background: #ffffff;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  }
+</style>
+
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
-        <form method="get" class="row g-3">
-            <div class="col-md-3">
-                <label class="form-label small fw-semibold">Usuario</label>
-                <input type="text" name="changedByUsername" value="@changedByUsername" class="form-control" placeholder="admin" />
-            </div>
-            <div class="col-md-3">
-                <label class="form-label small fw-semibold">Edificio</label>
-                <input type="text" name="buildingExternalId" value="@buildingExternalId" class="form-control" placeholder="SR-BLD-069" />
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Accion</label>
-                <input type="text" name="actionType" value="@actionType" class="form-control" placeholder="login-success" />
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Recurso</label>
-                <input type="text" name="resource" value="@resource" class="form-control" placeholder="auth/login" />
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Resultado</label>
-                <select name="result" class="form-select">
-                    <option value="" selected="@(string.IsNullOrWhiteSpace(result))">Todos</option>
-                    <option value="success" selected="@(result == "success")">Exito</option>
-                    <option value="failure" selected="@(result == "failure")">Fallo</option>
-                    <option value="challenge" selected="@(result == "challenge")">Pendiente</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Severidad</label>
-                <select name="severity" class="form-select">
-                    <option value="" selected="@(string.IsNullOrWhiteSpace(severity))">Todas</option>
-                    <option value="info" selected="@(severity == "info")">Info</option>
-                    <option value="warning" selected="@(severity == "warning")">Advertencia</option>
-                    <option value="critical" selected="@(severity == "critical")">Critico</option>
-                </select>
-            </div>
-            <div class="col-md-4">
-                <label class="form-label small fw-semibold">Buscar texto</label>
-                <input type="text" name="search" value="@search" class="form-control" placeholder="IP, agente, resumen, detalle..." />
-            </div>
-            <div class="col-md-3">
-                <label class="form-label small fw-semibold">IP</label>
-                <input type="text" name="clientIp" value="@clientIp" class="form-control" placeholder="10.6.50.6" />
-            </div>
-            <div class="col-md-3">
-                <label class="form-label small fw-semibold">Agente</label>
-                <input type="text" name="userAgent" value="@userAgent" class="form-control" placeholder="Chrome..." />
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Desde</label>
-                <input type="date" name="from" value="@dateFrom" class="form-control" />
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Hasta</label>
-                <input type="date" name="to" value="@dateTo" class="form-control" />
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Por pagina</label>
-                <select name="pageSize" class="form-select">
-                    <option value="30" selected="@(pageSize == 30)">30</option>
-                    <option value="50" selected="@(pageSize == 50)">50</option>
-                    <option value="100" selected="@(pageSize == 100)">100</option>
-                    <option value="200" selected="@(pageSize == 200)">200</option>
-                    <option value="500" selected="@(pageSize == 500)">500</option>
-                </select>
-            </div>
-            <div class="col-md-12">
-                <div class="d-flex gap-2">
-                    <button type="submit" class="btn btn-primary flex-grow-1">
-                        <i class="bi bi-funnel me-1"></i> Filtrar
-                    </button>
-                    <a href="/admin/activity" class="btn btn-outline-secondary">
-                        <i class="bi bi-x-circle me-1"></i> Limpiar
-                    </a>
+        <form method="get" class="inventory-filter-panel">
+            <input type="hidden" name="page" value="1" />
+
+            @if (activeFilters.Count > 0)
+            {
+                <div class="inventory-filter-active-bar mb-3">
+                    <div class="small text-muted mb-2">Filtros activos (@activeFilters.Count)</div>
+                    <div class="d-flex flex-wrap gap-2">
+                        @foreach (var filter in activeFilters)
+                        {
+                            <div class="inventory-filter-chip">
+                                <span class="fw-semibold">@filter</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="row g-3">
+                <div class="col-xl-3 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Usuario</div>
+                        <input type="text" name="changedByUsername" value="@changedByUsername" class="form-control" placeholder="admin" />
+                    </div>
+                </div>
+                <div class="col-xl-3 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Edificio</div>
+                        <input type="text" name="buildingExternalId" value="@buildingExternalId" class="form-control" placeholder="SR-BLD-069" />
+                    </div>
+                </div>
+                <div class="col-xl-2 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Accion</div>
+                        <input type="text" name="actionType" value="@actionType" class="form-control" placeholder="login-success" />
+                    </div>
+                </div>
+                <div class="col-xl-2 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Recurso</div>
+                        <input type="text" name="resource" value="@resource" class="form-control" placeholder="auth/login" />
+                    </div>
+                </div>
+                <div class="col-xl-2 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Resultado</div>
+                        <select name="result" class="form-select">
+                            <option value="" selected="@(string.IsNullOrWhiteSpace(result))">Todos</option>
+                            <option value="success" selected="@(result == "success")">Exito</option>
+                            <option value="failure" selected="@(result == "failure")">Fallo</option>
+                            <option value="challenge" selected="@(result == "challenge")">Pendiente</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-xl-2 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Severidad</div>
+                        <select name="severity" class="form-select">
+                            <option value="" selected="@(string.IsNullOrWhiteSpace(severity))">Todas</option>
+                            <option value="info" selected="@(severity == "info")">Info</option>
+                            <option value="warning" selected="@(severity == "warning")">Advertencia</option>
+                            <option value="critical" selected="@(severity == "critical")">Critico</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-xl-4 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Buscar texto</div>
+                        <input type="text" name="search" value="@search" class="form-control" placeholder="IP, agente, resumen, detalle..." />
+                    </div>
+                </div>
+                <div class="col-xl-2 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">IP</div>
+                        <input type="text" name="clientIp" value="@clientIp" class="form-control" placeholder="10.6.50.6" />
+                    </div>
+                </div>
+                <div class="col-xl-4 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Agente</div>
+                        <input type="text" name="userAgent" value="@userAgent" class="form-control" placeholder="Chrome..." />
+                    </div>
+                </div>
+                <div class="col-xl-2 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Desde</div>
+                        <input type="date" name="from" value="@dateFrom" class="form-control" />
+                    </div>
+                </div>
+                <div class="col-xl-2 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Hasta</div>
+                        <input type="date" name="to" value="@dateTo" class="form-control" />
+                    </div>
+                </div>
+                <div class="col-xl-2 col-lg-4">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Por pagina</div>
+                        <select name="pageSize" class="form-select js-page-size-select">
+                            <option value="30" selected="@(pageSize == 30)">30</option>
+                            <option value="50" selected="@(pageSize == 50)">50</option>
+                            <option value="100" selected="@(pageSize == 100)">100</option>
+                            <option value="200" selected="@(pageSize == 200)">200</option>
+                            <option value="500" selected="@(pageSize == 500)">500</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-xl-4 col-lg-8">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Acciones</div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-outline-primary flex-grow-1">
+                                <i class="bi bi-funnel me-1"></i> Filtrar
+                            </button>
+                            <a href="/admin/activity" class="btn btn-secondary" title="Limpiar filtros" aria-label="Limpiar filtros">
+                                <i class="bi bi-x-circle"></i>
+                            </a>
+                        </div>
+                    </div>
                 </div>
             </div>
         </form>
 
-        <div class="mt-3">
-            <div class="small text-muted mb-2">Filtros aplicados (@activeFilters.Count)</div>
-            @if (activeFilters.Count > 0)
-            {
-                <div class="d-flex flex-wrap gap-2">
-                    @foreach (var filter in activeFilters)
-                    {
-                        <span class="badge rounded-pill text-bg-light border">@filter</span>
-                    }
-                </div>
-            }
-            else
-            {
-                <div class="small text-muted">Sin filtros adicionales aplicados.</div>
-            }
-        </div>
-
-        <div class="row g-3 mt-3">
-            <div class="col-md-3">
-                <div class="p-3 rounded-3 bg-light border">
-                    <div class="text-muted small">Total encontrados</div>
-                    <div class="fs-4 fw-bold">@totalCount</div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="p-3 rounded-3 bg-light border">
-                    <div class="text-muted small">Exitos</div>
-                    <div class="fs-4 fw-bold">@successCount</div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="p-3 rounded-3 bg-light border">
-                    <div class="text-muted small">Fallos</div>
-                    <div class="fs-4 fw-bold">@failureCount</div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="p-3 rounded-3 bg-light border">
-                    <div class="text-muted small">Criticos</div>
-                    <div class="fs-4 fw-bold">@criticalCount</div>
-                </div>
-            </div>
-        </div>
     </div>
 </div>
 
@@ -271,43 +387,34 @@
     <div class="d-flex gap-2">
         @if (page > 1)
         {
-            <a class="btn btn-outline-secondary btn-sm" href="@Url.Action("Activity", new {
-                buildingExternalId = buildingExternalId,
-                changedByUsername = changedByUsername,
-                actionType = actionType,
-                resource = resource,
-                result = result,
-                severity = severity,
-                search = search,
-                clientIp = clientIp,
-                userAgent = userAgent,
-                from = dateFrom,
-                to = dateTo,
-                page = page - 1,
-                pageSize = pageSize
-            })">
+            <a class="btn btn-outline-secondary btn-sm" href="@BuildActivityUrl(page - 1)">
                 <i class="bi bi-chevron-left"></i> Anterior
             </a>
         }
         @if (page < totalPages)
         {
-            <a class="btn btn-outline-secondary btn-sm" href="@Url.Action("Activity", new {
-                buildingExternalId = buildingExternalId,
-                changedByUsername = changedByUsername,
-                actionType = actionType,
-                resource = resource,
-                result = result,
-                severity = severity,
-                search = search,
-                clientIp = clientIp,
-                userAgent = userAgent,
-                from = dateFrom,
-                to = dateTo,
-                page = page + 1,
-                pageSize = pageSize
-            })">
+            <a class="btn btn-outline-secondary btn-sm" href="@BuildActivityUrl(page + 1)">
                 Siguiente <i class="bi bi-chevron-right"></i>
             </a>
         }
     </div>
 </div>
+
+<script>
+window.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".js-page-size-select").forEach((select) => {
+    select.addEventListener("change", () => {
+      const form = select.closest("form");
+      if (!form) {
+        return;
+      }
+
+      if (typeof form.requestSubmit === "function") {
+        form.requestSubmit();
+      } else {
+        form.submit();
+      }
+    });
+  });
+});
+</script>

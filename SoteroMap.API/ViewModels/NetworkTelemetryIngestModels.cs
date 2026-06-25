@@ -16,6 +16,7 @@ public class NetworkTelemetryLiveScanRequest
 {
     public bool ResolveInteractiveSessions { get; set; } = true;
     public string ScanMode { get; set; } = "simple";
+    public string TriggerType { get; set; } = string.Empty;
     public string DirectoryUsername { get; set; } = string.Empty;
     public string DirectoryPassword { get; set; } = string.Empty;
     public string DirectoryDomain { get; set; } = string.Empty;
@@ -134,9 +135,13 @@ public class NetworkTelemetryObservationQueryRequest
     public string Search { get; set; } = string.Empty;
     public string RiskLevel { get; set; } = string.Empty;
     public string BuildingExternalId { get; set; } = string.Empty;
+    public string SubnetCidr { get; set; } = string.Empty;
+    public string OnlineState { get; set; } = string.Empty;
     public string ObservationType { get; set; } = "device";
+    public string SortBy { get; set; } = "risk";
+    public string SortDirection { get; set; } = "desc";
     public int Page { get; set; } = 1;
-    public int PageSize { get; set; } = 50;
+    public int PageSize { get; set; } = 10;
 }
 
 public class NetworkTelemetryObservationPageViewModel
@@ -145,13 +150,44 @@ public class NetworkTelemetryObservationPageViewModel
     public string Search { get; set; } = string.Empty;
     public string RiskLevel { get; set; } = string.Empty;
     public string BuildingExternalId { get; set; } = string.Empty;
+    public string SubnetCidr { get; set; } = string.Empty;
+    public string OnlineState { get; set; } = string.Empty;
     public string ObservationType { get; set; } = "device";
+    public string SortBy { get; set; } = "risk";
+    public string SortDirection { get; set; } = "desc";
     public int Page { get; set; } = 1;
-    public int PageSize { get; set; } = 50;
+    public int PageSize { get; set; } = 10;
     public int TotalCount { get; set; }
     public int TotalPages { get; set; } = 1;
     public IReadOnlyList<NetworkTelemetryObservationViewModel> Items { get; set; } = [];
     public IReadOnlyList<NetworkTelemetryBuildingRiskSummaryViewModel> BuildingRiskSummaries { get; set; } = [];
+}
+
+public class NetworkTelemetrySnapshotQueryRequest
+{
+    public string Search { get; set; } = string.Empty;
+    public string TriggerType { get; set; } = string.Empty;
+    public string Weekday { get; set; } = string.Empty;
+    public string TimeSlot { get; set; } = string.Empty;
+    public string SortBy { get; set; } = "observedAt";
+    public string SortDirection { get; set; } = "desc";
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 10;
+}
+
+public class NetworkTelemetrySnapshotPageViewModel
+{
+    public string Search { get; set; } = string.Empty;
+    public string TriggerType { get; set; } = string.Empty;
+    public string Weekday { get; set; } = string.Empty;
+    public string TimeSlot { get; set; } = string.Empty;
+    public string SortBy { get; set; } = "observedAt";
+    public string SortDirection { get; set; } = "desc";
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 10;
+    public int TotalCount { get; set; }
+    public int TotalPages { get; set; } = 1;
+    public IReadOnlyList<NetworkTelemetrySnapshotViewModel> Items { get; set; } = [];
 }
 
 public class NetworkTelemetryBuildingRiskSummaryViewModel

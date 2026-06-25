@@ -65,13 +65,13 @@ public class InventoryImportController : ControllerBase
             .Select(i => i.AssignmentUpdatedAtUtc)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var latestAuditChangeUtc = await _context.AuditLogEntries
+        var latestBuildingChangeUtc = await _context.SyncedBuildings
             .AsNoTracking()
-            .OrderByDescending(x => x.CreatedAtUtc)
-            .Select(x => (DateTime?)x.CreatedAtUtc)
+            .OrderByDescending(x => x.SyncedAtUtc)
+            .Select(x => (DateTime?)x.SyncedAtUtc)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var latestBuildingChangeUtc = await _context.SyncedBuildings
+        var latestRoomChangeUtc = await _context.SyncedRooms
             .AsNoTracking()
             .OrderByDescending(x => x.SyncedAtUtc)
             .Select(x => (DateTime?)x.SyncedAtUtc)
@@ -87,8 +87,8 @@ public class InventoryImportController : ControllerBase
         {
             latestImportedAtUtc,
             latestAssignmentUpdateUtc,
-            latestAuditChangeUtc,
             latestBuildingChangeUtc,
+            latestRoomChangeUtc,
             latestWalkingRouteChangeUtc
         }
         .Where(value => value.HasValue)
@@ -112,8 +112,8 @@ public class InventoryImportController : ControllerBase
             backendVersion,
             latestImportedAtUtc,
             latestAssignmentUpdateUtc,
-            latestAuditChangeUtc,
             latestBuildingChangeUtc,
+            latestRoomChangeUtc,
             latestWalkingRouteChangeUtc,
             latestChangeUtc = latestChangeUtc == DateTime.MinValue ? (DateTime?)null : latestChangeUtc,
             revision

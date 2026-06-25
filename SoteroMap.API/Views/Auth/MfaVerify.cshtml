@@ -9,15 +9,29 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MFA - SoteroMap Admin</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/branding/app-logo-backend.svg" />
+    <link rel="apple-touch-icon" href="/assets/branding/app-logo-backend.svg" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet" />
 </head>
 <body class="bg-light">
     <div class="container min-vh-100 d-flex align-items-center justify-content-center py-5">
         <div class="card border-0 shadow-sm" style="max-width: 420px; width: 100%;">
             <div class="card-body p-4 p-lg-5">
-                <div class="mb-4">
-                    <h1 class="h3 fw-bold mb-2">Verificar MFA</h1>
-                    <p class="text-muted mb-0">Ingresa el codigo de 6 digitos generado por tu aplicacion de autenticacion para @Model.Username.</p>
+                <div class="mb-4 text-center">
+                    <img src="/assets/branding/app-logo-backend.svg" alt="SoteroMap" style="width: 88px; height: 88px; border-radius: 22px; object-fit: cover;" class="mb-3 shadow-sm" />
+                    <h1 class="h3 fw-bold mb-0 d-flex align-items-center gap-2">
+                        <span>Verificar MFA</span>
+                        <span
+                            class="text-muted small"
+                            role="button"
+                            tabindex="0"
+                            data-bs-toggle="tooltip"
+                            data-bs-placement="top"
+                            title="Ingresa el codigo de 6 digitos generado por tu aplicacion autenticadora.">
+                            <i class="bi bi-info-circle"></i>
+                        </span>
+                    </h1>
                 </div>
 
                 <form method="post" action="/Auth/MfaVerify">
@@ -35,5 +49,21 @@
             </div>
         </div>
     </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        (() => {
+            const form = document.querySelector('form[action="/Auth/MfaVerify"]');
+            if (form) {
+                form.addEventListener("submit", () => {
+                    localStorage.removeItem("sotero-admin-last-activity");
+                    sessionStorage.setItem("sotero-admin-auth-transition", "1");
+                });
+            }
+        })();
+
+        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((element) => {
+            new bootstrap.Tooltip(element);
+        });
+    </script>
 </body>
 </html>

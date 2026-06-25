@@ -72,7 +72,7 @@ if (watchMode || options.WatchMode)
     return 0;
 }
 
-var request = await collector.BuildRequestAsync("full", null, CancellationToken.None, null);
+var request = await collector.BuildRequestAsync("full", "manual", null, CancellationToken.None, null);
 
 Console.WriteLine($"Equipos detectados: {request.Devices.Count}");
 Console.WriteLine($"Identidades detectadas: {request.Users.Count}");
@@ -302,7 +302,7 @@ static async Task RunAgentLoopAsync(CollectorOptions options, Collector collecto
                     TimeSpan.FromSeconds(Math.Max(1, options.ProgressUpdateSeconds)));
 
                 var scanMode = NormalizeCollectorScanMode(scanRequest.ScanMode);
-                var ingestRequest = await collector.BuildRequestAsync(scanMode, controlMonitor, scanTimeoutCts.Token, progressPublisher.ReportAsync);
+                var ingestRequest = await collector.BuildRequestAsync(scanMode, scanRequest.TriggerType, controlMonitor, scanTimeoutCts.Token, progressPublisher.ReportAsync);
                 await AppendAgentLogAsync(logPath, $"Scan built. Devices={ingestRequest.Devices.Count} Users={ingestRequest.Users.Count}", cancellationToken);
                 await progressPublisher.FlushAsync();
                 var ingestResult = await PostToApiAsync(options, ingestRequest, scanTimeoutCts.Token);
@@ -665,7 +665,7 @@ internal sealed class Collector
         _credential = credential;
     }
 
-    public async Task<IngestRequest> BuildRequestAsync(string? scanMode, AgentControlMonitor? controlMonitor, CancellationToken cancellationToken, Func<ScanProgressSnapshot, Task>? progressCallback)
+    public async Task<IngestRequest> BuildRequestAsync(string? scanMode, string? triggerType, AgentControlMonitor? controlMonitor, CancellationToken cancellationToken, Func<ScanProgressSnapshot, Task>? progressCallback)
     {
         var normalizedScanMode = string.Equals(scanMode, "full", StringComparison.OrdinalIgnoreCase)
             ? "full"
@@ -745,7 +745,11 @@ internal sealed class Collector
         return new IngestRequest
         {
             SourceName = _options.SourceName,
-            SourceType = "windows-collector",
+            SourceType = string.Equals(triggerType, "scheduled", StringComparison.OrdinalIgnoreCase)
+                ? "windows-collector-scheduled"
+                : string.Equals(triggerType, "automatic", StringComparison.OrdinalIgnoreCase)
+                    ? "windows-collector-auto"
+                    : "windows-collector-manual",
             ObservedAtUtc = DateTime.UtcNow,
             WindowStartUtc = DateTime.UtcNow.AddMinutes(-30),
             WindowEndUtc = DateTime.UtcNow,
@@ -939,7 +943,7 @@ internal sealed class Collector
             return quserSessions;
         }
 
-        if (!_options.ResolveHardware)
+        if (!_options.ResolveSessions && !_options.ResolveHardware)
         {
             return [];
         }
@@ -1211,50 +1215,48 @@ internal sealed class Collector
 
     private static List<UserInput> BuildUsers(IReadOnlyList<DeviceInput> devices)
     {
-        var sessions = devices
-            .SelectMany(device => device.DetectedSessions.Select(session => new { Device = device, Session = session }))
-            .ToList();
-
-        if (sessions.Count > 0)
-        {
-            return sessions
-                .GroupBy(item => item.Session.Username, StringComparer.OrdinalIgnoreCase)
-                .Select(group =>
-                {
-                    var activeSession = group
-                        .OrderByDescending(item => item.Session.Status == "active")
-                        .ThenBy(item => item.Session.Username, StringComparer.OrdinalIgnoreCase)
-                        .First();
-
-                    return new UserInput
-                    {
-                        ExternalKey = $"network-user:{activeSession.Session.Host}:{activeSession.Session.Username}",
-                        Username = activeSession.Session.Username,
-                        DisplayName = activeSession.Session.Username,
-                        DeviceCount = group.Select(item => item.Device.IpAddress).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
-                        Status = activeSession.Session.Status,
-                        Notes = string.Join(" || ", group.Select(item => item.Session.Details).Distinct(StringComparer.OrdinalIgnoreCase))
-                    };
-                })
-                .OrderBy(item => item.Username, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-        }
-
         return devices
-            .GroupBy(static device => ResolveIdentityKey(device), StringComparer.OrdinalIgnoreCase)
-            .Select(group =>
+            .Select(device =>
             {
-                var sample = group.First();
+                var hostOrIp = !string.IsNullOrWhiteSpace(device.HostName)
+                    ? device.HostName
+                    : device.IpAddress;
+
+                var primarySession = device.DetectedSessions
+                    .OrderByDescending(static session => session.Status == "active")
+                    .ThenBy(static session => session.Username, StringComparer.OrdinalIgnoreCase)
+                    .FirstOrDefault();
+
+                var username = !string.IsNullOrWhiteSpace(primarySession?.Username)
+                    ? primarySession.Username
+                    : !string.IsNullOrWhiteSpace(device.Username)
+                        ? device.Username
+                        : !string.IsNullOrWhiteSpace(device.HostName)
+                            ? device.HostName
+                            : device.IpAddress;
+
+                var status = !string.IsNullOrWhiteSpace(primarySession?.Status)
+                    ? primarySession.Status
+                    : ResolveUserStatus(device);
+
+                var notes = !string.IsNullOrWhiteSpace(primarySession?.Details)
+                    ? primarySession.Details
+                    : string.IsNullOrWhiteSpace(device.Notes)
+                        ? $"subred {device.SubnetCidr} | estado {device.Status} | puertos {device.OpenPorts}"
+                        : device.Notes;
+
                 return new UserInput
                 {
-                    ExternalKey = $"network:{ResolveIdentityKey(sample)}",
-                    Username = ResolveIdentityKey(sample),
-                    DisplayName = string.IsNullOrWhiteSpace(sample.Username) ? sample.DeviceName : sample.Username,
-                    DeviceCount = group.Count(),
-                    Status = ResolveUserStatus(sample),
-                    Notes = $"subred {sample.SubnetCidr} | estado {sample.Status} | puertos {sample.OpenPorts}"
+                    ExternalKey = $"network-user:{hostOrIp}:{username}:{device.IpAddress}",
+                    Username = username,
+                    DisplayName = username,
+                    DeviceCount = 1,
+                    Status = status,
+                    Notes = notes
                 };
             })
+            .OrderBy(item => item.Username, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.ExternalKey, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
@@ -1419,7 +1421,7 @@ internal sealed class CollectorOptions
     public int PingTimeoutMs { get; set; } = 400;
     public int TcpTimeoutMs { get; set; } = 350;
     public int DnsTimeoutMs { get; set; } = 1200;
-    public int QuserTimeoutMs { get; set; } = 2500;
+    public int QuserTimeoutMs { get; set; } = 6000;
 }
 
 internal sealed record ProbeCredential(string Username, string Password, string Domain)
@@ -1510,6 +1512,7 @@ internal sealed class AgentRequest
     public string RequestedByUsername { get; set; } = string.Empty;
     public bool ResolveInteractiveSessions { get; set; } = true;
     public string ScanMode { get; set; } = "simple";
+    public string TriggerType { get; set; } = "manual";
 }
 
 internal sealed class AgentControlRequest

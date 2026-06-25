@@ -55,7 +55,8 @@ public class NetworkTelemetryAgentBridgeService
             RequestedAtUtc = DateTime.UtcNow,
             RequestedByUsername = string.IsNullOrWhiteSpace(requestedByUsername) ? "system" : requestedByUsername.Trim(),
             ResolveInteractiveSessions = request?.ResolveInteractiveSessions ?? true,
-            ScanMode = NormalizeScanMode(request?.ScanMode)
+            ScanMode = NormalizeScanMode(request?.ScanMode),
+            TriggerType = NormalizeTriggerType(request?.TriggerType)
         };
 
         await File.WriteAllTextAsync(GetRequestPath(), JsonSerializer.Serialize(requestPayload, JsonOptions), cancellationToken);
@@ -190,6 +191,8 @@ public class NetworkTelemetryAgentBridgeService
     {
         var current = await GetRawStatusAsync(cancellationToken);
         var heartbeat = await GetHeartbeatAsync(cancellationToken);
+        var nowUtc = DateTime.UtcNow;
+        var heartbeatTimeout = TimeSpan.FromSeconds(GetHeartbeatTimeoutSeconds());
         var mapped = current is null
             ? new NetworkTelemetryAgentStatusViewModel
             {
@@ -199,12 +202,21 @@ public class NetworkTelemetryAgentBridgeService
             : MapStatus(current);
 
         mapped.LastHeartbeatAtUtc = heartbeat?.HeartbeatAtUtc;
-        mapped.IsConnected = heartbeat is not null && heartbeat.HeartbeatAtUtc >= DateTime.UtcNow.AddSeconds(-GetHeartbeatTimeoutSeconds());
+        var heartbeatIsFresh = heartbeat is not null && heartbeat.HeartbeatAtUtc >= nowUtc.Subtract(heartbeatTimeout);
+        var stateLooksActive = mapped.State is "pending" or "running" or "paused" or "stopping";
+        var recentProgress = mapped.UpdatedAtUtc.HasValue &&
+                             mapped.UpdatedAtUtc.Value >= nowUtc.Subtract(TimeSpan.FromSeconds(Math.Max(GetHeartbeatTimeoutSeconds() * 2, 90)));
+
+        mapped.IsConnected = heartbeatIsFresh || (stateLooksActive && recentProgress);
         mapped.AgentId = !string.IsNullOrWhiteSpace(mapped.AgentId)
             ? mapped.AgentId
             : (heartbeat?.AgentId ?? string.Empty);
 
-        if (!mapped.IsConnected)
+        if (!heartbeatIsFresh && stateLooksActive && recentProgress)
+        {
+            mapped.Message = "Escaneo en curso con avance reciente. El heartbeat del agente esta atrasado, pero el proceso sigue reportando progreso.";
+        }
+        else if (!mapped.IsConnected)
         {
             mapped.Message = "Agente Windows desconectado o sin latido reciente.";
         }
@@ -273,6 +285,14 @@ public class NetworkTelemetryAgentBridgeService
             ? "full"
             : "simple";
 
+    private static string NormalizeTriggerType(string? triggerType)
+        => triggerType?.Trim().ToLowerInvariant() switch
+        {
+            "scheduled" => "scheduled",
+            "automatic" => "automatic",
+            _ => "manual"
+        };
+
     private static string NormalizeControlAction(string? action)
         => action?.Trim().ToLowerInvariant() switch
         {
@@ -312,6 +332,7 @@ public class NetworkTelemetryAgentRequest
     public string RequestedByUsername { get; set; } = string.Empty;
     public bool ResolveInteractiveSessions { get; set; } = true;
     public string ScanMode { get; set; } = "simple";
+    public string TriggerType { get; set; } = "manual";
 }
 
 public class NetworkTelemetryAgentStatus

@@ -1,4 +1,5 @@
 using Cronos;
+using SoteroMap.API.ViewModels;
 
 namespace SoteroMap.API.Services;
 
@@ -7,6 +8,7 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<NetworkTelemetryLiveScanHostedService> _logger;
     private readonly IConfiguration _configuration;
+    private readonly TimeZoneInfo _scheduleTimeZone;
 
     public NetworkTelemetryLiveScanHostedService(
         IServiceScopeFactory scopeFactory,
@@ -16,6 +18,7 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
         _scopeFactory = scopeFactory;
         _logger = logger;
         _configuration = configuration;
+        _scheduleTimeZone = ResolveTimeZone(configuration["NetworkTelemetrySettings:AutoScanTimeZone"]);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -27,27 +30,51 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
             return;
         }
 
-        var firstRun = true;
+        var configuredSchedules = GetCronExpressions();
+        if (configuredSchedules.Count == 0)
+        {
+            _logger.LogWarning(
+                "No valid live telemetry cron expressions were found. Falling back to interval mode every {Minutes} minutes.",
+                GetInt("NetworkTelemetrySettings:AutoScanIntervalMinutes", "NETWORK_TELEMETRY_AUTO_SCAN_INTERVAL_MINUTES", 30));
+        }
+        else
+        {
+            var nowUtc = DateTimeOffset.UtcNow;
+            var nextOccurrenceUtc = configuredSchedules
+                .Select(expression => expression.GetNextOccurrence(nowUtc.UtcDateTime, _scheduleTimeZone))
+                .Where(next => next.HasValue)
+                .Select(next => new DateTimeOffset(
+                    TimeZoneInfo.ConvertTimeToUtc(
+                        DateTime.SpecifyKind(next!.Value, DateTimeKind.Unspecified),
+                        _scheduleTimeZone)))
+                .OrderBy(next => next)
+                .FirstOrDefault();
+
+            if (nextOccurrenceUtc != default)
+            {
+                var nextLocal = TimeZoneInfo.ConvertTime(nextOccurrenceUtc, _scheduleTimeZone);
+                _logger.LogInformation(
+                    "Live telemetry scheduler active. Next scheduled run at {NextLocal} ({TimeZone}).",
+                    nextLocal.ToString("yyyy-MM-dd HH:mm:ss"),
+                    _scheduleTimeZone.Id);
+            }
+        }
+
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (!firstRun)
+            try
             {
-                try
+                var delay = GetDelayUntilNextRun();
+                if (delay > TimeSpan.Zero)
                 {
-                    var delay = GetDelayUntilNextRun();
-                    if (delay > TimeSpan.Zero)
-                    {
-                        _logger.LogInformation("Next live telemetry scan scheduled in {Delay}.", delay);
-                        await Task.Delay(delay, stoppingToken);
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
+                    _logger.LogInformation("Next live telemetry scan scheduled in {Delay}.", delay);
+                    await Task.Delay(delay, stoppingToken);
                 }
             }
-
-            firstRun = false;
+            catch (OperationCanceledException)
+            {
+                break;
+            }
 
             if (stoppingToken.IsCancellationRequested)
             {
@@ -57,9 +84,38 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var scanner = scope.ServiceProvider.GetRequiredService<NetworkTelemetryLiveScanService>();
-                await scanner.ScanAndStoreAsync("system", null, stoppingToken);
-                _logger.LogInformation("Live network telemetry scan completed successfully.");
+                var bridge = scope.ServiceProvider.GetRequiredService<NetworkTelemetryAgentBridgeService>();
+                if (bridge.UseAgentMode())
+                {
+                    var agentStatus = await bridge.GetStatusAsync(stoppingToken);
+                    if (string.Equals(agentStatus.State, "pending", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(agentStatus.State, "running", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(agentStatus.State, "paused", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(agentStatus.State, "stopping", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogInformation("Skipping automatic telemetry queue because agent is currently {State}.", agentStatus.State);
+                        continue;
+                    }
+
+                    await bridge.QueueScanAsync("system", new NetworkTelemetryLiveScanRequest
+                    {
+                        ResolveInteractiveSessions = true,
+                        ScanMode = "simple",
+                        TriggerType = "scheduled"
+                    }, stoppingToken);
+                    _logger.LogInformation("Live network telemetry auto scan queued for Windows agent.");
+                }
+                else
+                {
+                    var scanner = scope.ServiceProvider.GetRequiredService<NetworkTelemetryLiveScanService>();
+                    await scanner.ScanAndStoreAsync("system", new NetworkTelemetryLiveScanRequest
+                    {
+                        ResolveInteractiveSessions = true,
+                        ScanMode = "simple",
+                        TriggerType = "scheduled"
+                    }, stoppingToken);
+                    _logger.LogInformation("Live network telemetry scan completed successfully.");
+                }
             }
             catch (OperationCanceledException)
             {
@@ -75,18 +131,21 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
     private TimeSpan GetDelayUntilNextRun()
     {
         var nowUtc = DateTimeOffset.UtcNow;
-        var cron = GetString("NetworkTelemetrySettings:AutoScanCron", "NETWORK_TELEMETRY_AUTO_SCAN_CRON");
-        if (!string.IsNullOrWhiteSpace(cron))
+        var schedules = GetCronExpressions();
+        var nextOccurrenceUtc = schedules
+            .Select(expression => expression.GetNextOccurrence(nowUtc.UtcDateTime, _scheduleTimeZone))
+            .Where(next => next.HasValue)
+            .Select(next => new DateTimeOffset(
+                TimeZoneInfo.ConvertTimeToUtc(
+                    DateTime.SpecifyKind(next!.Value, DateTimeKind.Unspecified),
+                    _scheduleTimeZone)))
+            .OrderBy(next => next)
+            .FirstOrDefault();
+
+        if (nextOccurrenceUtc != default)
         {
-            if (TryParseCron(cron, out var expression))
-            {
-                var next = expression?.GetNextOccurrence(nowUtc.UtcDateTime, TimeZoneInfo.Utc);
-                if (next.HasValue)
-                {
-                    var delay = next.Value - nowUtc.UtcDateTime;
-                    return delay > TimeSpan.Zero ? delay : TimeSpan.Zero;
-                }
-            }
+            var delay = nextOccurrenceUtc - nowUtc;
+            return delay > TimeSpan.Zero ? delay : TimeSpan.Zero;
         }
 
         var intervalMinutes = GetInt("NetworkTelemetrySettings:AutoScanIntervalMinutes", "NETWORK_TELEMETRY_AUTO_SCAN_INTERVAL_MINUTES", 30);
@@ -98,6 +157,27 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
         return TimeSpan.FromMinutes(intervalMinutes);
     }
 
+    private IReadOnlyList<CronExpression> GetCronExpressions()
+    {
+        var configured = GetString("NetworkTelemetrySettings:AutoScanCrons", "NETWORK_TELEMETRY_AUTO_SCAN_CRONS");
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            configured = GetString("NetworkTelemetrySettings:AutoScanCron", "NETWORK_TELEMETRY_AUTO_SCAN_CRON");
+        }
+
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return Array.Empty<CronExpression>();
+        }
+
+        return configured
+            .Split(new[] { ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(value => TryParseCron(value, out var expression) ? expression : null)
+            .Where(expression => expression is not null)
+            .Cast<CronExpression>()
+            .ToList();
+    }
+
     private static bool TryParseCron(string cron, out CronExpression? expression)
     {
         if (CronExpression.TryParse(cron, CronFormat.IncludeSeconds, out expression))
@@ -106,6 +186,29 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
         }
 
         return CronExpression.TryParse(cron, CronFormat.Standard, out expression);
+    }
+
+    private static TimeZoneInfo ResolveTimeZone(string? configuredTimeZone)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredTimeZone))
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(configuredTimeZone);
+            }
+            catch
+            {
+            }
+        }
+
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("America/Santiago");
+        }
+        catch
+        {
+            return TimeZoneInfo.Local;
+        }
     }
 
     private string? GetString(string configKey, string envKey)

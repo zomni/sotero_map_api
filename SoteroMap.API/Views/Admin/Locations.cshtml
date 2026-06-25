@@ -24,6 +24,10 @@
     {
         activeFilters.Add($"Piso: {Model.Floor}");
     }
+    foreach (var columnFilter in Model.ColumnFilters)
+    {
+        activeFilters.Add($"{columnFilter.Label}: {columnFilter.Value}");
+    }
     if (Context?.Request?.Query.ContainsKey("sortBy") == true && !string.IsNullOrWhiteSpace(Model.SortBy))
     {
         activeFilters.Add($"Orden: {Model.SortBy} ({(Model.SortDirection == "desc" ? "desc" : "asc")})");
@@ -36,26 +40,57 @@
     var isAdmin = User.IsInRole(SoteroMap.API.Models.AppRoles.Admin);
     string NextSortDirection(string column) => Model.SortBy == column && Model.SortDirection == "asc" ? "desc" : "asc";
     string SortArrow(string column) => Model.SortBy != column ? "bi bi-dash-lg" : (Model.SortDirection == "asc" ? "bi bi-chevron-down" : "bi bi-chevron-up");
-    string SortUrl(string column) => Url.Action("Locations", new
+    List<KeyValuePair<string, string?>> BuildLocationQuery(
+        int? pageOverride = null,
+        string? sortByOverride = null,
+        string? sortDirectionOverride = null,
+        int? pageSizeOverride = null,
+        int? removeColumnFilterIndex = null)
     {
-        search = Model.Search,
-        campus = Model.Campus,
-        floor = Model.Floor,
-        sortBy = column,
-        sortDirection = NextSortDirection(column),
-        page = 1,
-        pageSize = Model.PageSize
-    }) ?? "/admin/locations";
-    string PageUrl(int targetPage) => Url.Action("Locations", new
-    {
-        search = Model.Search,
-        campus = Model.Campus,
-        floor = Model.Floor,
-        sortBy = Model.SortBy,
-        sortDirection = Model.SortDirection,
-        page = targetPage,
-        pageSize = Model.PageSize
-    }) ?? "/admin/locations";
+        var query = new List<KeyValuePair<string, string?>>();
+
+        void Add(string key, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                query.Add(new KeyValuePair<string, string?>(key, value));
+            }
+        }
+
+        Add("search", Model.Search);
+        Add("campus", Model.Campus);
+        Add("floor", Model.Floor);
+        Add("sortBy", sortByOverride ?? Model.SortBy);
+        Add("sortDirection", sortDirectionOverride ?? Model.SortDirection);
+
+        query.Add(new KeyValuePair<string, string?>("page", (pageOverride ?? 1).ToString()));
+        query.Add(new KeyValuePair<string, string?>("pageSize", (pageSizeOverride ?? Model.PageSize).ToString()));
+
+        for (var index = 0; index < Model.ColumnFilters.Count; index++)
+        {
+            if (removeColumnFilterIndex.HasValue && removeColumnFilterIndex.Value == index)
+            {
+                continue;
+            }
+
+            query.Add(new KeyValuePair<string, string?>("filterField", Model.ColumnFilters[index].Field));
+            query.Add(new KeyValuePair<string, string?>("filterValue", Model.ColumnFilters[index].Value));
+        }
+
+        return query;
+    }
+    string BuildLocationUrl(
+        int? pageOverride = null,
+        string? sortByOverride = null,
+        string? sortDirectionOverride = null,
+        int? pageSizeOverride = null,
+        int? removeColumnFilterIndex = null)
+        => Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
+            "/admin/locations",
+            BuildLocationQuery(pageOverride, sortByOverride, sortDirectionOverride, pageSizeOverride, removeColumnFilterIndex));
+    string SortUrl(string column) => BuildLocationUrl(1, column, NextSortDirection(column));
+    string PageUrl(int targetPage) => BuildLocationUrl(targetPage);
+    string RemoveColumnFilterUrl(int index) => BuildLocationUrl(1, null, null, null, index);
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -99,6 +134,72 @@
     white-space: normal;
     word-break: break-word;
     vertical-align: top;
+  }
+
+  .inventory-filter-panel {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 1rem;
+    background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
+    padding: 1.25rem;
+  }
+
+  .inventory-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.8rem;
+    border-radius: 0.9rem;
+    border: 1px solid rgba(14, 116, 144, 0.18);
+    background: #ffffff;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  }
+
+  .inventory-filter-chip.passive {
+    border-color: rgba(148, 163, 184, 0.24);
+  }
+
+  .inventory-filter-chip .chip-label {
+    color: #0f766e;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .inventory-filter-chip .chip-value {
+    color: #0f172a;
+    font-weight: 600;
+  }
+
+  .inventory-filter-chip .chip-remove {
+    color: #ea580c;
+    text-decoration: none;
+    font-size: 0.95rem;
+    line-height: 1;
+  }
+
+  .inventory-filter-fixed {
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 0.9rem;
+    background: #fff;
+    padding: 0.85rem;
+    height: 100%;
+  }
+
+  .inventory-filter-fixed .filter-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #475569;
+    margin-bottom: 0.55rem;
+  }
+
+  .inventory-filter-active-bar {
+    border: 1px dashed rgba(14, 116, 144, 0.18);
+    border-radius: 0.9rem;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 0.85rem;
   }
 </style>
 
@@ -147,8 +248,8 @@
     });
   };
 
-  bindSuggestions('input[name="search"]', "locationSearchSuggestions", "/admin/suggestions/locations");
-  bindSuggestions('input[name="campus"]', "campusSearchSuggestions", "/admin/suggestions/campus");
+  bindSuggestions('input[name="search"]', "locationSearchSuggestions", "/dashboard/suggestions/locations");
+  bindSuggestions('input[name="campus"]', "campusSearchSuggestions", "/dashboard/suggestions/campus");
 })();
 </script>
 
@@ -217,80 +318,130 @@
 
 <div class="card border-0 shadow-sm mb-4"> 
     <div class="card-body">
-        <form method="get" class="row g-3 align-items-end">
-            <div class="col-md-4 position-relative js-autocomplete">
-                <label class="form-label small fw-semibold">Buscar edificio</label>
-                <input type="text"
-                       name="search"
-                       value="@Model.Search"
-                       data-autocomplete-endpoint="/admin/suggestions/locations"
-                       data-autocomplete-min="2"
-                       class="form-control"
-                       placeholder="nombre, ID, tipo, area..." />
-                <div class="list-group position-absolute w-100 shadow-sm js-autocomplete-list" style="z-index: 1050; display: none;"></div>
-            </div>
-            <div class="col-md-6 position-relative js-autocomplete">
-                <label class="form-label small fw-semibold">Campus</label>
-                <input type="text"
-                       name="campus"
-                       value="@Model.Campus"
-                       data-autocomplete-endpoint="/admin/suggestions/campus"
-                       data-autocomplete-min="1"
-                       class="form-control"
-                       placeholder="ej: sotero" />
-                <div class="list-group position-absolute w-100 shadow-sm js-autocomplete-list" style="z-index: 1050; display: none;"></div>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Piso</label>
-                <select name="floor" class="form-select">
-                    <option value="">Todos</option>
-                    <option value="0" selected="@(Model.Floor == "0")">Piso 0</option>
-                    <option value="1" selected="@(Model.Floor == "1")">Piso 1</option>
-                    <option value="2" selected="@(Model.Floor == "2")">Piso 2</option>
-                    <option value="3" selected="@(Model.Floor == "3")">Piso 3</option>
-                    <option value="4" selected="@(Model.Floor == "4")">Piso 4</option>
-                    <option value="5" selected="@(Model.Floor == "5")">Piso 5</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Por pagina</label>
-                <select name="pageSize" class="form-select js-page-size-select">
-                    @foreach (var size in pageSizeOptions)
-                    {
-                        <option value="@size" selected="@(Model.PageSize == size)">@size</option>
-                    }
-                </select>
-            </div>
-            <div class="col-md-12">
-                <input type="hidden" name="page" value="1" />
-                <input type="hidden" name="sortBy" value="@Model.SortBy" />
-                <input type="hidden" name="sortDirection" value="@Model.SortDirection" />
-                <div class="d-flex gap-2">
-                    <button type="submit" class="btn btn-outline-primary flex-grow-1">
-                        <i class="bi bi-funnel me-1"></i> Filtrar
-                    </button>
-                    <a href="/admin/locations" class="btn btn-outline-secondary">
-                        <i class="bi bi-x-circle me-1"></i> Limpiar filtros
-                    </a>
+        <form method="get" class="inventory-filter-panel">
+            <input type="hidden" name="page" value="1" />
+            <input type="hidden" name="sortBy" value="@Model.SortBy" />
+            <input type="hidden" name="sortDirection" value="@Model.SortDirection" />
+            @foreach (var columnFilter in Model.ColumnFilters)
+            {
+                <input type="hidden" name="filterField" value="@columnFilter.Field" />
+                <input type="hidden" name="filterValue" value="@columnFilter.Value" />
+            }
+
+            @if (hasActiveFilters)
+            {
+                <div class="inventory-filter-active-bar mb-3">
+                    <div class="small text-muted mb-2">Filtros activos (@activeFilters.Count)</div>
+                    <div class="d-flex flex-wrap gap-2">
+                        @foreach (var columnFilter in Model.ColumnFilters.Select((filter, index) => new { filter, index }))
+                        {
+                            <div class="inventory-filter-chip">
+                                <span class="chip-label">@columnFilter.filter.Label</span>
+                                <span class="chip-value">@columnFilter.filter.Value</span>
+                                <a href="@RemoveColumnFilterUrl(columnFilter.index)"
+                                   class="chip-remove"
+                                   title="Quitar filtro"
+                                   aria-label="Quitar filtro">
+                                    <i class="bi bi-x-lg"></i>
+                                </a>
+                            </div>
+                        }
+
+                        @foreach (var filter in activeFilters.Where(filter => !Model.ColumnFilters.Any(columnFilter => $"{columnFilter.Label}: {columnFilter.Value}" == filter)))
+                        {
+                            <div class="inventory-filter-chip passive">
+                                <span class="chip-value">@filter</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="row g-3">
+                <div class="col-xl-3 col-lg-6 position-relative js-autocomplete">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Busqueda general</div>
+                        <input type="text"
+                               name="search"
+                               value="@Model.Search"
+                               data-autocomplete-endpoint="/dashboard/suggestions/locations"
+                               data-autocomplete-min="2"
+                               class="form-control"
+                               placeholder="nombre, ID, tipo, area..." />
+                        <div class="list-group position-absolute w-100 shadow-sm js-autocomplete-list" style="z-index: 1050; display: none;"></div>
+                    </div>
+                </div>
+                <div class="col-xl-3 col-lg-6 position-relative js-autocomplete">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Campus</div>
+                        <input type="text"
+                               name="campus"
+                               value="@Model.Campus"
+                               data-autocomplete-endpoint="/dashboard/suggestions/campus"
+                               data-autocomplete-min="1"
+                               class="form-control"
+                               placeholder="ej: sotero" />
+                        <div class="list-group position-absolute w-100 shadow-sm js-autocomplete-list" style="z-index: 1050; display: none;"></div>
+                    </div>
+                </div>
+                <div class="col-xl-2 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Piso</div>
+                        <select name="floor" class="form-select">
+                            <option value="">Todos</option>
+                            <option value="0" selected="@(Model.Floor == "0")">Piso 0</option>
+                            <option value="1" selected="@(Model.Floor == "1")">Piso 1</option>
+                            <option value="2" selected="@(Model.Floor == "2")">Piso 2</option>
+                            <option value="3" selected="@(Model.Floor == "3")">Piso 3</option>
+                            <option value="4" selected="@(Model.Floor == "4")">Piso 4</option>
+                            <option value="5" selected="@(Model.Floor == "5")">Piso 5</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-xl-4 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Agregar filtro por columna</div>
+                        <div class="d-flex gap-2">
+                            <select name="newFilterField" class="form-select">
+                                <option value="">Columna...</option>
+                                @foreach (var option in Model.AvailableColumnFilters)
+                                {
+                                    <option value="@option.Value">@option.Label</option>
+                                }
+                            </select>
+                            <input type="text" name="newFilterValue" class="form-control" placeholder="Valor..." />
+                            <button type="submit" class="btn btn-outline-primary text-nowrap">
+                                <i class="bi bi-plus-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-2 col-lg-4">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Por pagina</div>
+                        <select name="pageSize" class="form-select js-page-size-select">
+                            @foreach (var size in pageSizeOptions)
+                            {
+                                <option value="@size" selected="@(Model.PageSize == size)">@size</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="col-xl-4 col-lg-8">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Acciones</div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-outline-primary flex-grow-1">
+                                <i class="bi bi-funnel me-1"></i> Filtrar
+                            </button>
+                            <a href="/admin/locations" class="btn btn-secondary" title="Limpiar filtros" aria-label="Limpiar filtros">
+                                <i class="bi bi-x-circle"></i>
+                            </a>
+                        </div>
+                    </div>
                 </div>
             </div>
         </form>
-        <div class="mt-3">
-            <div class="small text-muted mb-2">Filtros aplicados (@activeFilters.Count)</div>
-            @if (hasActiveFilters)
-            {
-                <div class="d-flex flex-wrap gap-2">
-                    @foreach (var filter in activeFilters)
-                    {
-                        <span class="badge rounded-pill text-bg-light border">@filter</span>
-                    }
-                </div>
-            }
-            else
-            {
-                <div class="small text-muted">Sin filtros adicionales aplicados.</div>
-            }
-        </div>
     </div>
 </div>
 

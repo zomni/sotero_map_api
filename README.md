@@ -52,7 +52,7 @@ Ese comando:
 - levanta el backend en `http://localhost:5000`
 - usa `dotnet watch` dentro de Docker
 - recarga cambios del codigo automaticamente durante desarrollo
-- mantiene SQLite en un volumen Docker llamado `sqlite_data`
+- usa la carpeta local `./data` como almacenamiento visible del backend
 - usa credenciales seed por defecto si no existe `.env`
 - monta carpetas opcionales para data del frontend e importaciones
 
@@ -62,7 +62,7 @@ Para detener:
 docker compose down
 ```
 
-Para detener y borrar tambien volumenes, incluida la BDD local de Docker:
+Para detener y borrar tambien volumenes temporales de build:
 
 ```powershell
 docker compose down -v
@@ -123,20 +123,75 @@ Roles:
 
 MFA se configura en `MfaSettings`. Para administradores, `RequireForAdmins` debe quedar en `true`. Es compatible con Microsoft Authenticator y Google Authenticator mediante TOTP.
 
+## Datos del proyecto
+
+El proyecto usa SQLite y archivos locales de datos.
+
+La carpeta viva del backend es:
+
+- `data/soteromap.db`
+- `data/inventory-forms/`
+- `data/data-protection-keys/`
+- `data/backups/`
+
+Esa carpeta no se versiona en Git. El flujo recomendado es `camino B`:
+
+- el repositorio guarda solo codigo
+- el estado real se mueve en un paquete separado
+
+Para mover datos entre equipos:
+
+1. Exporta el paquete en el equipo origen:
+
+```powershell
+.\tools\export-project-data-package.ps1
+```
+
+Opcionalmente puedes incluir claves MFA/cookies y backups:
+
+```powershell
+.\tools\export-project-data-package.ps1 -IncludeBackups -IncludeDataProtectionKeys
+```
+
+2. Copia el `.zip` generado en `runtime/data-packages/`.
+3. En el otro equipo, clona backend y frontend.
+4. Levanta el backend al menos una vez con:
+
+```powershell
+docker compose up -d --build
+```
+
+5. Restaura el paquete:
+
+```powershell
+.\tools\import-project-data-package.ps1 -PackagePath .\runtime\data-packages\TU-PAQUETE.zip
+```
+
+6. Reinicia si hace falta:
+
+```powershell
+docker compose up -d --build
+```
+
+El script tambien restaura los respaldos offline del frontend en `../sotero_map/src/data` cuando ese repo existe al lado del backend.
+
+Si no quieres mover claves MFA entre equipos, no uses `-IncludeDataProtectionKeys`. En ese caso puede hacer falta reenrolar MFA una sola vez en el nuevo entorno.
+
 ## Base de datos
 
-El proyecto usa SQLite. En Docker, la base queda dentro del volumen `sqlite_data`, no dentro del repositorio.
+La base principal es `data/soteromap.db`.
 
-El repositorio debe mantenerse sin una base real versionada. Para mover datos entre equipos:
+El dashboard sigue permitiendo exportar/importar la DB manualmente, pero para clonar un entorno completo ahora se recomienda el paquete de datos.
 
-1. Entra a `http://localhost:5000/dashboard`.
-2. Descarga la DB desde la seccion Base de datos.
-3. En el otro equipo, levanta el proyecto.
-4. Entra al dashboard.
-5. Sube/restaura la DB descargada.
+## Frontend offline y respaldos estaticos
 
-El dashboard crea respaldos automaticos antes de reemplazar la base actual.
-Tambien expone el historial de backups y el panel de cumplimiento para administradores y auditores.
+El endpoint admin `POST /api/frontend-static-backup/save` actualiza directamente estos archivos del frontend:
+
+- `walking_routes_backup.json`
+- `sotero_buildings_backend_backup.json`
+- `network_telemetry_backup.json`
+
+Esos archivos tambien entran en el paquete exportado/importado para que el mapa pueda verse parecido incluso antes de reconectar API.
 
 ## Variables opcionales
 
@@ -167,11 +222,6 @@ Si no se definen, se usan:
 
 - `../sotero_map/src/data`
 - `./import`
-
-El endpoint admin `POST /api/frontend-static-backup/save` actualiza directamente:
-
-- `walking_routes_backup.json`
-- `sotero_buildings_backend_backup.json`
 
 ## Sesiones
 

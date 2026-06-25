@@ -10,6 +10,36 @@
     var assignedAngle = Math.Clamp(Model.AssignedItems * 360.0 / totalItems, 0, 360);
     var suggestedAngle = Math.Clamp((Model.AssignedItems + Model.SuggestedItems) * 360.0 / totalItems, 0, 360);
     var maxCategoryCount = Math.Max(Model.CategoryBreakdown.Any() ? Model.CategoryBreakdown.Max(category => category.Count) : 0, 1);
+    TimeZoneInfo chileTimeZone;
+    try
+    {
+        chileTimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/Santiago");
+    }
+    catch
+    {
+        try
+        {
+            chileTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Pacific SA Standard Time");
+        }
+        catch
+        {
+            chileTimeZone = TimeZoneInfo.Local;
+        }
+    }
+
+    string FormatChileDateTime(DateTime? value, string format = "dd/MM/yyyy HH:mm")
+    {
+        if (!value.HasValue)
+        {
+            return "Sin datos";
+        }
+
+        var utcValue = value.Value.Kind == DateTimeKind.Utc
+            ? value.Value
+            : DateTime.SpecifyKind(value.Value, DateTimeKind.Utc);
+
+        return TimeZoneInfo.ConvertTimeFromUtc(utcValue, chileTimeZone).ToString(format);
+    }
 }
 
 <style>
@@ -255,7 +285,7 @@
                 </div>
                 <div>
                     <div class="small text-muted mb-1">BDD actualizada</div>
-                    <div class="fw-semibold">@(Model.DatabaseLastWriteUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "Sin datos")</div>
+                    <div class="fw-semibold">@FormatChileDateTime(Model.DatabaseLastWriteUtc)</div>
                 </div>
             </div>
         </div>
@@ -325,10 +355,16 @@
                             <div class="small text-muted mb-2">Archivo actual</div>
                             <div class="fw-semibold">@Model.DatabaseFileName</div>
                             <div class="text-muted small">Tamano: @(Model.DatabaseFileSizeBytes > 0 ? $"{Model.DatabaseFileSizeBytes / 1024.0 / 1024.0:F2} MB" : "Sin datos")</div>
-                            <div class="text-muted small">Ultima modificacion: @(Model.DatabaseLastWriteUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "Sin datos")</div>
-                            <a href="/dashboard/database/download" class="btn btn-outline-primary mt-3">
-                                <i class="bi bi-download me-1"></i> Descargar DB
-                            </a>
+                            <div class="text-muted small">Ultima modificacion: @FormatChileDateTime(Model.DatabaseLastWriteUtc, "dd/MM/yyyy HH:mm:ss")</div>
+                            <div class="d-grid gap-2 mt-3">
+                                <a href="/dashboard/database/download" class="btn btn-outline-primary">
+                                    <i class="bi bi-download me-1"></i> Descargar DB
+                                </a>
+                                <a href="/dashboard/project-package/download" class="btn btn-outline-dark">
+                                    <i class="bi bi-box-seam me-1"></i> Descargar paquete completo
+                                </a>
+                            </div>
+                            <div class="form-text mt-2">El paquete completo incluye DB, formularios PDF, claves locales de sesion/MFA y respaldos offline del frontend.</div>
                         </div>
                         <div class="col-lg-7">
                             <div class="small text-muted mb-2">Restaurar base de datos</div>
@@ -341,6 +377,20 @@
                                 <div class="col-md-4 d-grid">
                                     <button id="databaseUploadButton" type="submit" class="btn btn-secondary" disabled>
                                         <i class="bi bi-upload me-1"></i> Subir DB
+                                    </button>
+                                </div>
+                            </form>
+
+                            <div class="small text-muted mt-4 mb-2">Restaurar paquete completo</div>
+                            <form id="projectPackageUploadForm" method="post" action="/dashboard/project-package/upload" enctype="multipart/form-data" class="row g-3">
+                                @Html.AntiForgeryToken()
+                                <div class="col-md-8">
+                                    <input id="projectPackageFileInput" type="file" name="packageFile" class="form-control" accept=".zip" required />
+                                    <div class="form-text">Restaura DB, formularios PDF, claves locales y los respaldos offline del frontend.</div>
+                                </div>
+                                <div class="col-md-4 d-grid">
+                                    <button id="projectPackageUploadButton" type="submit" class="btn btn-secondary" disabled>
+                                        <i class="bi bi-box-arrow-in-up me-1"></i> Subir paquete
                                     </button>
                                 </div>
                             </form>
@@ -457,23 +507,42 @@
             const fileInput = document.getElementById("databaseFileInput");
             const uploadButton = document.getElementById("databaseUploadButton");
             const uploadForm = document.getElementById("databaseUploadForm");
+            const packageFileInput = document.getElementById("projectPackageFileInput");
+            const packageUploadButton = document.getElementById("projectPackageUploadButton");
+            const packageUploadForm = document.getElementById("projectPackageUploadForm");
 
             if (!fileInput || !uploadButton || !uploadForm) {
                 return;
             }
 
             let hasPendingDatabaseFile = false;
+            let hasPendingProjectPackageFile = false;
 
             const updateUploadState = () => {
                 hasPendingDatabaseFile = Boolean(fileInput.files && fileInput.files.length > 0);
                 uploadButton.disabled = !hasPendingDatabaseFile;
                 uploadButton.classList.toggle("btn-secondary", !hasPendingDatabaseFile);
                 uploadButton.classList.toggle("btn-warning", hasPendingDatabaseFile);
+
+                hasPendingProjectPackageFile = Boolean(packageFileInput?.files && packageFileInput.files.length > 0);
+                if (packageUploadButton) {
+                    packageUploadButton.disabled = !hasPendingProjectPackageFile;
+                    packageUploadButton.classList.toggle("btn-secondary", !hasPendingProjectPackageFile);
+                    packageUploadButton.classList.toggle("btn-dark", hasPendingProjectPackageFile);
+                }
             };
 
             const confirmPendingDatabaseNavigation = () => {
-                if (!hasPendingDatabaseFile) {
+                if (!hasPendingDatabaseFile && !hasPendingProjectPackageFile) {
                     return true;
+                }
+
+                if (hasPendingDatabaseFile && hasPendingProjectPackageFile) {
+                    return window.confirm("Tienes una base de datos y un paquete completo pendientes por subir. ¿Deseas continuar sin subirlos?");
+                }
+
+                if (hasPendingProjectPackageFile) {
+                    return window.confirm("Tienes un paquete completo pendiente por subir. ¿Deseas continuar sin subirlo?");
                 }
 
                 return window.confirm("Tienes un archivo DB pendiente por subir. ¿Deseas continuar sin subirlo?");
@@ -482,6 +551,10 @@
             fileInput.addEventListener("change", updateUploadState);
             uploadForm.addEventListener("submit", () => {
                 hasPendingDatabaseFile = false;
+            });
+            packageFileInput?.addEventListener("change", updateUploadState);
+            packageUploadForm?.addEventListener("submit", () => {
+                hasPendingProjectPackageFile = false;
             });
 
             document.addEventListener("click", (event) => {
@@ -509,11 +582,12 @@
                 }
 
                 hasPendingDatabaseFile = false;
+                hasPendingProjectPackageFile = false;
             }, true);
 
             document.addEventListener("submit", (event) => {
                 const form = event.target;
-                if (!(form instanceof HTMLFormElement) || form === uploadForm) {
+                if (!(form instanceof HTMLFormElement) || form === uploadForm || form === packageUploadForm) {
                     return;
                 }
 
@@ -524,10 +598,11 @@
                 }
 
                 hasPendingDatabaseFile = false;
+                hasPendingProjectPackageFile = false;
             }, true);
 
             window.addEventListener("beforeunload", (event) => {
-                if (!hasPendingDatabaseFile) {
+                if (!hasPendingDatabaseFile && !hasPendingProjectPackageFile) {
                     return;
                 }
 
@@ -544,6 +619,7 @@
                     }
 
                     hasPendingDatabaseFile = false;
+                    hasPendingProjectPackageFile = false;
                     window.open(link.href, "sotero-map");
                 });
             });

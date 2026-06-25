@@ -13,7 +13,6 @@
     var warningMinutes = double.TryParse(warningMinutesRaw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedWarningMinutes)
         ? parsedWarningMinutes
         : 14d;
-    var rememberMeSession = User.HasClaim("sotero:remember_me", "true");
 }
 <!DOCTYPE html>
 <html lang="es">
@@ -21,9 +20,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] - SoteroMap Admin</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/branding/app-logo-backend.svg" />
+    <link rel="apple-touch-icon" href="/assets/branding/app-logo-backend.svg" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet" />
     <style>
+        .app-brand-logo {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            object-fit: cover;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+        }
         .sidebar { min-height: 100vh; background: #1e293b; }
         .admin-shell { display: flex; flex-wrap: nowrap; }
         .admin-sidebar { width: 220px; flex: 0 0 220px; }
@@ -74,7 +82,10 @@
         <div class="row g-0 admin-shell">
             <nav class="sidebar admin-sidebar py-3 px-3">
                 <a class="navbar-brand sidebar-brand d-block mb-4 fs-5" href="/dashboard">
-                    <i class="bi bi-map-fill me-2"></i>SoteroMap
+                    <span class="d-inline-flex align-items-center gap-2">
+                        <img src="/assets/branding/app-logo-backend.svg" alt="SoteroMap" class="app-brand-logo" />
+                        <span>SoteroMap</span>
+                    </span>
                 </a>
                 <div class="bg-dark bg-opacity-25 rounded-3 p-3 mb-4 text-white">
                     <div class="small text-uppercase text-secondary mb-1">Sesion</div>
@@ -177,14 +188,10 @@
             return;
         }
 
-        const SESSION_TIMEOUT_ENABLED = @((!rememberMeSession).ToString().ToLowerInvariant());
-        if (!SESSION_TIMEOUT_ENABLED) {
-            return;
-        }
-
         const SESSION_MINUTES = @(sessionMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture));
         const WARNING_MINUTES = @(warningMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture));
         const storageKey = "sotero-admin-last-activity";
+        const authTransitionKey = "sotero-admin-auth-transition";
         const warningOverlay = document.getElementById("session-warning-overlay");
         const warningEl = document.getElementById("session-warning");
         const countdownEl = document.getElementById("session-warning-countdown");
@@ -198,6 +205,8 @@
         let warningActive = false;
         let sessionExpired = false;
         let keepAliveInFlight = false;
+        let sessionCheckInFlight = false;
+        let lastSessionCheckAt = 0;
 
         const setLastActivity = (timestamp) => {
             localStorage.setItem(storageKey, String(timestamp));
@@ -207,6 +216,16 @@
             const raw = localStorage.getItem(storageKey);
             const parsed = Number(raw);
             return Number.isFinite(parsed) ? parsed : Date.now();
+        };
+
+        const consumeAuthTransition = () => {
+            const value = sessionStorage.getItem(authTransitionKey);
+            if (value === "1") {
+                sessionStorage.removeItem(authTransitionKey);
+                return true;
+            }
+
+            return false;
         };
 
         const formatRemaining = (remainingMs) => {
@@ -219,6 +238,11 @@
         const registerActivity = (timestamp = Date.now()) => {
             lastActivityUpdate = timestamp;
             setLastActivity(timestamp);
+        };
+
+        const isLocallyExpired = () => {
+            const lastActivity = getLastActivity();
+            return Date.now() - lastActivity >= sessionMs;
         };
 
         const hideWarning = () => {
@@ -254,12 +278,97 @@
             }
         };
 
+        const validateSession = async ({ force = false, showWarningWhenNearExpiry = true } = {}) => {
+            if (sessionExpired) {
+                return false;
+            }
+
+            const now = Date.now();
+            if (!force && sessionCheckInFlight) {
+                return !isLocallyExpired();
+            }
+
+            if (!force && now - lastSessionCheckAt < 5000) {
+                const lastActivity = getLastActivity();
+                const idleMs = now - lastActivity;
+                const remainingMs = sessionMs - idleMs;
+
+                if (remainingMs <= 0) {
+                    showExpired();
+                    return false;
+                }
+
+                if (showWarningWhenNearExpiry && idleMs >= warningAtMs) {
+                    showWarning(remainingMs);
+                }
+
+                return true;
+            }
+
+            sessionCheckInFlight = true;
+
+            try {
+                const response = await fetch("/api/auth/session", {
+                    method: "GET",
+                    headers: { "Accept": "application/json" },
+                    credentials: "same-origin",
+                    cache: "no-store"
+                });
+
+                if (!response.ok) {
+                    showExpired();
+                    return false;
+                }
+
+                const data = await response.json();
+                lastSessionCheckAt = now;
+
+                if (!data?.isAuthenticated) {
+                    showExpired();
+                    return false;
+                }
+
+                if (consumeAuthTransition()) {
+                    registerActivity(now);
+                    hideWarning();
+                    return true;
+                }
+
+                const lastActivity = getLastActivity();
+                const idleMs = now - lastActivity;
+                const remainingMs = sessionMs - idleMs;
+
+                if (remainingMs <= 0) {
+                    showExpired();
+                    return false;
+                }
+
+                if (showWarningWhenNearExpiry && idleMs >= warningAtMs) {
+                    showWarning(remainingMs);
+                } else if (!warningActive) {
+                    hideWarning();
+                }
+
+                return true;
+            } catch (_) {
+                showExpired();
+                return false;
+            } finally {
+                sessionCheckInFlight = false;
+            }
+        };
+
         const handlePassiveActivity = () => {
-            if (warningActive || sessionExpired) {
+            if (warningActive || sessionExpired || sessionCheckInFlight) {
                 return;
             }
 
             const now = Date.now();
+            if (now - getLastActivity() >= sessionMs) {
+                showExpired();
+                return;
+            }
+
             if (now - lastActivityUpdate < 4000) {
                 return;
             }
@@ -286,6 +395,35 @@
             }
         });
 
+        const guardExpiredInteraction = (event) => {
+            if (sessionExpired || sessionCheckInFlight) {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation?.();
+                return;
+            }
+
+            if (isLocallyExpired()) {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation?.();
+                validateSession({ force: true });
+            }
+        };
+
+        document.addEventListener("click", guardExpiredInteraction, true);
+        document.addEventListener("submit", guardExpiredInteraction, true);
+        document.addEventListener("visibilitychange", () => {
+            if (document.hidden) {
+                return;
+            }
+
+            validateSession({ force: true });
+        });
+        window.addEventListener("focus", () => {
+            validateSession({ force: true });
+        });
+
         if (keepAliveBtn) {
             keepAliveBtn.addEventListener("click", async () => {
                 if (keepAliveInFlight || sessionExpired) {
@@ -309,6 +447,7 @@
                     }
 
                     registerActivity(Date.now());
+                    lastSessionCheckAt = Date.now();
                     hideWarning();
                 } catch (_) {
                     showExpired();
@@ -350,7 +489,11 @@
             }
         };
 
-        registerActivity(Date.now());
+        if (consumeAuthTransition() || !localStorage.getItem(storageKey)) {
+            registerActivity(Date.now());
+        } else {
+            lastActivityUpdate = getLastActivity();
+        }
         tick();
         window.setInterval(tick, 1000);
     });

@@ -8,7 +8,7 @@ namespace SoteroMap.API.Controllers;
 
 [ApiController]
 [Route("api/network-telemetry")]
-[Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Auditor}")]
+[Authorize]
 public class NetworkTelemetryController : ControllerBase
 {
     private readonly NetworkTelemetryService _service;
@@ -28,7 +28,7 @@ public class NetworkTelemetryController : ControllerBase
     [HttpGet("status")]
     public async Task<IActionResult> Status(CancellationToken cancellationToken = default)
     {
-        var model = await _service.GetDashboardAsync(10, cancellationToken);
+        var model = await _service.GetDashboardAsync(10, null, cancellationToken);
         return Ok(model);
     }
 
@@ -39,6 +39,7 @@ public class NetworkTelemetryController : ControllerBase
         return Ok(snapshots);
     }
 
+    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Auditor}")]
     [HttpPost("scan")]
     public async Task<IActionResult> Scan([FromBody] NetworkTelemetryLiveScanRequest? request, CancellationToken cancellationToken = default)
     {
@@ -67,6 +68,7 @@ public class NetworkTelemetryController : ControllerBase
         return Ok(await _agentBridgeService.GetStatusAsync(cancellationToken));
     }
 
+    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Auditor}")]
     [HttpPost("agent/control")]
     public async Task<IActionResult> AgentControl([FromBody] NetworkTelemetryAgentControlRequest? request, CancellationToken cancellationToken = default)
     {
@@ -103,15 +105,18 @@ public class NetworkTelemetryController : ControllerBase
         return Ok(observations);
     }
 
-    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Auditor}")]
     [HttpGet("snapshots/{snapshotId:int}/devices")]
     public async Task<IActionResult> Devices(
         int snapshotId,
         [FromQuery] string? search = null,
         [FromQuery] string? riskLevel = null,
         [FromQuery] string? buildingExternalId = null,
+        [FromQuery] string? subnetCidr = null,
+        [FromQuery] string? onlineState = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortDirection = null,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 50,
+        [FromQuery] int pageSize = 10,
         CancellationToken cancellationToken = default)
     {
         var result = await _service.GetObservationPageAsync(
@@ -121,7 +126,40 @@ public class NetworkTelemetryController : ControllerBase
                 Search = search ?? string.Empty,
                 RiskLevel = riskLevel ?? string.Empty,
                 BuildingExternalId = buildingExternalId ?? string.Empty,
+                SubnetCidr = subnetCidr ?? string.Empty,
+                OnlineState = onlineState ?? string.Empty,
                 ObservationType = "device",
+                SortBy = sortBy ?? "risk",
+                SortDirection = sortDirection ?? "desc",
+                Page = page,
+                PageSize = pageSize
+            },
+            cancellationToken);
+
+        return Ok(result);
+    }
+
+    [HttpGet("snapshots")]
+    public async Task<IActionResult> Snapshots(
+        [FromQuery] string? search = null,
+        [FromQuery] string? triggerType = null,
+        [FromQuery] string? weekday = null,
+        [FromQuery] string? timeSlot = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortDirection = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _service.GetSnapshotPageAsync(
+            new NetworkTelemetrySnapshotQueryRequest
+            {
+                Search = search ?? string.Empty,
+                TriggerType = triggerType ?? string.Empty,
+                Weekday = weekday ?? string.Empty,
+                TimeSlot = timeSlot ?? string.Empty,
+                SortBy = sortBy ?? "observedAt",
+                SortDirection = sortDirection ?? "desc",
                 Page = page,
                 PageSize = pageSize
             },

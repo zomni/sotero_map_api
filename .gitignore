@@ -20,12 +20,31 @@ out/
 # SQLite locales residuales del backend
 SoteroMap.API/soteromap.db*
 
-# Respaldos locales de base
-SoteroMap.API/backups/
+# Datos vivos del proyecto (camino B: paquete separado, no versionar)
+data/**
+!data/.gitkeep
+!data/README.md
+!data/backups/
+!data/backups/.gitkeep
+!data/inventory-forms/
+!data/inventory-forms/.gitkeep
+!data/data-protection-keys/
+!data/data-protection-keys/.gitkeep
 
-# Runtime local del agente de telemetria
-runtime/network-telemetry-agent/
+# Paquetes/exportaciones y runtime locales
+runtime/**
 
-# Archivos temporales de trabajo
-_tmp_*.cs
+# Respaldos legacy del backend
+SoteroMap.API/backups/**
+
+# Temporales de trabajo locales
+.tmp/**
+
+# Configuracion local del collector
+tools/SoteroMap.NetworkCollector/appsettings.local.json
+
+# Temporales locales grandes
+_container_soteromap.db
+tmp_json_test.cs
+_tmp_dbcheck.cs
 

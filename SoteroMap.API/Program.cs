@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using SoteroMap.API.Infrastructure;
@@ -62,7 +63,7 @@ builder.Services
         options.Cookie.SecurePolicy = ParseCookieSecurePolicy(
             cookieSecurePolicyValue,
             builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always);
-        options.SlidingExpiration = true;
+        options.SlidingExpiration = false;
         options.ExpireTimeSpan = TimeSpan.FromMinutes(sessionMinutes);
         options.Events = new CookieAuthenticationEvents
         {
@@ -107,6 +108,22 @@ var resolvedSqliteConnectionString = SqliteDatabasePathResolver.ResolveConnectio
     builder.Configuration,
     builder.Environment.ContentRootPath);
 builder.Configuration["ConnectionStrings:Default"] = resolvedSqliteConnectionString;
+var dataProtectionKeysPath = builder.Configuration["SecuritySettings:DataProtectionKeysPath"];
+if (string.IsNullOrWhiteSpace(dataProtectionKeysPath))
+{
+    var sqliteDataRoot = Environment.GetEnvironmentVariable("SQLITE_DATA_ROOT");
+    var keysRoot = !string.IsNullOrWhiteSpace(sqliteDataRoot)
+        ? sqliteDataRoot
+        : (Directory.Exists("/app/data") ? "/app/data" : builder.Environment.ContentRootPath);
+    dataProtectionKeysPath = Path.Combine(keysRoot, "data-protection-keys");
+}
+
+Directory.CreateDirectory(dataProtectionKeysPath);
+builder.Services
+    .AddDataProtection()
+    .SetApplicationName("SoteroMap.API")
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(resolvedSqliteConnectionString));
 builder.Services.AddScoped<IPasswordHasher<AuthUser>, PasswordHasher<AuthUser>>();

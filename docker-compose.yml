@@ -16,10 +16,13 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - DOTNET_USE_POLLING_FILE_WATCHER=1
       - DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER=1
+      - DOTNET_WATCH_RESTART_ON_RUDE_EDIT=1
+      - DOTNET_WATCH_HOT_RELOAD=0
       - AllowedOrigins=http://localhost:3000,http://localhost:8080,http://10.8.93.101:8080
       - FrontendAppUrl=${FRONTEND_APP_URL:-http://10.8.93.101:8080}
       - FrontendDataPath=/app/frontend-data
       - ExcelImportRoot=/app/import
+      - SQLITE_DATA_ROOT=/app/data
       - SeedUsers__Admin__Username=${SEED_ADMIN_USERNAME:-admin}
       - SeedUsers__Admin__Password=${SEED_ADMIN_PASSWORD:-Admin!Sotero2026Map}
       - SeedUsers__Viewer__Username=${SEED_VIEWER_USERNAME:-viewer}
@@ -55,7 +58,7 @@ services:
       - ./:/app
       - api_bin:/app/SoteroMap.API/bin
       - api_obj:/app/SoteroMap.API/obj
-      - sqlite_data:/app/data
+      - ./data:/app/data
       - nuget_cache:/root/.nuget/packages
       - ${FRONTEND_DATA_HOST_PATH:-../sotero_map/src/data}:/app/frontend-data
       - ${IMPORT_HOST_PATH:-./import}:/app/import:ro
@@ -64,7 +67,6 @@ services:
 volumes:
   api_bin:
   api_obj:
-  sqlite_data:
   nuget_cache:
 
 

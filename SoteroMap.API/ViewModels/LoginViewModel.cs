@@ -13,7 +13,7 @@ public class LoginViewModel
     [Display(Name = "Contrasena")]
     public string Password { get; set; } = string.Empty;
 
-    [Display(Name = "Mantener sesion iniciada")]
+    [Display(Name = "Recordarme")]
     public bool RememberMe { get; set; }
 
     public string? ReturnUrl { get; set; }

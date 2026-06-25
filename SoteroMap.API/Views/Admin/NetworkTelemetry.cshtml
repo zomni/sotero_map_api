@@ -1,7 +1,14 @@
+@using System.Text.Json
+@using System.Text.Json.Serialization
 @model SoteroMap.API.ViewModels.NetworkTelemetryDashboardViewModel
 @{
     ViewData["Title"] = "Red y riesgo";
     Layout = "~/Views/Shared/_Layout.cshtml";
+    var telemetryJsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 }
 
 <style>
@@ -51,6 +58,261 @@
         max-height: calc(100vh - 40px);
         overflow: auto;
     }
+
+    .telemetry-scan-card {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 24px;
+        overflow: hidden;
+        background: #ffffff;
+        box-shadow: 0 28px 60px rgba(15, 23, 42, 0.28);
+    }
+
+    .telemetry-scan-card .modal-header {
+        border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+        background:
+            radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 38%),
+            linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+        padding: 20px 24px;
+    }
+
+    .telemetry-scan-card .modal-body {
+        padding: 24px;
+        background: #ffffff;
+    }
+
+    .telemetry-scan-card .modal-footer {
+        border-top: 1px solid rgba(226, 232, 240, 0.9);
+        background: #f8fafc;
+        padding: 16px 24px 20px;
+    }
+
+    .telemetry-scan-intro {
+        border: 1px solid rgba(125, 211, 252, 0.35);
+        border-radius: 18px;
+        background: linear-gradient(180deg, #eff8ff 0%, #f8fbff 100%);
+        color: #0f172a;
+        padding: 16px 18px;
+    }
+
+    .telemetry-scan-section {
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 18px;
+        background: #ffffff;
+        padding: 16px 18px;
+    }
+
+    .telemetry-scan-note {
+        border-radius: 14px;
+        background: #f8fafc;
+        color: #475569;
+        padding: 12px 14px;
+    }
+
+    .telemetry-filter-panel {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 18px;
+        background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+    }
+
+    .telemetry-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        background: #fff;
+        color: #334155;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .telemetry-chip button {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        padding: 0;
+        line-height: 1;
+    }
+
+    .telemetry-mini-stat {
+        border-radius: 16px;
+        background: #f8fafc;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        padding: 16px;
+    }
+
+    .telemetry-table-wrap {
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 16px;
+        overflow: hidden;
+    }
+
+    .telemetry-table-wrap table {
+        margin-bottom: 0;
+    }
+
+    .telemetry-table-wrap thead th {
+        background: #f8fafc;
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #64748b;
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+
+    .telemetry-sort-button {
+        border: 0;
+        background: transparent;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: inherit;
+        font: inherit;
+        text-transform: inherit;
+        letter-spacing: inherit;
+        white-space: nowrap;
+    }
+
+    .telemetry-sort-button i {
+        font-size: 0.75rem;
+        color: #94a3b8;
+    }
+
+    .telemetry-sort-button.is-active i {
+        color: #0f766e;
+    }
+
+    .telemetry-table-wrap tbody tr:hover {
+        background: rgba(14, 165, 233, 0.05);
+    }
+
+    #telemetry-device-table {
+        min-height: 420px;
+    }
+
+    .telemetry-loading-shell {
+        min-height: 420px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 16px;
+        background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
+    }
+
+    .telemetry-loading-content {
+        display: grid;
+        gap: 10px;
+        justify-items: center;
+        text-align: center;
+        color: #64748b;
+    }
+
+    .telemetry-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 700;
+    }
+
+    .telemetry-pill.telemetry-pill-critical { background: #fee2e2; color: #b91c1c; }
+    .telemetry-pill.telemetry-pill-high { background: #ffedd5; color: #c2410c; }
+    .telemetry-pill.telemetry-pill-medium { background: #fef3c7; color: #a16207; }
+    .telemetry-pill.telemetry-pill-low { background: #dcfce7; color: #15803d; }
+    .telemetry-pill.telemetry-pill-unknown { background: #e2e8f0; color: #475569; }
+
+    .telemetry-inline-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .telemetry-clickable-row {
+        cursor: pointer;
+    }
+
+    .telemetry-row-active {
+        background: rgba(59, 130, 246, 0.08);
+    }
+
+    .telemetry-help {
+        width: 1.7rem;
+        height: 1.7rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        color: #64748b;
+        background: #fff;
+        font-size: 0.8rem;
+    }
+
+    .telemetry-agent-shell {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+        padding: 14px 16px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+    }
+
+    .telemetry-agent-top {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .telemetry-agent-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .telemetry-agent-stat {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 0.8rem;
+    }
+
+    .telemetry-progress {
+        height: 8px;
+        width: 100%;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.12);
+    }
+
+    .telemetry-progress > span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #38bdf8 0%, #facc15 100%);
+    }
+
+    .telemetry-fixed-grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+    }
+
+    @@media (max-width: 1199px) {
+        .telemetry-fixed-grid {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -58,14 +320,23 @@
     <span class="text-muted">Inventario tecnico observado por red</span>
 </div>
 
-@if (!string.Equals(Model.LatestSourceType, "windows-collector", StringComparison.OrdinalIgnoreCase))
+@if (Model.ActiveSnapshotId > 0)
 {
-    <div class="alert alert-warning border-0 shadow-sm">
-        <div class="fw-semibold mb-1">Sesiones reales de usuario</div>
+    <div class="alert alert-light border d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
         <div>
-            El escaneo local del backend sirve para IP, host, puertos y latencia. Para capturar el usuario activo del equipo,
-            fabricante, modelo y datos Windows en vivo, instala el agente Windows del repo y dejalo corriendo en segundo plano.
+            <div class="fw-semibold">
+                @(Model.IsViewingLatestSnapshot ? "Viendo la ultima snapshot" : $"Viendo snapshot #{Model.ActiveSnapshotId}")
+            </div>
+            <div class="small text-muted">
+                Fuente: @Model.LatestSourceName | Fecha: @(Model.LatestObservedAtUtc?.ToString("dd/MM/yyyy HH:mm") ?? "-")
+            </div>
         </div>
+        @if (!Model.IsViewingLatestSnapshot && Model.LatestSnapshotId > 0)
+        {
+            <a href="/dashboard/network-telemetry" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-counterclockwise me-1"></i> Volver a la ultima
+            </a>
+        }
     </div>
 }
 
@@ -75,10 +346,6 @@
             <div class="col-lg-7">
                 <div class="text-uppercase small fw-semibold text-muted mb-2">Estado del modulo</div>
                 <h1 class="fw-bold mb-3">@Model.HealthLabel</h1>
-                <p class="text-white-50 mb-4">
-                    Este panel consolida los equipos vistos en red, sus rasgos tecnicos, la subred donde aparecen y el riesgo observado.
-                    La meta es revisar endpoints concretos y luego usar esos datos para calor por edificio y por subred.
-                </p>
                 <div class="d-flex flex-wrap gap-2">
                     <a href="/admin/compliance" class="btn btn-light fw-semibold">
                         <i class="bi bi-shield-check me-1"></i> Ver cumplimiento
@@ -101,6 +368,9 @@
                     <a href="/dashboard" class="btn btn-outline-light fw-semibold">
                         <i class="bi bi-speedometer2 me-1"></i> Volver al dashboard
                     </a>
+                    <button type="button" class="telemetry-help" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Muestra la ultima captura de red, sesiones detectadas, riesgo tecnico y el detalle operativo del agente Windows.">
+                        <i class="bi bi-info-lg"></i>
+                    </button>
                 </div>
                 <div id="network-telemetry-agent-state" class="small text-white-50 mt-3"></div>
             </div>
@@ -226,124 +496,171 @@
 
 <div class="card telemetry-card mb-4">
     <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="mb-0">Riesgo por edificio</h5>
-            <span class="text-muted small">Base para mapa de calor</span>
-        </div>
-        @if (Model.BuildingRiskSummaries.Count == 0)
-        {
-            <div class="text-muted">No hay edificios con equipos observados en el ultimo snapshot.</div>
-        }
-        else
-        {
-            <div class="table-responsive">
-                <table class="table align-middle">
-                    <thead>
-                        <tr>
-                            <th>Edificio</th>
-                            <th>Equipos</th>
-                            <th>Criticos</th>
-                            <th>Altos</th>
-                            <th>Medios</th>
-                            <th>Bajos</th>
-                            <th>Maximo</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var item in Model.BuildingRiskSummaries.Take(12))
-                        {
-                            <tr>
-                                <td>@item.BuildingExternalId</td>
-                                <td>@item.DeviceCount</td>
-                                <td>@item.CriticalCount</td>
-                                <td>@item.HighCount</td>
-                                <td>@item.MediumCount</td>
-                                <td>@item.LowCount</td>
-                                <td>@item.MaxRiskLevel (@item.MaxRiskScore)</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+            <div>
+                <h5 class="mb-1">Equipos observados en red</h5>
+                <div class="text-muted small">Vista principal de recopilacion en vivo.</div>
             </div>
-        }
+        </div>
+        <div class="telemetry-filter-panel p-3 mb-3">
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-xl-4">
+                    <label class="form-label small text-muted">Buscar</label>
+                    <input id="telemetry-device-search" type="text" class="form-control" placeholder="Serie, IP, host, usuario, SO o modelo" />
+                </div>
+                <div class="col-sm-6 col-xl-2">
+                    <label class="form-label small text-muted">Riesgo</label>
+                    <select id="telemetry-device-risk" class="form-select">
+                        <option value="">Todos</option>
+                        <option value="critical">Critico</option>
+                        <option value="high">Alto</option>
+                        <option value="medium">Medio</option>
+                        <option value="low">Bajo</option>
+                    </select>
+                </div>
+                <div class="col-sm-6 col-xl-2">
+                    <label class="form-label small text-muted">Red</label>
+                    <select id="telemetry-device-online" class="form-select">
+                        <option value="">Todos</option>
+                        <option value="online">Online</option>
+                        <option value="offline">Offline</option>
+                        <option value="unknown">Sin dato</option>
+                    </select>
+                </div>
+                <div class="col-sm-6 col-xl-2">
+                    <label class="form-label small text-muted">Subred</label>
+                    <input id="telemetry-device-subnet" list="telemetry-subnet-options" type="text" class="form-control" placeholder="10.6.x.x/yy" />
+                    <datalist id="telemetry-subnet-options">
+                        @foreach (var subnet in Model.SubnetRiskSummaries.Select(item => item.SubnetCidr).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct())
+                        {
+                            <option value="@subnet"></option>
+                        }
+                    </datalist>
+                </div>
+                <div class="col-sm-6 col-xl-2">
+                    <label class="form-label small text-muted">Ordenar por</label>
+                    <select id="telemetry-device-sort-by" class="form-select">
+                        <option value="risk">Riesgo</option>
+                        <option value="serial">S/N</option>
+                        <option value="device">Equipo</option>
+                        <option value="user">Usuario</option>
+                        <option value="subnet">Subred</option>
+                        <option value="profile">Perfil</option>
+                        <option value="ip">IP</option>
+                        <option value="os">SO</option>
+                        <option value="model">Modelo</option>
+                        <option value="antivirus">AV</option>
+                        <option value="patch">Parches</option>
+                        <option value="online">Red</option>
+                        <option value="ping">Ping</option>
+                        <option value="observed">Ultima observacion</option>
+                    </select>
+                </div>
+                <div class="col-sm-6 col-xl-2">
+                    <label class="form-label small text-muted">Direccion</label>
+                    <select id="telemetry-device-sort-direction" class="form-select">
+                        <option value="desc">Descendente</option>
+                        <option value="asc">Ascendente</option>
+                    </select>
+                </div>
+                <div class="col-sm-6 col-xl-2">
+                    <label class="form-label small text-muted">Por pagina</label>
+                    <select id="telemetry-device-page-size" class="form-select">
+                        <option value="10" selected>10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="200">200</option>
+                        <option value="500">500</option>
+                    </select>
+                </div>
+                <div class="col-12 col-xl-4">
+                    <div class="telemetry-inline-actions">
+                        <button id="telemetry-device-filter" type="button" class="btn btn-primary">
+                            <i class="bi bi-funnel me-1"></i> Aplicar filtros
+                        </button>
+                        <button id="telemetry-device-clear" type="button" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle me-1"></i> Limpiar
+                        </button>
+                        <button id="telemetry-device-export" type="button" class="btn btn-outline-success">
+                            <i class="bi bi-filetype-csv me-1"></i> Exportar pagina
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mb-3" id="telemetry-device-active-filters"></div>
+        <div id="telemetry-device-summary" class="small text-muted mb-3"></div>
+        <div id="telemetry-device-table" class="text-muted">Cargando equipos observados...</div>
+        <div id="telemetry-device-pagination" class="d-flex justify-content-end gap-2 mt-3"></div>
     </div>
 </div>
 
-<div class="card telemetry-card mb-4">
-    <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="mb-0">Riesgo por subred</h5>
-            <span class="text-muted small">Mapa de calor mas fino</span>
-        </div>
-        @if (Model.SubnetRiskSummaries.Count == 0)
-        {
-            <div class="text-muted">No hay subredes con equipos observados en el ultimo snapshot.</div>
-        }
-        else
-        {
-            <div class="table-responsive">
-                <table class="table align-middle">
-                    <thead>
-                        <tr>
-                            <th>Subred</th>
-                            <th>Equipos</th>
-                            <th>Criticos</th>
-                            <th>Altos</th>
-                            <th>Medios</th>
-                            <th>Bajos</th>
-                            <th>Maximo</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var item in Model.SubnetRiskSummaries.Take(12))
-                        {
-                            <tr>
-                                <td>@item.SubnetCidr</td>
-                                <td>@item.DeviceCount</td>
-                                <td>@item.CriticalCount</td>
-                                <td>@item.HighCount</td>
-                                <td>@item.MediumCount</td>
-                                <td>@item.LowCount</td>
-                                <td>@item.MaxRiskLevel (@item.MaxRiskScore)</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+<div class="telemetry-fixed-grid mb-4">
+    <div class="card telemetry-card">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Riesgo por subred</h5>
+                <button type="button" class="telemetry-help" data-bs-toggle="tooltip" data-bs-placement="left" title="Resumen compacto de riesgo tecnico por subred en el ultimo snapshot.">
+                    <i class="bi bi-info-lg"></i>
+                </button>
             </div>
-        }
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div id="telemetry-subnet-summary" class="small text-muted"></div>
+                <div class="d-flex align-items-center gap-2">
+                    <label class="form-label small text-muted mb-0" for="telemetry-subnet-page-size">Por pagina</label>
+                    <select id="telemetry-subnet-page-size" class="form-select form-select-sm" style="width:auto;">
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                        <option value="50">50</option>
+                    </select>
+                </div>
+            </div>
+            @if (Model.SubnetRiskSummaries.Count == 0)
+            {
+                <div class="text-muted">No hay subredes con equipos observados en el ultimo snapshot.</div>
+            }
+            else
+            {
+                <div id="telemetry-subnet-table"></div>
+                <div id="telemetry-subnet-pagination" class="d-flex justify-content-end gap-2 mt-3"></div>
+            }
+        </div>
     </div>
-</div>
 
-<div class="row g-4 mb-4">
-    <div class="col-md-3">
-        <div class="card telemetry-card">
-            <div class="card-body">
-                <div class="text-muted small">Conectados</div>
-                <div class="fs-3 fw-bold">@Model.SessionOverview.ActiveUserCount</div>
+    <div class="card telemetry-card">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Riesgo tecnico en vivo</h5>
+                <button type="button" class="telemetry-help" data-bs-toggle="tooltip" data-bs-placement="left" title="Indicadores clave del ultimo snapshot para seguimiento rapido del riesgo tecnico en vivo.">
+                    <i class="bi bi-info-lg"></i>
+                </button>
             </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card telemetry-card">
-            <div class="card-body">
-                <div class="text-muted small">Riesgo alto</div>
-                <div class="fs-3 fw-bold">@Model.SessionOverview.LockedUserCount</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card telemetry-card">
-            <div class="card-body">
-                <div class="text-muted small">Identidad incierta</div>
-                <div class="fs-3 fw-bold">@Model.SessionOverview.PendingMfaUserCount</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card telemetry-card">
-            <div class="card-body">
-                <div class="text-muted small">Inactivos</div>
-                <div class="fs-3 fw-bold">@Model.SessionOverview.ExpiredUserCount</div>
+            <div class="row g-2 mb-3">
+                <div class="col-6">
+                    <div class="telemetry-mini-stat">
+                        <div class="text-muted small">Conectados</div>
+                        <div class="fs-4 fw-bold">@Model.SessionOverview.ActiveUserCount</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="telemetry-mini-stat">
+                        <div class="text-muted small">Riesgo alto</div>
+                        <div class="fs-4 fw-bold">@Model.SessionOverview.LockedUserCount</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="telemetry-mini-stat">
+                        <div class="text-muted small">Identidad incierta</div>
+                        <div class="fs-4 fw-bold">@Model.SessionOverview.PendingMfaUserCount</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="telemetry-mini-stat">
+                        <div class="text-muted small">Inactivos</div>
+                        <div class="fs-4 fw-bold">@Model.SessionOverview.ExpiredUserCount</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -353,122 +670,139 @@
     <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="mb-0">Endpoints y estado de red</h5>
-            <span class="text-muted small">Trazado vivo desde IP, host y subred</span>
+            <button type="button" class="telemetry-help" data-bs-toggle="tooltip" data-bs-placement="left" title="Lista de identidades o sesiones detectadas en el ultimo snapshot, con latencia, puertos y cantidad de equipos vinculados.">
+                <i class="bi bi-info-lg"></i>
+            </button>
         </div>
-        @if (Model.SessionOverview.Users.Count == 0)
-        {
-            <div class="text-muted">Todavia no hay endpoints de red con estado calculado.</div>
-        }
-        else
-        {
-            <div class="table-responsive">
-                <table class="table align-middle">
-                    <thead>
-                        <tr>
-                            <th>Endpoint</th>
-                            <th>Perfil</th>
-                            <th>Estado</th>
-                            <th>Subred</th>
-                            <th>Ultima deteccion</th>
-                            
-                            <th>Latencia</th>
-                            <th>Puertos</th>
-                            <th>Riesgo</th>
-                            <th>Equipos</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var user in Model.SessionOverview.Users)
-                        {
-                            <tr>
-                                <td class="fw-semibold">@user.Username</td>
-                                <td>@user.Role</td>
-                                <td><span class="badge bg-@(user.SessionState == "active" ? "success" : user.SessionState == "locked" ? "danger" : user.SessionState == "mfa-pending" ? "warning text-dark" : "secondary")">@user.SessionStateLabel</span></td>
-                                <td>@user.SubnetCidr</td>
-                                <td>@(user.LastSeenAtUtc is null ? "-" : user.LastSeenAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm"))</td>
-                                <td>@(user.PingMs is null ? "-" : $"{user.PingMs} ms")</td>
-                                <td>@user.OpenPorts</td>
-                                <td>@user.RiskLevel (@user.RiskScore)</td>
-                                <td>@user.LinkedDeviceCount</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+        <div class="telemetry-filter-panel p-3 mb-3">
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-4">
+                    <label class="form-label small text-muted">Buscar endpoint</label>
+                    <input id="telemetry-session-search" type="text" class="form-control" placeholder="Usuario, subred o perfil" />
+                </div>
+                <div class="col-lg-3">
+                    <label class="form-label small text-muted">Estado</label>
+                    <select id="telemetry-session-state" class="form-select">
+                        <option value="">Todos</option>
+                        <option value="active">Activo</option>
+                        <option value="locked">Riesgo alto</option>
+                        <option value="mfa-pending">Identidad incierta</option>
+                        <option value="expired">Expirado</option>
+                        <option value="inactive">Inactivo</option>
+                    </select>
+                </div>
+                <div class="col-lg-3">
+                    <label class="form-label small text-muted">Ordenar por</label>
+                    <select id="telemetry-session-sort" class="form-select">
+                        <option value="risk">Riesgo</option>
+                        <option value="username">Endpoint</option>
+                        <option value="role">Perfil</option>
+                        <option value="state">Estado</option>
+                        <option value="subnet">Subred</option>
+                        <option value="lastSeen">Ultima deteccion</option>
+                        <option value="ping">Latencia</option>
+                        <option value="ports">Puertos</option>
+                        <option value="linkedDevices">Equipos</option>
+                    </select>
+                </div>
+                <div class="col-lg-2">
+                    <label class="form-label small text-muted">Por pagina</label>
+                    <select id="telemetry-session-page-size" class="form-select">
+                        <option value="10" selected>10</option>
+                        <option value="20">20</option>
+                        <option value="50">50</option>
+                    </select>
+                </div>
             </div>
-        }
+        </div>
+        <div id="telemetry-session-summary" class="small text-muted mb-3"></div>
+        <div id="telemetry-session-table" class="text-muted">Cargando endpoints...</div>
+        <div id="telemetry-session-pagination" class="d-flex justify-content-end gap-2 mt-3"></div>
     </div>
 </div>
 
 <div class="card telemetry-card mb-4">
     <div class="card-body">
-        <h5 class="mb-3">Snapshots recientes</h5>
-        @if (Model.RecentSnapshots.Count == 0)
-        {
-            <div class="text-muted">No hay snapshots guardados todavia.</div>
-        }
-        else
-        {
-            <div class="table-responsive">
-                <table class="table align-middle">
-                    <thead>
-                        <tr>
-                            <th>Fecha</th>
-                            <th>Fuente</th>
-                            <th>Estado</th>
-                            <th>Usuarios</th>
-                            <th>Equipos</th>
-                            <th>Riesgo</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var item in Model.RecentSnapshots)
-                        {
-                            <tr>
-                                <td>@item.ObservedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
-                                <td>@item.SourceName</td>
-                                <td>@item.Status</td>
-                                <td>@item.ConnectedUserCount</td>
-                                <td>@item.DeviceCount</td>
-                                <td>@item.RiskLevel (@item.RiskScore)</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
-    </div>
-</div>
-
-<div class="card telemetry-card mb-4">
-    <div class="card-body">
-        <h5 class="mb-3">Riesgos destacados</h5>
-        <div id="network-telemetry-observations" class="text-muted">Cargando observaciones destacadas...</div>
-    </div>
-</div>
-
-<div class="card telemetry-card">
-    <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
-                <h5 class="mb-1">Equipos observados en red</h5>
-                <div class="text-muted small">Listado tecnico de PCs y otros equipos capturados por snapshot.</div>
+                <h5 class="mb-1">Administracion de snapshots</h5>
+                <div class="small text-muted">Programados: lun-jue 08:30, 13:30, 17:30 · viernes 08:30, 13:30, 16:30</div>
             </div>
-            <div class="d-flex gap-2 flex-wrap">
-                <input id="telemetry-device-search" type="text" class="form-control" placeholder="Buscar por serie, IP, host o usuario" style="min-width: 280px;" />
-                <select id="telemetry-device-risk" class="form-select" style="min-width: 180px;">
-                    <option value="">Todos los riesgos</option>
-                    <option value="critical">Critico</option>
-                    <option value="high">Alto</option>
-                    <option value="medium">Medio</option>
-                    <option value="low">Bajo</option>
-                </select>
-                <input id="telemetry-device-building" type="text" class="form-control" placeholder="Edificio SR-BLD-..." style="min-width: 180px;" />
-                <button id="telemetry-device-filter" type="button" class="btn btn-primary">Filtrar</button>
+            <button type="button" class="telemetry-help" data-bs-toggle="tooltip" data-bs-placement="left" title="Historial paginado de capturas manuales y automaticas con busqueda, filtros y ordenamiento.">
+                <i class="bi bi-info-lg"></i>
+            </button>
+        </div>
+        <div class="telemetry-filter-panel p-3 mb-3">
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-4">
+                    <label class="form-label small text-muted">Buscar snapshot</label>
+                    <input id="telemetry-snapshot-search" type="text" class="form-control" placeholder="Fuente, estado, notas o usuario" />
+                </div>
+                <div class="col-lg-2">
+                    <label class="form-label small text-muted">Origen</label>
+                    <select id="telemetry-snapshot-trigger" class="form-select">
+                        <option value="">Todos</option>
+                        <option value="manual">Manual</option>
+                        <option value="scheduled">Programado</option>
+                        <option value="automatic">Automatico</option>
+                    </select>
+                </div>
+                <div class="col-lg-2">
+                    <label class="form-label small text-muted">Dia</label>
+                    <select id="telemetry-snapshot-weekday" class="form-select">
+                        <option value="">Todos</option>
+                        <option value="lunes">Lunes</option>
+                        <option value="martes">Martes</option>
+                        <option value="miercoles">Miercoles</option>
+                        <option value="jueves">Jueves</option>
+                        <option value="viernes">Viernes</option>
+                        <option value="sabado">Sabado</option>
+                        <option value="domingo">Domingo</option>
+                    </select>
+                </div>
+                <div class="col-lg-2">
+                    <label class="form-label small text-muted">Hora</label>
+                    <select id="telemetry-snapshot-time-slot" class="form-select">
+                        <option value="">Todas</option>
+                        <option value="08:30">08:30</option>
+                        <option value="13:30">13:30</option>
+                        <option value="16:30">16:30</option>
+                        <option value="17:30">17:30</option>
+                    </select>
+                </div>
+                <div class="col-lg-2">
+                    <label class="form-label small text-muted">Ordenar por</label>
+                    <select id="telemetry-snapshot-sort" class="form-select">
+                        <option value="observedAt">Fecha</option>
+                        <option value="timeSlot">Hora</option>
+                        <option value="sourceName">Fuente</option>
+                        <option value="triggerType">Origen</option>
+                        <option value="deviceCount">Equipos</option>
+                        <option value="connectedUserCount">Usuarios</option>
+                        <option value="riskScore">Riesgo</option>
+                    </select>
+                </div>
+                <div class="col-lg-1">
+                    <label class="form-label small text-muted">Direccion</label>
+                    <select id="telemetry-snapshot-direction" class="form-select">
+                        <option value="desc">Descendente</option>
+                        <option value="asc">Ascendente</option>
+                    </select>
+                </div>
+                <div class="col-lg-1">
+                    <label class="form-label small text-muted">Por pagina</label>
+                    <select id="telemetry-snapshot-page-size" class="form-select">
+                        <option value="10" selected>10</option>
+                        <option value="20">20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
             </div>
         </div>
-        <div id="telemetry-device-summary" class="small text-muted mb-3"></div>
-        <div id="telemetry-device-table" class="text-muted">Cargando equipos observados...</div>
-        <div id="telemetry-device-pagination" class="d-flex justify-content-end gap-2 mt-3"></div>
+        <div id="telemetry-snapshot-summary" class="small text-muted mb-3"></div>
+        <div id="telemetry-snapshot-table" class="text-muted">Cargando snapshots...</div>
+        <div id="telemetry-snapshot-pagination" class="d-flex justify-content-end gap-2 mt-3"></div>
     </div>
 </div>
 
@@ -476,39 +810,43 @@
 {
     <div class="telemetry-scan-modal" id="networkTelemetryScanModal" aria-labelledby="networkTelemetryScanModalLabel" aria-hidden="true">
         <div class="telemetry-scan-dialog">
-            <div class="modal-content border-0 shadow">
+            <div class="modal-content telemetry-scan-card border-0 shadow">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="networkTelemetryScanModalLabel">Escaneo vivo de red</h5>
+                    <div>
+                        <div class="text-uppercase small fw-semibold text-muted mb-1">Agente Windows</div>
+                        <h5 class="modal-title mb-0" id="networkTelemetryScanModalLabel">Escaneo vivo de red</h5>
+                    </div>
                     <button type="button" class="btn-close" id="network-telemetry-close-scan" aria-label="Cerrar"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="alert alert-info">
+                    <div class="telemetry-scan-intro mb-3">
                         Este boton enviara una solicitud al agente Windows. Ese agente es el que debe capturar los usuarios reales de sesion,
                         hostname, fabricante, modelo y datos Windows del equipo.
                     </div>
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" role="switch" id="telemetryResolveSessions" checked />
-                        <label class="form-check-label" for="telemetryResolveSessions">Intentar capturar sesion activa del equipo</label>
+                    <div class="telemetry-scan-section mb-3">
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" role="switch" id="telemetryResolveSessions" checked />
+                            <label class="form-check-label fw-semibold" for="telemetryResolveSessions">Intentar capturar sesion activa del equipo</label>
+                        </div>
+                            <div class="form-text">
+                                Intenta resolver el usuario o sesion activa del equipo ademas del resto de datos observados.
+                            </div>
                     </div>
-                    <div class="mb-3">
+                    <div class="telemetry-scan-section mb-3">
                         <label class="form-label fw-semibold" for="telemetryScanMode">Modo de escaneo</label>
                         <select class="form-select" id="telemetryScanMode">
                             <option value="simple" selected>Simple: usuario/sesion, IP y host. Mas rapido.</option>
                             <option value="full">Completo: agrega puertos, perfil y enriquecimiento extendido.</option>
                         </select>
-                        <div class="form-text">
+                        <div class="form-text mt-2">
                             Usa <strong>Simple</strong> para obtener usuarios activos mas rapido. Usa <strong>Completo</strong> cuando quieras
                             enriquecer el snapshot con mas detalles tecnicos.
                         </div>
                     </div>
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <div class="form-text">
-                                Recomendado: instala el agente una sola vez con
-                                <code>.\tools\install-network-collector-agent.ps1</code>
-                                y luego usa solo este boton desde el dashboard.
-                            </div>
-                        </div>
+                    <div class="telemetry-scan-note mb-3">
+                        Recomendado: instala el agente una sola vez con
+                        <code>.\tools\install-network-collector-agent.ps1</code>
+                        y luego usa solo este boton desde el dashboard.
                     </div>
                     <div id="telemetry-scan-feedback" class="small text-muted mt-3"></div>
                 </div>
@@ -525,15 +863,26 @@
 
 <script>
     (function () {
-        const latestSnapshotId = Number(@Model.LatestSnapshotId);
-        const riskContainer = document.getElementById("network-telemetry-observations");
+        let latestSnapshotId = Number(@Model.LatestSnapshotId);
+        let activeSnapshotId = Number(@Model.ActiveSnapshotId);
         const deviceTable = document.getElementById("telemetry-device-table");
         const deviceSummary = document.getElementById("telemetry-device-summary");
         const devicePagination = document.getElementById("telemetry-device-pagination");
+        const subnetTable = document.getElementById("telemetry-subnet-table");
+        const subnetSummary = document.getElementById("telemetry-subnet-summary");
+        const subnetPagination = document.getElementById("telemetry-subnet-pagination");
+        const subnetPageSizeSelect = document.getElementById("telemetry-subnet-page-size");
         const searchInput = document.getElementById("telemetry-device-search");
         const riskSelect = document.getElementById("telemetry-device-risk");
-        const buildingInput = document.getElementById("telemetry-device-building");
+        const subnetInput = document.getElementById("telemetry-device-subnet");
+        const onlineSelect = document.getElementById("telemetry-device-online");
+        const sortBySelect = document.getElementById("telemetry-device-sort-by");
+        const sortDirectionSelect = document.getElementById("telemetry-device-sort-direction");
+        const pageSizeSelect = document.getElementById("telemetry-device-page-size");
         const filterButton = document.getElementById("telemetry-device-filter");
+        const clearButton = document.getElementById("telemetry-device-clear");
+        const exportButton = document.getElementById("telemetry-device-export");
+        const activeFiltersContainer = document.getElementById("telemetry-device-active-filters");
         const scanButton = document.getElementById("network-telemetry-scan");
         const agentState = document.getElementById("network-telemetry-agent-state");
         const pauseButton = document.getElementById("network-telemetry-pause");
@@ -546,6 +895,32 @@
         const scanFeedback = document.getElementById("telemetry-scan-feedback");
         const resolveSessionsCheckbox = document.getElementById("telemetryResolveSessions");
         const scanModeSelect = document.getElementById("telemetryScanMode");
+        const sessionTable = document.getElementById("telemetry-session-table");
+        const sessionSummary = document.getElementById("telemetry-session-summary");
+        const sessionPagination = document.getElementById("telemetry-session-pagination");
+        const sessionSearchInput = document.getElementById("telemetry-session-search");
+        const sessionStateSelect = document.getElementById("telemetry-session-state");
+        const sessionSortSelect = document.getElementById("telemetry-session-sort");
+        const sessionPageSizeSelect = document.getElementById("telemetry-session-page-size");
+        const snapshotTable = document.getElementById("telemetry-snapshot-table");
+        const snapshotSummary = document.getElementById("telemetry-snapshot-summary");
+        const snapshotPagination = document.getElementById("telemetry-snapshot-pagination");
+        const snapshotSearchInput = document.getElementById("telemetry-snapshot-search");
+        const snapshotTriggerSelect = document.getElementById("telemetry-snapshot-trigger");
+        const snapshotWeekdaySelect = document.getElementById("telemetry-snapshot-weekday");
+        const snapshotTimeSlotSelect = document.getElementById("telemetry-snapshot-time-slot");
+        const snapshotSortSelect = document.getElementById("telemetry-snapshot-sort");
+        const snapshotDirectionSelect = document.getElementById("telemetry-snapshot-direction");
+        const snapshotPageSizeSelect = document.getElementById("telemetry-snapshot-page-size");
+        const sessionUsers = @Html.Raw(JsonSerializer.Serialize(Model.SessionOverview.Users, telemetryJsonOptions));
+        const initialDevicePage = @Html.Raw(ViewData["InitialDevicePageJson"] as string ?? "{}");
+        const initialSnapshotPage = @Html.Raw(ViewData["InitialSnapshotPageJson"] as string ?? "{}");
+        const subnetRiskSummaries = @Html.Raw(JsonSerializer.Serialize(Model.SubnetRiskSummaries, telemetryJsonOptions));
+        let latestDevicePage = null;
+        let pendingSnapshotId = 0;
+        let sessionSortDirection = "desc";
+        let subnetSortBy = "risk";
+        let subnetSortDirection = "desc";
 
         const openScanModal = () => {
             if (!scanModalElement) {
@@ -568,11 +943,21 @@
             document.body.classList.remove("session-warning-open");
         };
 
-        if (!riskContainer || !deviceTable || !deviceSummary || !devicePagination) {
+        if (!deviceTable || !deviceSummary || !devicePagination) {
             return;
         }
 
         filterButton?.addEventListener("click", () => loadDevices(1));
+        clearButton?.addEventListener("click", () => {
+            if (searchInput) searchInput.value = "";
+            if (riskSelect) riskSelect.value = "";
+            if (subnetInput) subnetInput.value = "";
+            if (onlineSelect) onlineSelect.value = "";
+            if (sortBySelect) sortBySelect.value = "risk";
+            if (sortDirectionSelect) sortDirectionSelect.value = "desc";
+            if (pageSizeSelect) pageSizeSelect.value = "10";
+            loadDevices(1);
+        });
         scanButton?.addEventListener("click", () => {
             if (scanFeedback) {
                 scanFeedback.textContent = "";
@@ -699,95 +1084,204 @@
                 loadDevices(1);
             }
         });
+        pageSizeSelect?.addEventListener("change", () => loadDevices(1));
+        sortBySelect?.addEventListener("change", () => loadDevices(1));
+        sortDirectionSelect?.addEventListener("change", () => loadDevices(1));
+        riskSelect?.addEventListener("change", () => loadDevices(1));
+        onlineSelect?.addEventListener("change", () => loadDevices(1));
 
-        if (!latestSnapshotId) {
-            riskContainer.textContent = "Aun no hay observaciones con riesgo para mostrar.";
-            deviceTable.textContent = "Aun no hay equipos observados para mostrar.";
-            return;
-        }
-
-        const renderRiskObservations = (items) => {
-            if (!Array.isArray(items) || items.length === 0) {
-                riskContainer.textContent = "Aun no hay observaciones con riesgo para mostrar.";
+        const renderFilterChips = () => {
+            if (!activeFiltersContainer) {
                 return;
             }
 
-            const rows = items.map((item) => {
-                const reasons = Array.isArray(item.riskReasons) ? item.riskReasons.join(", ") : "";
-                return `
-                    <tr>
-                        <td>${item.observationType || ""}</td>
-                        <td>
-                            <div class="fw-semibold">${item.deviceName || item.hostName || "Sin nombre"}</div>
-                            <div class="small text-muted">${item.externalKey || ""}</div>
-                        </td>
-                        <td>${item.username || ""}</td>
-                        <td>${item.ipAddress || ""}</td>
-                        <td>${item.macAddress || ""}</td>
-                        <td>
-                            <div class="fw-semibold">${item.riskLevel || ""} (${item.riskScore ?? 0})</div>
-                            ${reasons ? `<div class="small text-muted">${reasons}</div>` : ""}
-                        </td>
-                    </tr>`;
-            }).join("");
+            const chips = [];
+            if (searchInput?.value?.trim()) {
+                chips.push(`Busqueda: ${searchInput.value.trim()}`);
+            }
+            if (riskSelect?.value) {
+                chips.push(`Riesgo: ${riskSelect.value}`);
+            }
+            if (onlineSelect?.value) {
+                chips.push(`Red: ${onlineSelect.value}`);
+            }
+            if (subnetInput?.value?.trim()) {
+                chips.push(`Subred: ${subnetInput.value.trim()}`);
+            }
+            if (sortBySelect?.value) {
+                chips.push(`Orden: ${sortBySelect.value} ${sortDirectionSelect?.value || "desc"}`);
+            }
+            if (pageSizeSelect?.value) {
+                chips.push(`Pagina: ${pageSizeSelect.value}`);
+            }
 
-            riskContainer.innerHTML = `
-                <div class="table-responsive">
-                    <table class="table align-middle">
-                        <thead>
-                            <tr>
-                                <th>Tipo</th>
-                                <th>Elemento</th>
-                                <th>Usuario</th>
-                                <th>IP</th>
-                                <th>MAC</th>
-                                <th>Riesgo</th>
-                            </tr>
-                        </thead>
-                        <tbody>${rows}</tbody>
-                    </table>
+            activeFiltersContainer.innerHTML = chips.length === 0
+                ? `<span class="small text-muted">Sin filtros activos.</span>`
+                : chips.map((chip) => `<span class="telemetry-chip">${chip}</span>`).join("");
+        };
+
+        const getSortIcon = (active, direction) => {
+            if (!active) {
+                return "bi-dash-lg";
+            }
+
+            return direction === "asc" ? "bi-chevron-up" : "bi-chevron-down";
+        };
+
+        const chileTimeZone = "America/Santiago";
+
+        const parseApiUtcDate = (value) => {
+            if (!value) {
+                return null;
+            }
+
+            if (value instanceof Date) {
+                return Number.isNaN(value.getTime()) ? null : value;
+            }
+
+            const text = String(value).trim();
+            if (!text) {
+                return null;
+            }
+
+            const normalized = /z|[+\-]\d{2}:\d{2}$/i.test(text) ? text : `${text}Z`;
+            const parsed = new Date(normalized);
+            return Number.isNaN(parsed.getTime()) ? null : parsed;
+        };
+
+        const formatChileDateTime = (value) => {
+            const parsed = parseApiUtcDate(value);
+            if (!parsed) {
+                return "";
+            }
+
+            return new Intl.DateTimeFormat("es-CL", {
+                timeZone: chileTimeZone,
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: false
+            }).format(parsed);
+        };
+
+        const formatChileWeekday = (value) => {
+            const parsed = parseApiUtcDate(value);
+            if (!parsed) {
+                return "";
+            }
+
+            return new Intl.DateTimeFormat("es-CL", {
+                timeZone: chileTimeZone,
+                weekday: "long"
+            }).format(parsed);
+        };
+
+        const formatChileTime = (value) => {
+            const parsed = parseApiUtcDate(value);
+            if (!parsed) {
+                return "";
+            }
+
+            return new Intl.DateTimeFormat("es-CL", {
+                timeZone: chileTimeZone,
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false
+            }).format(parsed);
+        };
+
+        const buildSortableHeader = (label, key, currentSortBy, currentDirection, datasetName) => {
+            const active = currentSortBy === key;
+            return `<button type="button" class="telemetry-sort-button ${active ? "is-active" : ""}" data-${datasetName}-sort="${key}">
+                <span>${label}</span>
+                <i class="bi ${getSortIcon(active, currentDirection)}"></i>
+            </button>`;
+        };
+
+        const renderDeviceLoading = (message = "Consultando equipos observados...") => {
+            if (!deviceTable) {
+                return;
+            }
+
+            deviceTable.innerHTML = `
+                <div class="telemetry-loading-shell">
+                    <div class="telemetry-loading-content">
+                        <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+                        <div class="fw-semibold">${message}</div>
+                        <div class="small text-muted">Estamos recopilando y ordenando los equipos observados de la ultima captura.</div>
+                    </div>
                 </div>`;
         };
 
-        const loadRiskObservations = () => {
-            fetch(`/api/network-telemetry/snapshots/${latestSnapshotId}/observations?take=10`, {
-                credentials: "include",
-                cache: "no-store"
-            })
-                .then((response) => {
-                    if (!response.ok) {
-                        throw new Error(`La API respondio ${response.status}`);
-                    }
+        const renderSessionLoading = (message = "Consultando endpoints...") => {
+            if (!sessionTable) {
+                return;
+            }
 
-                    return response.json();
-                })
-                .then(renderRiskObservations)
-                .catch((error) => {
-                    console.error("Error cargando observaciones de telemetria:", error);
-                    riskContainer.textContent = "No fue posible cargar las observaciones destacadas.";
-                });
+            sessionTable.innerHTML = `
+                <div class="telemetry-loading-shell">
+                    <div class="telemetry-loading-content">
+                        <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+                        <div class="fw-semibold">${message}</div>
+                        <div class="small text-muted">Estamos organizando identidades, estados de sesion y conectividad detectada.</div>
+                    </div>
+                </div>`;
         };
+
+        const renderSnapshotLoading = (message = "Consultando snapshots...") => {
+            if (!snapshotTable) {
+                return;
+            }
+
+            snapshotTable.innerHTML = `
+                <div class="telemetry-loading-shell">
+                    <div class="telemetry-loading-content">
+                        <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+                        <div class="fw-semibold">${message}</div>
+                        <div class="small text-muted">Estamos reuniendo el historial de capturas manuales, automaticas y programadas.</div>
+                    </div>
+                </div>`;
+        };
+
+        const toggleSort = (currentSortBy, currentDirection, nextSortBy) => {
+            if (currentSortBy === nextSortBy) {
+                return currentDirection === "asc" ? "desc" : "asc";
+            }
+
+            return "asc";
+        };
+
+        if (!activeSnapshotId) {
+            deviceTable.textContent = "Aun no hay equipos observados para mostrar.";
+            return;
+        }
 
         const renderDevices = (data) => {
             const items = Array.isArray(data?.items) ? data.items : [];
             const totalCount = Number(data?.totalCount) || 0;
             const page = Number(data?.page) || 1;
             const totalPages = Number(data?.totalPages) || 1;
+            latestDevicePage = data;
+            renderFilterChips();
 
-            deviceSummary.textContent = `Mostrando ${items.length} de ${totalCount} equipos observados.`;
+            deviceSummary.textContent = `Mostrando ${items.length} de ${totalCount} equipos observados. Pagina ${page} de ${totalPages}.`;
 
             if (items.length === 0) {
                 deviceTable.innerHTML = `<div class="text-muted">No se encontraron equipos con ese filtro.</div>`;
             } else {
+                const currentSortBy = data?.sortBy || sortBySelect?.value || "risk";
+                const currentDirection = data?.sortDirection || sortDirectionSelect?.value || "desc";
                 const rows = items.map((item) => `
-                    <tr>
-                        <td>${item.serialNumber || ""}</td>
+                    <tr class="${Number(item.id) === activeSnapshotId ? "telemetry-row-active" : ""}">
+                        <td class="fw-semibold">${item.serialNumber || ""}</td>
                         <td>
                             <div class="fw-semibold">${item.deviceName || item.hostName || "Sin nombre"}</div>
-                            <div class="small text-muted">${item.hostName || ""}</div>
+                            <div class="small text-muted">${item.hostName || ""}${item.processor ? ` | ${item.processor}` : ""}</div>
                         </td>
                         <td>${item.username || ""}</td>
-                        <td>${item.buildingExternalId || ""}</td>
                         <td>${item.subnetCidr || ""}</td>
                         <td>${item.networkProfile || ""}</td>
                         <td>${item.ipAddress || ""}</td>
@@ -796,38 +1290,47 @@
                         <td>${item.manufacturer || ""} ${item.model || ""}</td>
                         <td>${item.antivirusStatus || ""}</td>
                         <td>${item.patchStatus || ""}</td>
-                        <td>${item.isOnline === true ? "Online" : item.isOnline === false ? "Offline" : ""}</td>
-                        <td>${item.pingMs ?? ""}</td>
-                        <td>${item.riskLevel || ""} (${item.riskScore ?? 0})</td>
+                        <td>${item.isOnline === true ? '<span class="badge bg-success-subtle text-success-emphasis">Online</span>' : item.isOnline === false ? '<span class="badge bg-secondary-subtle text-secondary-emphasis">Offline</span>' : '<span class="badge bg-light text-muted">Sin dato</span>'}</td>
+                        <td>${item.pingMs ?? ""}${item.pingMs != null ? " ms" : ""}</td>
+                        <td><span class="telemetry-pill telemetry-pill-${item.riskLevel || "unknown"}">${item.riskLevel || ""} (${item.riskScore ?? 0})</span></td>
                     </tr>
                 `).join("");
 
                 deviceTable.innerHTML = `
-                    <div class="table-responsive">
+                    <div class="telemetry-table-wrap table-responsive">
                         <table class="table align-middle table-sm">
                             <thead>
                                 <tr>
-                                    <th>S/N</th>
-                                    <th>Equipo</th>
-                                    <th>Usuario</th>
-                                    <th>Edificio</th>
-                                    <th>Subred</th>
-                                    <th>Perfil</th>
-                                    <th>IP</th>
-                                    <th>MAC</th>
-                                    <th>SO</th>
-                                    <th>Modelo</th>
-                                    <th>AV</th>
-                                    <th>Parches</th>
-                                    <th>Red</th>
-                                    <th>Ping</th>
-                                    <th>Riesgo</th>
+                                    <th>${buildSortableHeader("S/N", "serial", currentSortBy, currentDirection, "device")}</th>
+                                    <th>${buildSortableHeader("Equipo", "device", currentSortBy, currentDirection, "device")}</th>
+                                    <th>${buildSortableHeader("Usuario", "user", currentSortBy, currentDirection, "device")}</th>
+                                    <th>${buildSortableHeader("Subred", "subnet", currentSortBy, currentDirection, "device")}</th>
+                                    <th>${buildSortableHeader("Perfil", "profile", currentSortBy, currentDirection, "device")}</th>
+                                    <th>${buildSortableHeader("IP", "ip", currentSortBy, currentDirection, "device")}</th>
+                                    <th>${buildSortableHeader("MAC", "mac", currentSortBy, currentDirection, "device")}</th>
+                                    <th>${buildSortableHeader("SO", "os", currentSortBy, currentDirection, "device")}</th>
+                                    <th>${buildSortableHeader("Modelo", "model", currentSortBy, currentDirection, "device")}</th>
+                                    <th>${buildSortableHeader("AV", "antivirus", currentSortBy, currentDirection, "device")}</th>
+                                    <th>${buildSortableHeader("Parches", "patch", currentSortBy, currentDirection, "device")}</th>
+                                    <th>${buildSortableHeader("Red", "online", currentSortBy, currentDirection, "device")}</th>
+                                    <th>${buildSortableHeader("Ping", "ping", currentSortBy, currentDirection, "device")}</th>
+                                    <th>${buildSortableHeader("Riesgo", "risk", currentSortBy, currentDirection, "device")}</th>
                                 </tr>
                             </thead>
                             <tbody>${rows}</tbody>
                         </table>
                     </div>
                 `;
+
+                deviceTable.querySelectorAll("[data-device-sort]").forEach((button) => {
+                    button.addEventListener("click", () => {
+                        const nextSortBy = button.getAttribute("data-device-sort") || "risk";
+                        const nextDirection = toggleSort(sortBySelect?.value || "risk", sortDirectionSelect?.value || "desc", nextSortBy);
+                        if (sortBySelect) sortBySelect.value = nextSortBy;
+                        if (sortDirectionSelect) sortDirectionSelect.value = nextDirection;
+                        loadDevices(1);
+                    });
+                });
             }
 
             const previousDisabled = page <= 1 ? "disabled" : "";
@@ -849,11 +1352,24 @@
         };
 
         const loadDevices = (page = 1) => {
-            deviceTable.textContent = "Consultando equipos observados...";
+            renderDeviceLoading();
+
+            if (page === 1
+                && !deviceTable.dataset.initialized
+                && initialDevicePage
+                && Array.isArray(initialDevicePage.items)
+                && initialDevicePage.items.length > 0
+                && Number(initialDevicePage.snapshotId || 0) === activeSnapshotId) {
+                deviceTable.dataset.initialized = "true";
+                renderDevices(initialDevicePage);
+                return;
+            }
 
             const params = new URLSearchParams({
                 page: String(page),
-                pageSize: "50"
+                pageSize: pageSizeSelect?.value || "10",
+                sortBy: sortBySelect?.value || "risk",
+                sortDirection: sortDirectionSelect?.value || "desc"
             });
 
             if (searchInput?.value?.trim()) {
@@ -862,11 +1378,14 @@
             if (riskSelect?.value) {
                 params.set("riskLevel", riskSelect.value);
             }
-            if (buildingInput?.value?.trim()) {
-                params.set("buildingExternalId", buildingInput.value.trim());
+            if (subnetInput?.value?.trim()) {
+                params.set("subnetCidr", subnetInput.value.trim());
+            }
+            if (onlineSelect?.value) {
+                params.set("onlineState", onlineSelect.value);
             }
 
-            fetch(`/api/network-telemetry/snapshots/${latestSnapshotId}/devices?${params.toString()}`, {
+            fetch(`/api/network-telemetry/snapshots/${activeSnapshotId}/devices?${params.toString()}`, {
                 credentials: "include",
                 cache: "no-store"
             })
@@ -879,7 +1398,379 @@
                 .then(renderDevices)
                 .catch((error) => {
                     console.error("Error cargando equipos de telemetria:", error);
+                    if (!latestDevicePage && initialDevicePage && Array.isArray(initialDevicePage.items) && initialDevicePage.items.length > 0) {
+                        renderDevices(initialDevicePage);
+                        deviceSummary.textContent += " | Mostrando respaldo precargado.";
+                        return;
+                    }
+
                     deviceTable.textContent = "No fue posible cargar el detalle de equipos.";
+                });
+        };
+
+        exportButton?.addEventListener("click", () => {
+            const items = Array.isArray(latestDevicePage?.items) ? latestDevicePage.items : [];
+            if (items.length === 0) {
+                return;
+            }
+
+            const headers = ["serialNumber", "deviceName", "hostName", "username", "buildingExternalId", "subnetCidr", "networkProfile", "ipAddress", "macAddress", "operatingSystem", "operatingSystemVersion", "manufacturer", "model", "antivirusStatus", "patchStatus", "isOnline", "pingMs", "riskLevel", "riskScore"];
+            const csvLines = [
+                headers.join(","),
+                ...items.map((item) => headers.map((header) => {
+                    const value = item?.[header];
+                    const text = value == null ? "" : String(value).replace(/"/g, "\"\"");
+                    return `"${text}"`;
+                }).join(","))
+            ];
+
+            const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `network-telemetry-snapshot-${activeSnapshotId}-page.csv`;
+            link.click();
+            URL.revokeObjectURL(url);
+        });
+
+        const renderClientPager = (container, page, totalPages, callback) => {
+            if (!container) {
+                return;
+            }
+
+            container.innerHTML = `
+                <button type="button" class="btn btn-outline-secondary btn-sm" ${page <= 1 ? "disabled" : ""} data-page="${page - 1}">Anterior</button>
+                <span class="align-self-center small text-muted">Pagina ${page} de ${totalPages}</span>
+                <button type="button" class="btn btn-outline-secondary btn-sm" ${page >= totalPages ? "disabled" : ""} data-page="${page + 1}">Siguiente</button>
+            `;
+
+            container.querySelectorAll("[data-page]").forEach((button) => {
+                button.addEventListener("click", () => callback(Number(button.getAttribute("data-page")) || 1));
+            });
+        };
+
+        const renderSubnetRiskSummaries = (page = 1) => {
+            if (!subnetTable || !subnetSummary || !subnetPagination) {
+                return;
+            }
+
+            let items = Array.isArray(subnetRiskSummaries) ? [...subnetRiskSummaries] : [];
+            const pageSize = Number(subnetPageSizeSelect?.value || "10");
+            items.sort((left, right) => {
+                const leftValue = subnetSortBy === "subnet"
+                    ? String(left.subnetCidr || "")
+                    : subnetSortBy === "devices"
+                        ? Number(left.deviceCount || 0)
+                        : subnetSortBy === "critical"
+                            ? Number(left.criticalCount || 0)
+                            : subnetSortBy === "high"
+                                ? Number(left.highCount || 0)
+                                : subnetSortBy === "medium"
+                                    ? Number(left.mediumCount || 0)
+                                    : subnetSortBy === "low"
+                                        ? Number(left.lowCount || 0)
+                                        : Number(left.maxRiskScore || 0);
+                const rightValue = subnetSortBy === "subnet"
+                    ? String(right.subnetCidr || "")
+                    : subnetSortBy === "devices"
+                        ? Number(right.deviceCount || 0)
+                        : subnetSortBy === "critical"
+                            ? Number(right.criticalCount || 0)
+                            : subnetSortBy === "high"
+                                ? Number(right.highCount || 0)
+                                : subnetSortBy === "medium"
+                                    ? Number(right.mediumCount || 0)
+                                    : subnetSortBy === "low"
+                                        ? Number(right.lowCount || 0)
+                                        : Number(right.maxRiskScore || 0);
+
+                if (typeof leftValue === "string" || typeof rightValue === "string") {
+                    const result = String(leftValue).localeCompare(String(rightValue), "es");
+                    return subnetSortDirection === "asc" ? result : -result;
+                }
+
+                const result = Number(leftValue) - Number(rightValue);
+                return subnetSortDirection === "asc" ? result : -result;
+            });
+            const totalCount = items.length;
+            const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+            const safePage = Math.min(Math.max(1, page), totalPages);
+            const pageItems = items.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+            subnetSummary.textContent = totalCount === 0
+                ? "No hay subredes con equipos observados en el ultimo snapshot."
+                : `Mostrando ${pageItems.length} de ${totalCount} subredes. Pagina ${safePage} de ${totalPages}.`;
+
+            if (pageItems.length === 0) {
+                subnetTable.innerHTML = `<div class="text-muted">No hay subredes con equipos observados en el ultimo snapshot.</div>`;
+            } else {
+                subnetTable.innerHTML = `
+                    <div class="telemetry-table-wrap table-responsive">
+                        <table class="table align-middle table-sm">
+                            <thead>
+                                <tr>
+                                    <th>${buildSortableHeader("Subred", "subnet", subnetSortBy, subnetSortDirection, "subnet")}</th>
+                                    <th>${buildSortableHeader("Eq.", "devices", subnetSortBy, subnetSortDirection, "subnet")}</th>
+                                    <th>${buildSortableHeader("C", "critical", subnetSortBy, subnetSortDirection, "subnet")}</th>
+                                    <th>${buildSortableHeader("A", "high", subnetSortBy, subnetSortDirection, "subnet")}</th>
+                                    <th>${buildSortableHeader("M", "medium", subnetSortBy, subnetSortDirection, "subnet")}</th>
+                                    <th>${buildSortableHeader("B", "low", subnetSortBy, subnetSortDirection, "subnet")}</th>
+                                    <th>${buildSortableHeader("Max.", "risk", subnetSortBy, subnetSortDirection, "subnet")}</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${pageItems.map((item) => `
+                                    <tr class="telemetry-clickable-row" data-subnet-filter="${item.subnetCidr || ""}">
+                                        <td>${item.subnetCidr || ""}</td>
+                                        <td>${item.deviceCount ?? 0}</td>
+                                        <td>${item.criticalCount ?? 0}</td>
+                                        <td>${item.highCount ?? 0}</td>
+                                        <td>${item.mediumCount ?? 0}</td>
+                                        <td>${item.lowCount ?? 0}</td>
+                                        <td><span class="telemetry-pill telemetry-pill-${item.maxRiskLevel || "unknown"}">${item.maxRiskLevel || ""} (${item.maxRiskScore ?? 0})</span></td>
+                                        <td><button type="button" class="btn btn-sm btn-outline-primary" data-subnet-filter="${item.subnetCidr || ""}">Ver</button></td>
+                                    </tr>
+                                `).join("")}
+                            </tbody>
+                        </table>
+                    </div>`;
+            }
+
+            subnetTable.querySelectorAll("[data-subnet-filter]").forEach((button) => {
+                button.addEventListener("click", () => {
+                    if (subnetInput) {
+                        subnetInput.value = button.getAttribute("data-subnet-filter") || "";
+                        loadDevices(1);
+                    }
+                });
+            });
+
+            subnetTable.querySelectorAll("[data-subnet-sort]").forEach((button) => {
+                button.addEventListener("click", () => {
+                    const nextSortBy = button.getAttribute("data-subnet-sort") || "risk";
+                    subnetSortDirection = toggleSort(subnetSortBy, subnetSortDirection, nextSortBy);
+                    subnetSortBy = nextSortBy;
+                    renderSubnetRiskSummaries(1);
+                });
+            });
+
+            renderClientPager(subnetPagination, safePage, totalPages, renderSubnetRiskSummaries);
+        };
+
+        const sessionStateBadge = (state, label) => {
+            if (state === "active") return `<span class="badge bg-success">${label}</span>`;
+            if (state === "locked") return `<span class="badge bg-danger">${label}</span>`;
+            if (state === "mfa-pending") return `<span class="badge bg-warning text-dark">${label}</span>`;
+            return `<span class="badge bg-secondary">${label}</span>`;
+        };
+
+        const buildSessionRows = (items) => items.map((user) => `
+            <tr>
+                <td class="fw-semibold">${user.username || ""}</td>
+                <td>${user.role || ""}</td>
+                <td>${sessionStateBadge(user.sessionState, user.sessionStateLabel || user.sessionState || "")}</td>
+                <td>${user.subnetCidr || ""}</td>
+                <td>${user.lastSeenAtUtc ? new Date(user.lastSeenAtUtc).toLocaleString("es-CL") : "-"}</td>
+                <td>${user.pingMs == null ? "-" : `${user.pingMs} ms`}</td>
+                <td>${user.openPorts || ""}</td>
+                <td><span class="telemetry-pill telemetry-pill-${user.riskLevel || "unknown"}">${user.riskLevel || ""} (${user.riskScore ?? 0})</span></td>
+                <td>${user.linkedDeviceCount ?? 0}</td>
+            </tr>
+        `).join("");
+
+        const renderSessions = (page = 1) => {
+            if (!sessionTable || !sessionSummary || !sessionPagination) {
+                return;
+            }
+
+            renderSessionLoading();
+
+            const search = sessionSearchInput?.value?.trim().toLowerCase() || "";
+            const state = sessionStateSelect?.value || "";
+            const sortBy = sessionSortSelect?.value || "risk";
+            const pageSize = Number(sessionPageSizeSelect?.value || "10");
+
+            let items = Array.isArray(sessionUsers) ? [...sessionUsers] : [];
+            if (search) {
+                items = items.filter((item) =>
+                    [item.username, item.role, item.subnetCidr, item.networkProfile, item.openPorts]
+                        .filter(Boolean)
+                        .join(" ")
+                        .toLowerCase()
+                        .includes(search));
+            }
+            if (state) {
+                items = items.filter((item) => item.sessionState === state);
+            }
+
+            items.sort((left, right) => {
+                const result = sortBy === "username"
+                    ? String(left.username || "").localeCompare(String(right.username || ""), "es")
+                    : sortBy === "role"
+                        ? String(left.role || "").localeCompare(String(right.role || ""), "es")
+                        : sortBy === "state"
+                            ? String(left.sessionStateLabel || left.sessionState || "").localeCompare(String(right.sessionStateLabel || right.sessionState || ""), "es")
+                            : sortBy === "subnet"
+                                ? String(left.subnetCidr || "").localeCompare(String(right.subnetCidr || ""), "es")
+                                : sortBy === "lastSeen"
+                                    ? new Date(left.lastSeenAtUtc || 0) - new Date(right.lastSeenAtUtc || 0)
+                                    : sortBy === "ping"
+                                        ? Number(left.pingMs || 0) - Number(right.pingMs || 0)
+                                        : sortBy === "ports"
+                                            ? String(left.openPorts || "").localeCompare(String(right.openPorts || ""), "es")
+                                            : sortBy === "linkedDevices"
+                                                ? Number(left.linkedDeviceCount || 0) - Number(right.linkedDeviceCount || 0)
+                                                : Number(left.riskScore || 0) - Number(right.riskScore || 0);
+                return sessionSortDirection === "asc" ? result : -result;
+            });
+
+            const totalCount = items.length;
+            const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+            const safePage = Math.min(Math.max(1, page), totalPages);
+            const pageItems = items.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+            sessionSummary.textContent = `Mostrando ${pageItems.length} de ${totalCount} endpoints.`;
+            sessionTable.innerHTML = totalCount === 0
+                ? `<div class="text-muted">No hay endpoints para ese filtro.</div>`
+                : `<div class="telemetry-table-wrap table-responsive"><table class="table align-middle"><thead><tr><th>${buildSortableHeader("Endpoint", "username", sortBy, sessionSortDirection, "session")}</th><th>${buildSortableHeader("Perfil", "role", sortBy, sessionSortDirection, "session")}</th><th>${buildSortableHeader("Estado", "state", sortBy, sessionSortDirection, "session")}</th><th>${buildSortableHeader("Subred", "subnet", sortBy, sessionSortDirection, "session")}</th><th>${buildSortableHeader("Ultima deteccion", "lastSeen", sortBy, sessionSortDirection, "session")}</th><th>${buildSortableHeader("Latencia", "ping", sortBy, sessionSortDirection, "session")}</th><th>${buildSortableHeader("Puertos", "ports", sortBy, sessionSortDirection, "session")}</th><th>${buildSortableHeader("Riesgo", "risk", sortBy, sessionSortDirection, "session")}</th><th>${buildSortableHeader("Equipos", "linkedDevices", sortBy, sessionSortDirection, "session")}</th></tr></thead><tbody>${buildSessionRows(pageItems)}</tbody></table></div>`;
+
+            sessionTable.querySelectorAll("[data-session-sort]").forEach((button) => {
+                button.addEventListener("click", () => {
+                    const nextSortBy = button.getAttribute("data-session-sort") || "risk";
+                    sessionSortDirection = toggleSort(sessionSortSelect?.value || "risk", sessionSortDirection, nextSortBy);
+                    if (sessionSortSelect) {
+                        sessionSortSelect.value = nextSortBy;
+                    }
+                    renderSessions(1);
+                });
+            });
+
+            renderClientPager(sessionPagination, safePage, totalPages, renderSessions);
+        };
+
+        const renderSnapshots = (data) => {
+            if (!snapshotTable || !snapshotSummary || !snapshotPagination) {
+                return;
+            }
+
+            const items = Array.isArray(data?.items) ? data.items : [];
+            const totalCount = Number(data?.totalCount) || 0;
+            const page = Number(data?.page) || 1;
+            const totalPages = Number(data?.totalPages) || 1;
+
+            snapshotSummary.textContent = `Mostrando ${items.length} de ${totalCount} snapshots. Pagina ${page} de ${totalPages}.`;
+            snapshotTable.innerHTML = items.length === 0
+                ? `<div class="text-muted">No hay snapshots para ese filtro.</div>`
+                : `<div class="telemetry-table-wrap table-responsive"><table class="table align-middle"><thead><tr><th>Fecha</th><th>Fuente</th><th>Estado</th><th>Usuarios</th><th>Equipos</th><th>Riesgo</th></tr></thead><tbody>${items.map((item) => `
+                    <tr>
+                        <td>${item.observedAtUtc ? new Date(item.observedAtUtc).toLocaleString("es-CL") : ""}</td>
+                        <td><div class="fw-semibold">${item.sourceName || ""}</div><div class="small text-muted">${item.sourceType || ""} · ${item.triggerLabel || ""}</div></td>
+                        <td><div>${item.status || ""}</div><div class="small text-muted">${item.createdByUsername || ""}</div></td>
+                        <td>${item.connectedUserCount ?? 0}</td>
+                        <td>${item.deviceCount ?? 0}</td>
+                        <td><span class="telemetry-pill telemetry-pill-${item.riskLevel || "unknown"}">${item.riskLevel || ""} (${item.riskScore ?? 0})</span></td>
+                    </tr>`).join("")}</tbody></table></div>`;
+
+            renderClientPager(snapshotPagination, page, totalPages, loadSnapshots);
+        };
+
+        const renderSnapshotsEnhanced = (data) => {
+            if (!snapshotTable || !snapshotSummary || !snapshotPagination) {
+                return;
+            }
+
+            const items = Array.isArray(data?.items) ? data.items : [];
+            const totalCount = Number(data?.totalCount) || 0;
+            const page = Number(data?.page) || 1;
+            const totalPages = Number(data?.totalPages) || 1;
+            const currentSortBy = data?.sortBy || snapshotSortSelect?.value || "observedAt";
+            const currentDirection = data?.sortDirection || snapshotDirectionSelect?.value || "desc";
+
+            snapshotSummary.textContent = `Mostrando ${items.length} de ${totalCount} snapshots. Pagina ${page} de ${totalPages}.`;
+            snapshotTable.innerHTML = items.length === 0
+                ? `<div class="text-muted">No hay snapshots para ese filtro.</div>`
+                : `<div class="telemetry-table-wrap table-responsive"><table class="table align-middle"><thead><tr><th>${buildSortableHeader("Fecha", "observedAt", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Dia", "weekday", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Hora", "timeSlot", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Fuente", "sourceName", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Estado", "triggerType", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Usuarios", "connectedUserCount", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Equipos", "deviceCount", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Riesgo", "riskScore", currentSortBy, currentDirection, "snapshot")}</th><th></th></tr></thead><tbody>${items.map((item) => `
+                    <tr>
+                        <td>${formatChileDateTime(item.observedAtUtc)}</td>
+                        <td>${formatChileWeekday(item.observedAtUtc)}</td>
+                        <td>${formatChileTime(item.observedAtUtc)}</td>
+                        <td><div class="fw-semibold">${item.sourceName || ""}</div><div class="small text-muted">${item.sourceType || ""} · ${item.triggerLabel || ""}</div></td>
+                        <td><div>${item.status || ""}</div><div class="small text-muted">${item.createdByUsername || ""}</div></td>
+                        <td>${item.connectedUserCount ?? 0}</td>
+                        <td>${item.deviceCount ?? 0}</td>
+                        <td><span class="telemetry-pill telemetry-pill-${item.riskLevel || "unknown"}">${item.riskLevel || ""} (${item.riskScore ?? 0})</span></td>
+                        <td class="text-end">${Number(item.id) === activeSnapshotId ? '<span class="badge bg-primary-subtle text-primary-emphasis me-2">Activa</span>' : ''}<a href="/dashboard/network-telemetry?snapshotId=${item.id}" class="btn btn-sm btn-outline-primary">Abrir</a></td>
+                    </tr>`).join("")}</tbody></table></div>`;
+
+            snapshotTable.querySelectorAll("[data-snapshot-sort]").forEach((button) => {
+                button.addEventListener("click", () => {
+                    const nextSortBy = button.getAttribute("data-snapshot-sort") || "observedAt";
+                    const nextDirection = toggleSort(snapshotSortSelect?.value || "observedAt", snapshotDirectionSelect?.value || "desc", nextSortBy);
+                    if (snapshotSortSelect) snapshotSortSelect.value = nextSortBy;
+                    if (snapshotDirectionSelect) snapshotDirectionSelect.value = nextDirection;
+                    loadSnapshots(1);
+                });
+            });
+
+            renderClientPager(snapshotPagination, page, totalPages, loadSnapshots);
+        };
+
+        const loadSnapshots = (page = 1) => {
+            if (!snapshotTable) {
+                return;
+            }
+
+            renderSnapshotLoading();
+            if (page === 1
+                && !snapshotTable.dataset.initialized
+                && initialSnapshotPage
+                && Array.isArray(initialSnapshotPage.items)
+                && initialSnapshotPage.items.length > 0) {
+                snapshotTable.dataset.initialized = "true";
+                renderSnapshotsEnhanced(initialSnapshotPage);
+                return;
+            }
+            const params = new URLSearchParams({
+                page: String(page),
+                pageSize: snapshotPageSizeSelect?.value || "10",
+                sortBy: snapshotSortSelect?.value || "observedAt",
+                sortDirection: snapshotDirectionSelect?.value || "desc"
+            });
+
+            if (snapshotSearchInput?.value?.trim()) {
+                params.set("search", snapshotSearchInput.value.trim());
+            }
+            if (snapshotTriggerSelect?.value) {
+                params.set("triggerType", snapshotTriggerSelect.value);
+            }
+            if (snapshotWeekdaySelect?.value) {
+                params.set("weekday", snapshotWeekdaySelect.value);
+            }
+            if (snapshotTimeSlotSelect?.value) {
+                params.set("timeSlot", snapshotTimeSlotSelect.value);
+            }
+
+            fetch(`/api/network-telemetry/snapshots?${params.toString()}`, {
+                credentials: "include",
+                cache: "no-store"
+            })
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error(`La API respondio ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(renderSnapshotsEnhanced)
+                .catch((error) => {
+                    console.error("Error cargando snapshots de telemetria:", error);
+                    if (initialSnapshotPage && Array.isArray(initialSnapshotPage.items) && initialSnapshotPage.items.length > 0) {
+                        renderSnapshotsEnhanced(initialSnapshotPage);
+                        snapshotSummary.textContent += " | Mostrando respaldo precargado.";
+                        return;
+                    }
+
+                    snapshotTable.textContent = "No fue posible cargar el historial de snapshots.";
                 });
         };
 
@@ -891,8 +1782,8 @@
             const state = status?.state || "idle";
             const message = status?.message || "Sin actividad reciente del agente Windows.";
             const snapshotId = Number(status?.snapshotId) || 0;
-            const updatedAt = status?.updatedAtUtc ? new Date(status.updatedAtUtc).toLocaleString("es-CL") : "";
-            const heartbeatAt = status?.lastHeartbeatAtUtc ? new Date(status.lastHeartbeatAtUtc).toLocaleString("es-CL") : "";
+            const updatedAt = formatChileDateTime(status?.updatedAtUtc);
+            const heartbeatAt = formatChileDateTime(status?.lastHeartbeatAtUtc);
             const isConnected = !!status?.isConnected;
             const agentId = status?.agentId || "sin agente";
             const totalHosts = Number(status?.totalHosts) || 0;
@@ -900,13 +1791,65 @@
             const currentIpAddress = status?.currentIpAddress || "";
             const currentHostName = status?.currentHostName || "";
             const currentSubnetCidr = status?.currentSubnetCidr || "";
-            const progressText = totalHosts > 0
-                ? ` | progreso ${processedHosts}/${totalHosts}${currentSubnetCidr ? ` | subred ${currentSubnetCidr}` : ""}${currentIpAddress ? ` | IP ${currentIpAddress}` : ""}${currentHostName ? ` | host ${currentHostName}` : ""}`
+            const currentStage = status?.currentStage || "";
+            const progressPercent = totalHosts > 0 ? Math.min(100, Math.max(0, Math.round((processedHosts / totalHosts) * 100))) : 0;
+            const connectionTone = isConnected ? "success" : "secondary";
+            const stateTone = state === "completed"
+                ? "success"
+                : state === "failed"
+                    ? "danger"
+                    : state === "paused" || state === "stopping"
+                        ? "warning text-dark"
+                        : "info";
+
+            if (snapshotId > 0 && snapshotId !== latestSnapshotId && state === "completed") {
+                pendingSnapshotId = snapshotId;
+            }
+
+            const refreshButton = pendingSnapshotId > 0
+                ? `<button type="button" class="btn btn-sm btn-light fw-semibold" id="telemetry-refresh-snapshot">
+                        <i class="bi bi-arrow-repeat me-1"></i> Cargar ultimo snapshot
+                   </button>`
                 : "";
 
-            agentState.textContent = heartbeatAt
-                ? `Agente ${agentId}: ${isConnected ? "conectado" : "desconectado"} | ${message}${progressText} | ultimo latido ${heartbeatAt}${updatedAt ? ` | estado ${updatedAt}` : ""}`
-                : `Agente ${agentId}: ${isConnected ? "conectado" : "desconectado"} | ${message}${progressText}`;
+            agentState.innerHTML = `
+                <div class="telemetry-agent-shell">
+                    <div class="telemetry-agent-top">
+                        <span class="badge bg-${connectionTone}">${isConnected ? "Conectado" : "Desconectado"}</span>
+                        <span class="badge bg-${stateTone}">${state || "idle"}</span>
+                        <span class="fw-semibold text-white">${agentId}</span>
+                        ${refreshButton}
+                    </div>
+                    <div class="text-white">${message}</div>
+                    ${totalHosts > 0 ? `
+                        <div class="telemetry-progress" aria-label="Progreso de escaneo">
+                            <span style="width:${progressPercent}%"></span>
+                        </div>
+                        <div class="telemetry-agent-meta">
+                            <span class="telemetry-agent-stat"><i class="bi bi-hdd-network"></i> ${processedHosts}/${totalHosts} hosts</span>
+                            ${currentSubnetCidr ? `<span class="telemetry-agent-stat"><i class="bi bi-diagram-3"></i> ${currentSubnetCidr}</span>` : ""}
+                            ${currentIpAddress ? `<span class="telemetry-agent-stat"><i class="bi bi-router"></i> ${currentIpAddress}</span>` : ""}
+                            ${currentHostName ? `<span class="telemetry-agent-stat"><i class="bi bi-pc-display"></i> ${currentHostName}</span>` : ""}
+                            ${currentStage ? `<span class="telemetry-agent-stat"><i class="bi bi-activity"></i> ${currentStage}</span>` : ""}
+                        </div>` : ""}
+                    <div class="telemetry-agent-meta">
+                        ${heartbeatAt ? `<span class="telemetry-agent-stat"><i class="bi bi-heart-pulse"></i> Latido ${heartbeatAt}</span>` : ""}
+                        ${updatedAt ? `<span class="telemetry-agent-stat"><i class="bi bi-clock-history"></i> Estado ${updatedAt}</span>` : ""}
+                        ${snapshotId > 0 ? `<span class="telemetry-agent-stat"><i class="bi bi-database-check"></i> Snapshot ${snapshotId}</span>` : ""}
+                    </div>
+                </div>`;
+
+            document.getElementById("telemetry-refresh-snapshot")?.addEventListener("click", () => {
+                const refreshButton = document.getElementById("telemetry-refresh-snapshot");
+                if (refreshButton instanceof HTMLButtonElement) {
+                    refreshButton.disabled = true;
+                    refreshButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Cargando...';
+                }
+
+                window.setTimeout(() => {
+                    window.location.href = `/dashboard/network-telemetry?t=${Date.now()}`;
+                }, 120);
+            });
 
             if (scanButton) {
                 scanButton.disabled = !isConnected || state === "running" || state === "pending";
@@ -932,7 +1875,7 @@
             }
 
             if (reloadWhenCompleted && state === "completed" && snapshotId > 0 && snapshotId !== latestSnapshotId) {
-                window.location.reload();
+                pendingSnapshotId = snapshotId;
             }
         };
 
@@ -953,8 +1896,29 @@
                 });
         };
 
-        loadRiskObservations();
+        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((element) => {
+            if (window.bootstrap?.Tooltip) {
+                new bootstrap.Tooltip(element);
+            }
+        });
+
+        sessionSearchInput?.addEventListener("input", () => renderSessions(1));
+        sessionStateSelect?.addEventListener("change", () => renderSessions(1));
+        sessionSortSelect?.addEventListener("change", () => renderSessions(1));
+        sessionPageSizeSelect?.addEventListener("change", () => renderSessions(1));
+        subnetPageSizeSelect?.addEventListener("change", () => renderSubnetRiskSummaries(1));
+        snapshotSearchInput?.addEventListener("input", () => loadSnapshots(1));
+        snapshotTriggerSelect?.addEventListener("change", () => loadSnapshots(1));
+        snapshotWeekdaySelect?.addEventListener("change", () => loadSnapshots(1));
+        snapshotTimeSlotSelect?.addEventListener("change", () => loadSnapshots(1));
+        snapshotSortSelect?.addEventListener("change", () => loadSnapshots(1));
+        snapshotDirectionSelect?.addEventListener("change", () => loadSnapshots(1));
+        snapshotPageSizeSelect?.addEventListener("change", () => loadSnapshots(1));
+
+        renderSubnetRiskSummaries(1);
         loadDevices(1);
+        renderSessions(1);
+        loadSnapshots(1);
         loadAgentStatus(false);
         window.setInterval(() => loadAgentStatus(true), 5000);
     })();

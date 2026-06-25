@@ -417,16 +417,11 @@ public class AuthController : Controller
             return Unauthorized();
         }
 
-        var rememberMe = string.Equals(
-            authResult.Principal.FindFirstValue(RememberMeClaimType),
-            "true",
-            StringComparison.OrdinalIgnoreCase);
         var properties = authResult.Properties ?? new AuthenticationProperties();
         properties.AllowRefresh = true;
-        properties.IsPersistent = rememberMe;
-        properties.ExpiresUtc = rememberMe
-            ? DateTimeOffset.UtcNow.AddDays(_configuration.GetValue<double?>("SessionSettings:RememberMeDays") ?? 30)
-            : DateTimeOffset.UtcNow.AddMinutes(_configuration.GetValue<double?>("SessionSettings:IdleMinutes") ?? 15);
+        properties.IsPersistent = false;
+        properties.ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(
+            _configuration.GetValue<double?>("SessionSettings:IdleMinutes") ?? 15);
 
         await HttpContext.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
@@ -510,16 +505,15 @@ public class AuthController : Controller
 
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
-        var expiresUtc = rememberMe
-            ? DateTimeOffset.UtcNow.AddDays(_configuration.GetValue<double?>("SessionSettings:RememberMeDays") ?? 30)
-            : DateTimeOffset.UtcNow.AddMinutes(_configuration.GetValue<double?>("SessionSettings:IdleMinutes") ?? 15);
+        var expiresUtc = DateTimeOffset.UtcNow.AddMinutes(
+            _configuration.GetValue<double?>("SessionSettings:IdleMinutes") ?? 15);
 
         await HttpContext.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
             principal,
             new AuthenticationProperties
             {
-                IsPersistent = rememberMe,
+                IsPersistent = false,
                 AllowRefresh = true,
                 ExpiresUtc = expiresUtc
             });

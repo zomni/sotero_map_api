@@ -49,6 +49,10 @@
         var inconsistencyLabel = Model.AvailableInconsistencyTypes.FirstOrDefault(option => option.Value == Model.InconsistencyType)?.Label ?? Model.InconsistencyType;
         activeFilters.Add($"Tipo de incongruencia: {inconsistencyLabel}");
     }
+    foreach (var columnFilter in Model.ColumnFilters)
+    {
+        activeFilters.Add($"{columnFilter.Label}: {columnFilter.Value}");
+    }
     if (Context?.Request?.Query.ContainsKey("sortBy") == true && !string.IsNullOrWhiteSpace(Model.SortBy))
     {
         activeFilters.Add($"Orden: {Model.SortBy} ({(Model.SortDirection == "desc" ? "desc" : "asc")})");
@@ -102,48 +106,67 @@
     var currentInventoryUrl = $"{Context?.Request?.Path}{Context?.Request?.QueryString}";
     string NextSortDirection(string column) => Model.SortBy == column && Model.SortDirection == "asc" ? "desc" : "asc";
     string SortArrow(string column) => Model.SortBy != column ? "bi bi-dash-lg" : (Model.SortDirection == "asc" ? "bi bi-chevron-down" : "bi bi-chevron-up");
-    string SortUrl(string column) => Url.Action("Inventory", new
+    List<KeyValuePair<string, string?>> BuildInventoryQuery(
+        int? pageOverride = null,
+        string? sortByOverride = null,
+        string? sortDirectionOverride = null,
+        string? inconsistencyTypeOverride = null,
+        int? pageSizeOverride = null,
+        int? removeColumnFilterIndex = null)
     {
-        search = Model.Search,
-        category = Model.Category,
-        status = Model.Status,
-        assignment = Model.AssignmentFilter,
-        buildingExternalId = Model.BuildingExternalId,
-        sortBy = column,
-        sortDirection = NextSortDirection(column),
-        inconsistencyType = Model.InconsistencyType,
-        onlyInconsistencies = legacyOnlyInconsistencies,
-        page = 1,
-        pageSize = Model.PageSize
-    }) ?? "/admin/inventory";
-    string PageUrl(int targetPage) => Url.Action("Inventory", new
-    {
-        search = Model.Search,
-        category = Model.Category,
-        status = Model.Status,
-        assignment = Model.AssignmentFilter,
-        buildingExternalId = Model.BuildingExternalId,
-        sortBy = Model.SortBy,
-        sortDirection = Model.SortDirection,
-        inconsistencyType = Model.InconsistencyType,
-        onlyInconsistencies = legacyOnlyInconsistencies,
-        page = targetPage,
-        pageSize = Model.PageSize
-    }) ?? "/admin/inventory";
-    string InconsistencyTypeUrl(string value) => Url.Action("Inventory", new
-    {
-        search = Model.Search,
-        category = Model.Category,
-        status = Model.Status,
-        assignment = Model.AssignmentFilter,
-        buildingExternalId = Model.BuildingExternalId,
-        sortBy = Model.SortBy,
-        sortDirection = Model.SortDirection,
-        inconsistencyType = value,
-        onlyInconsistencies = legacyOnlyInconsistencies,
-        page = 1,
-        pageSize = Model.PageSize
-    }) ?? "/admin/inventory";
+        var query = new List<KeyValuePair<string, string?>>();
+
+        void Add(string key, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                query.Add(new KeyValuePair<string, string?>(key, value));
+            }
+        }
+
+        Add("search", Model.Search);
+        Add("category", Model.Category);
+        Add("status", Model.Status);
+        Add("assignment", Model.AssignmentFilter);
+        Add("buildingExternalId", Model.BuildingExternalId);
+        Add("sortBy", sortByOverride ?? Model.SortBy);
+        Add("sortDirection", sortDirectionOverride ?? Model.SortDirection);
+        Add("inconsistencyType", inconsistencyTypeOverride ?? Model.InconsistencyType);
+        if (legacyOnlyInconsistencies)
+        {
+            Add("onlyInconsistencies", "true");
+        }
+
+        query.Add(new KeyValuePair<string, string?>("page", (pageOverride ?? 1).ToString()));
+        query.Add(new KeyValuePair<string, string?>("pageSize", (pageSizeOverride ?? Model.PageSize).ToString()));
+
+        for (var index = 0; index < Model.ColumnFilters.Count; index++)
+        {
+            if (removeColumnFilterIndex.HasValue && removeColumnFilterIndex.Value == index)
+            {
+                continue;
+            }
+
+            query.Add(new KeyValuePair<string, string?>("filterField", Model.ColumnFilters[index].Field));
+            query.Add(new KeyValuePair<string, string?>("filterValue", Model.ColumnFilters[index].Value));
+        }
+
+        return query;
+    }
+    string BuildInventoryUrl(
+        int? pageOverride = null,
+        string? sortByOverride = null,
+        string? sortDirectionOverride = null,
+        string? inconsistencyTypeOverride = null,
+        int? pageSizeOverride = null,
+        int? removeColumnFilterIndex = null)
+        => Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
+            "/admin/inventory",
+            BuildInventoryQuery(pageOverride, sortByOverride, sortDirectionOverride, inconsistencyTypeOverride, pageSizeOverride, removeColumnFilterIndex));
+    string SortUrl(string column) => BuildInventoryUrl(1, column, NextSortDirection(column));
+    string PageUrl(int targetPage) => BuildInventoryUrl(targetPage);
+    string InconsistencyTypeUrl(string value) => BuildInventoryUrl(1, null, null, value);
+    string RemoveColumnFilterUrl(int index) => BuildInventoryUrl(1, null, null, null, null, index);
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -217,6 +240,72 @@
     white-space: normal;
     word-break: break-word;
     vertical-align: top;
+  }
+
+  .inventory-filter-panel {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 1rem;
+    background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
+    padding: 1.25rem;
+  }
+
+  .inventory-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.8rem;
+    border-radius: 0.9rem;
+    border: 1px solid rgba(14, 116, 144, 0.18);
+    background: #ffffff;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  }
+
+  .inventory-filter-chip.passive {
+    border-color: rgba(148, 163, 184, 0.24);
+  }
+
+  .inventory-filter-chip .chip-label {
+    color: #0f766e;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .inventory-filter-chip .chip-value {
+    color: #0f172a;
+    font-weight: 600;
+  }
+
+  .inventory-filter-chip .chip-remove {
+    color: #ea580c;
+    text-decoration: none;
+    font-size: 0.95rem;
+    line-height: 1;
+  }
+
+  .inventory-filter-fixed {
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 0.9rem;
+    background: #fff;
+    padding: 0.85rem;
+    height: 100%;
+  }
+
+  .inventory-filter-fixed .filter-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #475569;
+    margin-bottom: 0.55rem;
+  }
+
+  .inventory-filter-active-bar {
+    border: 1px dashed rgba(14, 116, 144, 0.18);
+    border-radius: 0.9rem;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 0.85rem;
   }
 </style>
 
@@ -327,100 +416,154 @@
 
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
-        <form method="get" action="/admin/inventory" class="row g-3 align-items-end">
-            <div class="col-lg-3 position-relative js-autocomplete">
-                <label class="form-label">Buscar</label>
-                <input type="text"
-                       name="search"
-                       value="@Model.Search"
-                       data-autocomplete-endpoint="/admin/suggestions/inventory"
-                       data-autocomplete-min="2"
-                       class="form-control"
-                       placeholder="S/N, descripcion, usuario, IP..." />
-                <div class="list-group position-absolute w-100 shadow-sm js-autocomplete-list" style="z-index: 1050; display: none;"></div>
-            </div>
-            <div class="col-lg-2">
-                <label class="form-label">Categoria</label>
-                <select name="category" class="form-select">
-                    <option value="">Todas</option>
-                    @foreach (var option in Model.Categories)
-                    {
-                        <option value="@option" selected="@(Model.Category == option)">@option</option>
-                    }
-                </select>
-            </div>
-            <div class="col-lg-2">
-                <label class="form-label">Estado</label>
-                <select name="status" class="form-select">
-                    <option value="">Todos</option>
-                    @foreach (var option in Model.Statuses)
-                    {
-                        <option value="@option" selected="@(Model.Status == option)">@option</option>
-                    }
-                </select>
-            </div>
-            <div class="col-lg-2">
-                <label class="form-label">Asignacion</label>
-                <select name="assignment" class="form-select">
-                    <option value="pending" selected="@(Model.AssignmentFilter == "pending")">Pendientes</option>
-                    <option value="assigned" selected="@(Model.AssignmentFilter == "assigned")">Asignados</option>
-                    <option value="suggested" selected="@(Model.AssignmentFilter == "suggested")">Con sugerencia</option>
-                    <option value="inconsistent" selected="@(Model.AssignmentFilter == "inconsistent" || (Model.AssignmentFilter == "all" && isInconsistencyView))">Con incongruencias</option>
-                    <option value="all" selected="@(Model.AssignmentFilter == "all" && !isInconsistencyView)">Todos</option>
-                </select>
-            </div>
-            <div class="col-lg-3">
-                <label class="form-label">Edificio asignado</label>
-                <select name="buildingExternalId" class="form-select">
-                    <option value="">Todos</option>
-                    @foreach (var building in Model.Buildings)
-                    {
-                        <option value="@building.ExternalId" selected="@(Model.BuildingExternalId == building.ExternalId)">
-                            @building.EffectiveDisplayName
-                        </option>
-                    }
-                </select>
-            </div>
-            <div class="col-lg-auto">
-                <label class="form-label">Por pagina</label>
-                <select name="pageSize" class="form-select w-auto js-page-size-select" style="min-width: 88px;">
-                    @foreach (var size in pageSizeOptions)
-                    {
-                        <option value="@size" selected="@(Model.PageSize == size)">@size</option>
-                    }
-                </select>
-            </div>
-            <div class="col-lg-8">
-                <input type="hidden" name="page" value="1" />
-                <input type="hidden" name="sortBy" value="@Model.SortBy" />
-                <input type="hidden" name="sortDirection" value="@Model.SortDirection" />
-                <input type="hidden" name="inconsistencyType" value="@Model.InconsistencyType" />
-                <div class="d-flex gap-2">
-                    <button type="submit" class="btn btn-outline-primary flex-grow-1">
-                        <i class="bi bi-funnel me-1"></i> Filtrar
-                    </button>
-                    <a href="/admin/inventory" class="btn btn-secondary" title="Limpiar filtros" aria-label="Limpiar filtros">
-                        <i class="bi bi-x-circle"></i>
-                    </a>
+        <form method="get" action="/admin/inventory" class="inventory-filter-panel">
+            <input type="hidden" name="page" value="1" />
+            <input type="hidden" name="sortBy" value="@Model.SortBy" />
+            <input type="hidden" name="sortDirection" value="@Model.SortDirection" />
+            <input type="hidden" name="inconsistencyType" value="@Model.InconsistencyType" />
+            @foreach (var columnFilter in Model.ColumnFilters)
+            {
+                <input type="hidden" name="filterField" value="@columnFilter.Field" />
+                <input type="hidden" name="filterValue" value="@columnFilter.Value" />
+            }
+
+            @if (hasActiveFilters)
+            {
+                <div class="inventory-filter-active-bar mb-3">
+                    <div class="small text-muted mb-2">Filtros activos (@activeFilters.Count)</div>
+                    <div class="d-flex flex-wrap gap-2">
+                        @foreach (var columnFilter in Model.ColumnFilters.Select((filter, index) => new { filter, index }))
+                        {
+                            <div class="inventory-filter-chip">
+                                <span class="chip-label">@columnFilter.filter.Label</span>
+                                <span class="chip-value">@columnFilter.filter.Value</span>
+                                <a href="@RemoveColumnFilterUrl(columnFilter.index)"
+                                   class="chip-remove"
+                                   title="Quitar filtro"
+                                   aria-label="Quitar filtro">
+                                    <i class="bi bi-x-lg"></i>
+                                </a>
+                            </div>
+                        }
+
+                        @foreach (var filter in activeFilters.Where(filter => !Model.ColumnFilters.Any(columnFilter => $"{columnFilter.Label}: {columnFilter.Value}" == filter)))
+                        {
+                            <div class="inventory-filter-chip passive">
+                                <span class="chip-value">@filter</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="row g-3">
+                <div class="col-xl-3 col-lg-6">
+                    <div class="inventory-filter-fixed position-relative js-autocomplete">
+                        <div class="filter-title">Busqueda general</div>
+                        <input type="text"
+                               name="search"
+                               value="@Model.Search"
+                               data-autocomplete-endpoint="/dashboard/suggestions/inventory"
+                               data-autocomplete-min="2"
+                               class="form-control"
+                               placeholder="S/N, descripcion, usuario, IP..." />
+                        <div class="list-group position-absolute w-100 shadow-sm js-autocomplete-list" style="z-index: 1050; display: none;"></div>
+                    </div>
+                </div>
+                <div class="col-xl-2 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Categoria</div>
+                        <select name="category" class="form-select">
+                            <option value="">Todas</option>
+                            @foreach (var option in Model.Categories)
+                            {
+                                <option value="@option" selected="@(Model.Category == option)">@option</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="col-xl-2 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Estado</div>
+                        <select name="status" class="form-select">
+                            <option value="">Todos</option>
+                            @foreach (var option in Model.Statuses)
+                            {
+                                <option value="@option" selected="@(Model.Status == option)">@option</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="col-xl-2 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Asignacion</div>
+                        <select name="assignment" class="form-select">
+                            <option value="pending" selected="@(Model.AssignmentFilter == "pending")">Pendientes</option>
+                            <option value="assigned" selected="@(Model.AssignmentFilter == "assigned")">Asignados</option>
+                            <option value="suggested" selected="@(Model.AssignmentFilter == "suggested")">Con sugerencia</option>
+                            <option value="inconsistent" selected="@(Model.AssignmentFilter == "inconsistent" || (Model.AssignmentFilter == "all" && isInconsistencyView))">Con incongruencias</option>
+                            <option value="all" selected="@(Model.AssignmentFilter == "all" && !isInconsistencyView)">Todos</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-xl-3 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Edificio fijo</div>
+                        <select name="buildingExternalId" class="form-select">
+                            <option value="">Todos</option>
+                            @foreach (var building in Model.Buildings)
+                            {
+                                <option value="@building.ExternalId" selected="@(Model.BuildingExternalId == building.ExternalId)">
+                                    @building.EffectiveDisplayName
+                                </option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="col-xl-4 col-lg-6">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Agregar filtro por columna</div>
+                        <div class="d-flex gap-2">
+                            <select name="newFilterField" class="form-select">
+                                <option value="">Columna...</option>
+                                @foreach (var option in Model.AvailableColumnFilters)
+                                {
+                                    <option value="@option.Value">@option.Label</option>
+                                }
+                            </select>
+                            <input type="text" name="newFilterValue" class="form-control" placeholder="Valor..." />
+                            <button type="submit" class="btn btn-outline-primary text-nowrap">
+                                <i class="bi bi-plus-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-2 col-lg-3">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Por pagina</div>
+                        <select name="pageSize" class="form-select js-page-size-select">
+                            @foreach (var size in pageSizeOptions)
+                            {
+                                <option value="@size" selected="@(Model.PageSize == size)">@size</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="col-xl-6 col-lg-9">
+                    <div class="inventory-filter-fixed">
+                        <div class="filter-title">Acciones</div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-outline-primary flex-grow-1">
+                                <i class="bi bi-funnel me-1"></i> Filtrar
+                            </button>
+                            <a href="/admin/inventory" class="btn btn-secondary" title="Limpiar filtros" aria-label="Limpiar filtros">
+                                <i class="bi bi-x-circle"></i>
+                            </a>
+                        </div>
+                    </div>
                 </div>
             </div>
         </form>
-        <div class="mt-3">
-            <div class="small text-muted mb-2">Filtros aplicados (@activeFilters.Count)</div>
-            @if (hasActiveFilters)
-            {
-                <div class="d-flex flex-wrap gap-2">
-                    @foreach (var filter in activeFilters)
-                    {
-                        <span class="badge rounded-pill text-bg-light border">@filter</span>
-                    }
-                </div>
-            }
-            else
-            {
-                <div class="small text-muted">Sin filtros adicionales aplicados.</div>
-            }
-        </div>
     </div>
 </div>
 

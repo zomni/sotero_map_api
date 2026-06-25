@@ -27,6 +27,17 @@ public class AdminInventoryListViewModel
     public int PendingItems { get; set; }
     public int SuggestedItems { get; set; }
     public int InconsistentItems { get; set; }
+    public string NewFilterField { get; set; } = string.Empty;
+    public string NewFilterValue { get; set; } = string.Empty;
+    public IReadOnlyList<FilterOptionViewModel> AvailableColumnFilters { get; set; } = [];
+    public IReadOnlyList<InventoryColumnFilterViewModel> ColumnFilters { get; set; } = [];
+}
+
+public class InventoryColumnFilterViewModel
+{
+    public string Field { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
 }
 
 public class InventoryInconsistencyDetailViewModel
@@ -137,6 +148,17 @@ public class AdminLocationsViewModel
     public int BuildingsWithInteriorMap { get; set; }
     public int TotalRooms { get; set; }
     public int AssignedInventoryItems { get; set; }
+    public string NewFilterField { get; set; } = string.Empty;
+    public string NewFilterValue { get; set; } = string.Empty;
+    public IReadOnlyList<FilterOptionViewModel> AvailableColumnFilters { get; set; } = [];
+    public IReadOnlyList<LocationColumnFilterViewModel> ColumnFilters { get; set; } = [];
+}
+
+public class LocationColumnFilterViewModel
+{
+    public string Field { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
 }
 
 public class AdminLocationRowViewModel

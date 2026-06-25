@@ -20,6 +20,8 @@ public class NetworkTelemetryDashboardViewModel
     public int LatestMediumRiskDeviceCount { get; set; }
     public int LatestLowRiskDeviceCount { get; set; }
     public int LatestSnapshotId { get; set; }
+    public int ActiveSnapshotId { get; set; }
+    public bool IsViewingLatestSnapshot { get; set; } = true;
     public DateTime? LatestObservedAtUtc { get; set; }
     public DateTime? LatestWindowStartUtc { get; set; }
     public DateTime? LatestWindowEndUtc { get; set; }
@@ -29,6 +31,8 @@ public class NetworkTelemetryDashboardViewModel
     public IReadOnlyList<NetworkTelemetryBuildingRiskSummaryViewModel> BuildingRiskSummaries { get; set; } = [];
     public IReadOnlyList<NetworkTelemetrySubnetRiskSummaryViewModel> SubnetRiskSummaries { get; set; } = [];
     public NetworkTelemetrySessionOverviewViewModel SessionOverview { get; set; } = new();
+    public NetworkTelemetryObservationPageViewModel InitialDevicePage { get; set; } = new();
+    public NetworkTelemetrySnapshotPageViewModel InitialSnapshotPage { get; set; } = new();
 }
 
 public class NetworkTelemetrySnapshotViewModel
@@ -36,6 +40,8 @@ public class NetworkTelemetrySnapshotViewModel
     public int Id { get; set; }
     public string SourceName { get; set; } = string.Empty;
     public string SourceType { get; set; } = string.Empty;
+    public string TriggerType { get; set; } = string.Empty;
+    public string TriggerLabel { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public string RiskLevel { get; set; } = string.Empty;
     public int RiskScore { get; set; }

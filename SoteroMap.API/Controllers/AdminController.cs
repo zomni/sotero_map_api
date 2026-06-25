@@ -8,6 +8,7 @@ using SoteroMap.API.Data;
 using SoteroMap.API.Models;
 using SoteroMap.API.Services;
 using SoteroMap.API.ViewModels;
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 
@@ -293,16 +294,70 @@ public class AdminController : Controller
 
     [Authorize]
     [HttpGet("/dashboard/network-telemetry")]
-    public async Task<IActionResult> NetworkTelemetry(CancellationToken cancellationToken)
+    public async Task<IActionResult> NetworkTelemetry([FromQuery] int? snapshotId, CancellationToken cancellationToken)
     {
-        return View("NetworkTelemetry", await BuildNetworkTelemetryViewModelAsync(cancellationToken));
+        var model = await BuildNetworkTelemetryViewModelAsync(snapshotId, cancellationToken);
+        var telemetryJsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+
+        ViewData["InitialDevicePageJson"] = JsonSerializer.Serialize(model.InitialDevicePage, telemetryJsonOptions);
+        ViewData["InitialSnapshotPageJson"] = JsonSerializer.Serialize(model.InitialSnapshotPage, telemetryJsonOptions);
+        ViewData["InitialRiskObservationsJson"] = JsonSerializer.Serialize(model.TopRiskObservations, telemetryJsonOptions);
+
+        return View("NetworkTelemetry", model);
     }
 
-    private async Task<NetworkTelemetryDashboardViewModel> BuildNetworkTelemetryViewModelAsync(CancellationToken cancellationToken)
+    private async Task<NetworkTelemetryDashboardViewModel> BuildNetworkTelemetryViewModelAsync(int? snapshotId, CancellationToken cancellationToken)
     {
         try
         {
-            return await _networkTelemetryService.GetDashboardAsync(10, cancellationToken);
+            var model = await _networkTelemetryService.GetDashboardAsync(10, snapshotId, cancellationToken);
+            if (model.ActiveSnapshotId > 0)
+            {
+                try
+                {
+                    model.InitialDevicePage = await _networkTelemetryService.GetObservationPageAsync(
+                        model.ActiveSnapshotId,
+                        new NetworkTelemetryObservationQueryRequest
+                        {
+                            ObservationType = "device",
+                            SortBy = "risk",
+                            SortDirection = "desc",
+                            Page = 1,
+                            PageSize = 10
+                        },
+                        cancellationToken);
+                }
+                catch
+                {
+                    model.InitialDevicePage = new NetworkTelemetryObservationPageViewModel
+                    {
+                        SnapshotId = model.ActiveSnapshotId,
+                        ObservationType = "device"
+                    };
+                }
+            }
+
+            try
+            {
+                model.InitialSnapshotPage = await _networkTelemetryService.GetSnapshotPageAsync(
+                    new NetworkTelemetrySnapshotQueryRequest
+                    {
+                        SortBy = "observedAt",
+                        SortDirection = "desc",
+                        Page = 1,
+                        PageSize = 10
+                    },
+                    cancellationToken);
+            }
+            catch
+            {
+                model.InitialSnapshotPage = new NetworkTelemetrySnapshotPageViewModel();
+            }
+
+            return model;
         }
         catch
         {
@@ -517,6 +572,145 @@ public class AdminController : Controller
         return RedirectToAction(nameof(Index));
     }
 
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpGet("/admin/project-package/download")]
+    [HttpGet("/dashboard/project-package/download")]
+    public async Task<IActionResult> DownloadProjectPackage(CancellationToken cancellationToken)
+    {
+        var packageName = $"soteromap-data-package-{DateTime.UtcNow:yyyyMMdd-HHmmss}.zip";
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"soteromap-data-export-{Guid.NewGuid():N}");
+        var stagingRoot = Path.Combine(tempRoot, "package");
+        var backendStaging = Path.Combine(stagingRoot, "backend-data");
+        var frontendStaging = Path.Combine(stagingRoot, "frontend-data");
+        var outputPath = Path.Combine(tempRoot, packageName);
+
+        try
+        {
+            Directory.CreateDirectory(backendStaging);
+            Directory.CreateDirectory(frontendStaging);
+
+            CopyFileIfExists(GetDatabaseFilePath(), Path.Combine(backendStaging, "soteromap.db"));
+            CopyDirectoryIfExists(GetInventoryFormPdfDirectory(), Path.Combine(backendStaging, "inventory-forms"));
+            CopyDirectoryIfExists(GetDatabaseBackupDirectory(), Path.Combine(backendStaging, "backups"));
+            CopyDirectoryIfExists(GetDataProtectionKeysDirectory(), Path.Combine(backendStaging, "data-protection-keys"));
+
+            var frontendDataDirectory = ResolveFrontendDataDirectory();
+            if (!string.IsNullOrWhiteSpace(frontendDataDirectory))
+            {
+                CopyFileIfExists(Path.Combine(frontendDataDirectory, "walking_routes_backup.json"), Path.Combine(frontendStaging, "walking_routes_backup.json"));
+                CopyFileIfExists(Path.Combine(frontendDataDirectory, "sotero_buildings_backend_backup.json"), Path.Combine(frontendStaging, "sotero_buildings_backend_backup.json"));
+                CopyFileIfExists(Path.Combine(frontendDataDirectory, "network_telemetry_backup.json"), Path.Combine(frontendStaging, "network_telemetry_backup.json"));
+            }
+
+            var manifest = JsonSerializer.Serialize(new
+            {
+                exportedAt = DateTime.UtcNow,
+                exportedBy = User.Identity?.Name ?? "admin",
+                includes = new
+                {
+                    database = System.IO.File.Exists(GetDatabaseFilePath()),
+                    inventoryForms = Directory.Exists(GetInventoryFormPdfDirectory()),
+                    backups = Directory.Exists(GetDatabaseBackupDirectory()),
+                    dataProtectionKeys = Directory.Exists(GetDataProtectionKeysDirectory()),
+                    frontendBackups = new[]
+                    {
+                        "walking_routes_backup.json",
+                        "sotero_buildings_backend_backup.json",
+                        "network_telemetry_backup.json"
+                    }
+                }
+            }, new JsonSerializerOptions { WriteIndented = true });
+
+            await System.IO.File.WriteAllTextAsync(Path.Combine(stagingRoot, "manifest.json"), manifest, cancellationToken);
+            ZipFile.CreateFromDirectory(stagingRoot, outputPath, CompressionLevel.Optimal, includeBaseDirectory: false);
+
+            await _auditLogService.LogSecurityEventAsync(
+                actionType: "project-package-export",
+                resource: "project-package",
+                summary: "Descarga de paquete completo del proyecto",
+                details: "Incluye DB, formularios PDF, backups, claves de sesion/MFA y respaldos offline del frontend.",
+                result: "success",
+                severity: "info",
+                changedByUsername: User.Identity?.Name ?? "admin",
+                cancellationToken: cancellationToken);
+
+            var bytes = await System.IO.File.ReadAllBytesAsync(outputPath, cancellationToken);
+            return File(bytes, "application/zip", packageName);
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPost("/admin/project-package/upload")]
+    [HttpPost("/dashboard/project-package/upload")]
+    [ValidateAntiForgeryToken]
+    [RequestSizeLimit(250_000_000)]
+    public async Task<IActionResult> UploadProjectPackage(IFormFile? packageFile, CancellationToken cancellationToken)
+    {
+        if (packageFile is null || packageFile.Length == 0)
+        {
+            TempData["ErrorMessage"] = "Selecciona un paquete del proyecto para restaurar.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var extension = Path.GetExtension(packageFile.FileName);
+        if (!string.Equals(extension, ".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            TempData["ErrorMessage"] = "El paquete debe ser un archivo .zip.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"soteromap-data-import-{Guid.NewGuid():N}");
+        var tempZipPath = Path.Combine(tempRoot, Path.GetFileName(packageFile.FileName));
+        var extractRoot = Path.Combine(tempRoot, "extract");
+
+        try
+        {
+            Directory.CreateDirectory(tempRoot);
+
+            await using (var stream = System.IO.File.Create(tempZipPath))
+            {
+                await packageFile.CopyToAsync(stream, cancellationToken);
+            }
+
+            ZipFile.ExtractToDirectory(tempZipPath, extractRoot, overwriteFiles: true);
+            await RestoreProjectPackageAsync(extractRoot, cancellationToken);
+
+            TempData["SuccessMessage"] = "Paquete del proyecto restaurado correctamente. Si tienes otras sesiones abiertas, recarga la pagina.";
+            await _auditLogService.LogSecurityEventAsync(
+                actionType: "project-package-import",
+                resource: "project-package",
+                summary: $"Paquete restaurado desde {packageFile.FileName}",
+                details: "Se restauraron DB, formularios PDF, claves de sesion/MFA y respaldos offline del frontend.",
+                result: "success",
+                severity: "warning",
+                changedByUsername: User.Identity?.Name ?? "admin",
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            TempData["ErrorMessage"] = $"No fue posible restaurar el paquete del proyecto: {ex.Message}";
+            await _auditLogService.LogSecurityEventAsync(
+                actionType: "project-package-import",
+                resource: "project-package",
+                summary: $"Error al restaurar paquete {packageFile.FileName}",
+                details: ex.Message,
+                result: "failure",
+                severity: "critical",
+                changedByUsername: User.Identity?.Name ?? "admin",
+                cancellationToken: cancellationToken);
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
     [HttpGet("/admin/activity")]
     [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Auditor}")]
     public async Task<IActionResult> Activity(
@@ -579,6 +773,164 @@ public class AdminController : Controller
         };
 
         return View(model);
+    }
+
+    [HttpGet("/admin/suggestions/inventory")]
+    [HttpGet("/dashboard/suggestions/inventory")]
+    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Editor},{AppRoles.Viewer},{AppRoles.Auditor}")]
+    public async Task<IActionResult> InventorySuggestions([FromQuery] string? query, CancellationToken cancellationToken = default)
+    {
+        var normalizedQuery = NormalizeSortableText(query);
+        if (string.IsNullOrWhiteSpace(normalizedQuery) || normalizedQuery.Length < 2)
+        {
+            return Ok(Array.Empty<string>());
+        }
+
+        var items = await _context.ImportedInventoryItems
+            .AsNoTracking()
+            .Select(item => new
+            {
+                item.SerialNumber,
+                item.ItemNumber,
+                item.Description,
+                item.UnitOrDepartment,
+                item.OrganizationalUnit,
+                item.ResponsibleUser,
+                item.Email,
+                item.IpAddress,
+                item.MacAddress
+            })
+            .ToListAsync(cancellationToken);
+
+        var suggestions = new List<string>();
+
+        void TryAdd(string? rawValue)
+        {
+            var value = rawValue?.Trim();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            if (!NormalizeSortableText(value).Contains(normalizedQuery, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!suggestions.Contains(value, StringComparer.OrdinalIgnoreCase))
+            {
+                suggestions.Add(value);
+            }
+        }
+
+        foreach (var item in items)
+        {
+            TryAdd(item.SerialNumber);
+            TryAdd(item.ItemNumber);
+            TryAdd(item.Description);
+            TryAdd(item.UnitOrDepartment);
+            TryAdd(item.OrganizationalUnit);
+            TryAdd(item.ResponsibleUser);
+            TryAdd(item.Email);
+            TryAdd(item.IpAddress);
+            TryAdd(item.MacAddress);
+        }
+
+        return Ok(suggestions
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .Take(12)
+            .ToList());
+    }
+
+    [HttpGet("/admin/suggestions/locations")]
+    [HttpGet("/dashboard/suggestions/locations")]
+    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Editor},{AppRoles.Viewer},{AppRoles.Auditor}")]
+    public async Task<IActionResult> LocationSuggestions([FromQuery] string? query, CancellationToken cancellationToken = default)
+    {
+        var normalizedQuery = NormalizeSortableText(query);
+        if (string.IsNullOrWhiteSpace(normalizedQuery) || normalizedQuery.Length < 2)
+        {
+            return Ok(Array.Empty<string>());
+        }
+
+        var buildings = await _context.SyncedBuildings
+            .AsNoTracking()
+            .Where(building => !building.IsDeleted)
+            .Select(building => new
+            {
+                building.ExternalId,
+                DisplayName = building.ManualDisplayName != "" ? building.ManualDisplayName : building.DisplayName,
+                building.ShortName,
+                building.RealName,
+                building.Type,
+                building.ResponsibleArea
+            })
+            .ToListAsync(cancellationToken);
+
+        var suggestions = new List<string>();
+
+        void TryAdd(string? rawValue)
+        {
+            var value = rawValue?.Trim();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            if (!NormalizeSortableText(value).Contains(normalizedQuery, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!suggestions.Contains(value, StringComparer.OrdinalIgnoreCase))
+            {
+                suggestions.Add(value);
+            }
+        }
+
+        foreach (var building in buildings)
+        {
+            TryAdd(building.DisplayName);
+            TryAdd(building.ExternalId);
+            TryAdd(building.ShortName);
+            TryAdd(building.RealName);
+            TryAdd(building.Type);
+            TryAdd(building.ResponsibleArea);
+        }
+
+        return Ok(suggestions
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .Take(12)
+            .ToList());
+    }
+
+    [HttpGet("/admin/suggestions/campus")]
+    [HttpGet("/dashboard/suggestions/campus")]
+    [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Editor},{AppRoles.Viewer},{AppRoles.Auditor}")]
+    public async Task<IActionResult> CampusSuggestions([FromQuery] string? query, CancellationToken cancellationToken = default)
+    {
+        var normalizedQuery = NormalizeSortableText(query);
+        if (string.IsNullOrWhiteSpace(normalizedQuery))
+        {
+            return Ok(Array.Empty<string>());
+        }
+
+        var campuses = await _context.SyncedBuildings
+            .AsNoTracking()
+            .Where(building => !building.IsDeleted)
+            .Select(building => building.ManualCampus != "" ? building.ManualCampus : building.Campus)
+            .Where(campus => campus != "")
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var results = campuses
+            .Where(campus => NormalizeSortableText(campus).Contains(normalizedQuery, StringComparison.Ordinal))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(campus => campus, StringComparer.OrdinalIgnoreCase)
+            .Take(12)
+            .ToList();
+
+        return Ok(results);
     }
 
     [HttpGet("/admin/delivery-form")]
@@ -779,6 +1131,10 @@ public class AdminController : Controller
         string? floor,
         string? sortBy,
         string? sortDirection,
+        string[]? filterField,
+        string[]? filterValue,
+        string? newFilterField,
+        string? newFilterValue,
         int page = 1,
         int pageSize = 30)
     {
@@ -786,6 +1142,14 @@ public class AdminController : Controller
         page = Math.Max(page, 1);
         sortBy = NormalizeLocationSortBy(sortBy);
         sortDirection = NormalizeSortDirection(sortDirection);
+        var normalizedColumnFilters = NormalizeLocationColumnFilters(filterField, filterValue);
+        var normalizedNewFilterField = NormalizeLocationColumnFilterField(newFilterField);
+        var trimmedNewFilterValue = newFilterValue?.Trim();
+
+        if (!string.IsNullOrWhiteSpace(normalizedNewFilterField) && !string.IsNullOrWhiteSpace(trimmedNewFilterValue))
+        {
+            normalizedColumnFilters.Add((normalizedNewFilterField, trimmedNewFilterValue));
+        }
 
         var buildingsQuery = _context.SyncedBuildings.AsNoTracking().Where(b => !b.IsDeleted).AsQueryable();
 
@@ -811,18 +1175,8 @@ public class AdminController : Controller
         }
 
         var filteredBuildings = await buildingsQuery.ToListAsync();
-        var totalFilteredLocations = filteredBuildings.Count;
-        var filteredBuildingSnapshot = filteredBuildings
-            .Select(b => new
-            {
-                b.Id,
-                b.ExternalId,
-                b.HasInteriorMap
-            })
-            .ToList();
-
-        var filteredBuildingIds = filteredBuildingSnapshot.Select(b => b.Id).ToList();
-        var filteredBuildingExternalIds = filteredBuildingSnapshot.Select(b => b.ExternalId).ToList();
+        var filteredBuildingIds = filteredBuildings.Select(b => b.Id).ToList();
+        var filteredBuildingExternalIds = filteredBuildings.Select(b => b.ExternalId).ToList();
 
         var roomsByBuilding = await _context.SyncedRooms
             .AsNoTracking()
@@ -857,8 +1211,7 @@ public class AdminController : Controller
             })
             .ToDictionaryAsync(x => x.BuildingExternalId, x => x.Count);
 
-        var sortedRows = SortLocationRows(
-            filteredBuildings.Select(b => new AdminLocationRowViewModel
+        var locationRows = filteredBuildings.Select(b => new AdminLocationRowViewModel
             {
                 ExternalId = b.ExternalId,
                 DisplayName = b.EffectiveDisplayName,
@@ -878,7 +1231,20 @@ public class AdminController : Controller
                 Coordinates = b.CentroidLatitude.HasValue && b.CentroidLongitude.HasValue
                     ? $"{b.CentroidLatitude.Value:F4}, {b.CentroidLongitude.Value:F4}"
                     : "-"
-            }),
+            })
+            .ToList();
+
+        IEnumerable<AdminLocationRowViewModel> filteredLocationRows = locationRows;
+        foreach (var columnFilter in normalizedColumnFilters)
+        {
+            filteredLocationRows = ApplyLocationColumnFilter(filteredLocationRows, columnFilter);
+        }
+
+        var filteredLocationRowsList = filteredLocationRows.ToList();
+        var totalFilteredLocations = filteredLocationRowsList.Count;
+
+        var sortedRows = SortLocationRows(
+            filteredLocationRowsList,
             sortBy,
             sortDirection)
             .ToList();
@@ -900,9 +1266,20 @@ public class AdminController : Controller
             TotalFilteredLocations = totalFilteredLocations,
             Locations = locations,
             TotalBuildings = totalFilteredLocations,
-            BuildingsWithInteriorMap = filteredBuildingSnapshot.Count(b => b.HasInteriorMap),
-            TotalRooms = roomsByBuilding.Values.Sum(),
-            AssignedInventoryItems = assignedInventoryByBuilding.Values.Sum()
+            BuildingsWithInteriorMap = filteredLocationRowsList.Count(row => row.HasInteriorMap),
+            TotalRooms = filteredLocationRowsList.Sum(row => row.RoomsCount),
+            AssignedInventoryItems = filteredLocationRowsList.Sum(row => row.AssignedInventoryCount),
+            NewFilterField = string.Empty,
+            NewFilterValue = string.Empty,
+            AvailableColumnFilters = GetLocationColumnFilterOptions(),
+            ColumnFilters = normalizedColumnFilters
+                .Select(filter => new LocationColumnFilterViewModel
+                {
+                    Field = filter.Field,
+                    Label = GetLocationColumnFilterLabel(filter.Field),
+                    Value = filter.Value
+                })
+                .ToList()
         };
 
         return View(model);
@@ -1106,6 +1483,10 @@ public class AdminController : Controller
         string? sortBy,
         string? sortDirection,
         string? inconsistencyType,
+        string[]? filterField,
+        string[]? filterValue,
+        string? newFilterField,
+        string? newFilterValue,
         bool onlyInconsistencies = false,
         int page = 1,
         int pageSize = 30)
@@ -1116,6 +1497,13 @@ public class AdminController : Controller
         sortBy = NormalizeInventorySortBy(sortBy);
         sortDirection = NormalizeSortDirection(sortDirection);
         inconsistencyType = NormalizeInconsistencyType(inconsistencyType);
+        var normalizedColumnFilters = NormalizeInventoryColumnFilters(filterField, filterValue);
+        var appendedFilterField = NormalizeInventoryFilterField(newFilterField);
+        var appendedFilterValue = newFilterValue?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(appendedFilterField) && !string.IsNullOrWhiteSpace(appendedFilterValue))
+        {
+            normalizedColumnFilters.Add((appendedFilterField, appendedFilterValue));
+        }
 
         if (onlyInconsistencies && assignment == "all")
         {
@@ -1158,6 +1546,11 @@ public class AdminController : Controller
         if (!string.IsNullOrWhiteSpace(status))
         {
             query = query.Where(i => i.InferredStatus == status);
+        }
+
+        foreach (var columnFilter in normalizedColumnFilters)
+        {
+            query = ApplyInventoryColumnFilter(query, columnFilter);
         }
 
         switch (assignment)
@@ -1253,6 +1646,15 @@ public class AdminController : Controller
                 .ToListAsync(),
             Categories = availableCategories,
             Statuses = availableStatuses,
+            AvailableColumnFilters = GetInventoryColumnFilterOptions(),
+            ColumnFilters = normalizedColumnFilters
+                .Select(filter => new InventoryColumnFilterViewModel
+                {
+                    Field = filter.Field,
+                    Label = GetInventoryColumnFilterLabel(filter.Field),
+                    Value = filter.Value
+                })
+                .ToList(),
             AvailableInconsistencyTypes = GetInventoryInconsistencyFilterOptions(),
             InconsistencySummaries = items
                 .Where(item => inconsistencySnapshot.Summaries.ContainsKey(item.Id))
@@ -3062,6 +3464,78 @@ public class AdminController : Controller
         };
     }
 
+    private static string NormalizeInventoryFilterField(string? field)
+    {
+        return field?.Trim().ToLowerInvariant() switch
+        {
+            "serial" => "serial",
+            "item" => "item",
+            "description" => "description",
+            "unit" => "unit",
+            "org" => "org",
+            "user" => "user",
+            "email" => "email",
+            "ip" => "ip",
+            "mac" => "mac",
+            "ticket" => "ticket",
+            "observation" => "observation",
+            "assigned-building" => "assigned-building",
+            "suggested-building" => "suggested-building",
+            "source" => "source",
+            _ => string.Empty
+        };
+    }
+
+    private static List<(string Field, string Value)> NormalizeInventoryColumnFilters(string[]? fields, string[]? values)
+    {
+        var result = new List<(string Field, string Value)>();
+        if (fields is null || values is null)
+        {
+            return result;
+        }
+
+        var length = Math.Min(fields.Length, values.Length);
+        for (var index = 0; index < length; index++)
+        {
+            var field = NormalizeInventoryFilterField(fields[index]);
+            var value = values[index]?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(field) || string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            result.Add((field, value));
+        }
+
+        return result;
+    }
+
+    private static IQueryable<ImportedInventoryItem> ApplyInventoryColumnFilter(
+        IQueryable<ImportedInventoryItem> query,
+        (string Field, string Value) columnFilter)
+    {
+        var value = columnFilter.Value.ToLowerInvariant();
+
+        return columnFilter.Field switch
+        {
+            "serial" => query.Where(i => i.SerialNumber != null && i.SerialNumber.ToLower().Contains(value)),
+            "item" => query.Where(i => i.ItemNumber != null && i.ItemNumber.ToLower().Contains(value)),
+            "description" => query.Where(i => i.Description != null && i.Description.ToLower().Contains(value)),
+            "unit" => query.Where(i => i.UnitOrDepartment != null && i.UnitOrDepartment.ToLower().Contains(value)),
+            "org" => query.Where(i => i.OrganizationalUnit != null && i.OrganizationalUnit.ToLower().Contains(value)),
+            "user" => query.Where(i => i.ResponsibleUser != null && i.ResponsibleUser.ToLower().Contains(value)),
+            "email" => query.Where(i => i.Email != null && i.Email.ToLower().Contains(value)),
+            "ip" => query.Where(i => i.IpAddress != null && i.IpAddress.ToLower().Contains(value)),
+            "mac" => query.Where(i => i.MacAddress != null && i.MacAddress.ToLower().Contains(value)),
+            "ticket" => query.Where(i => i.TicketMda != null && i.TicketMda.ToLower().Contains(value)),
+            "observation" => query.Where(i => i.Observation != null && i.Observation.ToLower().Contains(value)),
+            "assigned-building" => query.Where(i => i.AssignedBuildingExternalId != null && i.AssignedBuildingExternalId.ToLower().Contains(value)),
+            "suggested-building" => query.Where(i => i.MatchedBuildingExternalId != null && i.MatchedBuildingExternalId.ToLower().Contains(value)),
+            "source" => query.Where(i => i.SourceFile != null && i.SourceFile.ToLower().Contains(value)),
+            _ => query
+        };
+    }
+
     private static string NormalizeLocationSortBy(string? sortBy)
     {
         return sortBy?.Trim().ToLowerInvariant() switch
@@ -3075,6 +3549,72 @@ public class AdminController : Controller
             "map" => "map",
             "coordinates" => "coordinates",
             _ => "building"
+        };
+    }
+
+    private static string NormalizeLocationColumnFilterField(string? field)
+    {
+        return field?.Trim().ToLowerInvariant() switch
+        {
+            "id" => "id",
+            "building" => "building",
+            "campus" => "campus",
+            "type" => "type",
+            "floors" => "floors",
+            "rooms" => "rooms",
+            "assigned" => "assigned",
+            "suggested" => "suggested",
+            "map" => "map",
+            "inventory" => "inventory",
+            "coordinates" => "coordinates",
+            _ => string.Empty
+        };
+    }
+
+    private static List<(string Field, string Value)> NormalizeLocationColumnFilters(string[]? fields, string[]? values)
+    {
+        var result = new List<(string Field, string Value)>();
+        if (fields is null || values is null)
+        {
+            return result;
+        }
+
+        var max = Math.Min(fields.Length, values.Length);
+        for (var index = 0; index < max; index++)
+        {
+            var field = NormalizeLocationColumnFilterField(fields[index]);
+            var value = values[index]?.Trim();
+            if (string.IsNullOrWhiteSpace(field) || string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            result.Add((field, value));
+        }
+
+        return result;
+    }
+
+    private static IEnumerable<AdminLocationRowViewModel> ApplyLocationColumnFilter(
+        IEnumerable<AdminLocationRowViewModel> rows,
+        (string Field, string Value) columnFilter)
+    {
+        var value = NormalizeSortableText(columnFilter.Value);
+
+        return columnFilter.Field switch
+        {
+            "id" => rows.Where(row => NormalizeSortableText(row.ExternalId).Contains(value)),
+            "building" => rows.Where(row => NormalizeSortableText(row.DisplayName).Contains(value)),
+            "campus" => rows.Where(row => NormalizeSortableText(row.Campus).Contains(value)),
+            "type" => rows.Where(row => NormalizeSortableText(row.Type).Contains(value)),
+            "floors" => rows.Where(row => NormalizeSortableText(row.AvailableFloors).Contains(value)),
+            "rooms" => rows.Where(row => row.RoomsCount.ToString().Contains(columnFilter.Value.Trim(), StringComparison.OrdinalIgnoreCase)),
+            "assigned" => rows.Where(row => row.AssignedInventoryCount.ToString().Contains(columnFilter.Value.Trim(), StringComparison.OrdinalIgnoreCase)),
+            "suggested" => rows.Where(row => row.SuggestedInventoryCount.ToString().Contains(columnFilter.Value.Trim(), StringComparison.OrdinalIgnoreCase)),
+            "map" => rows.Where(row => NormalizeSortableText(row.MappingStatus).Contains(value)),
+            "inventory" => rows.Where(row => NormalizeSortableText(row.InventoryStatus).Contains(value)),
+            "coordinates" => rows.Where(row => NormalizeSortableText(row.Coordinates).Contains(value)),
+            _ => rows
         };
     }
 
@@ -3104,6 +3644,55 @@ public class AdminController : Controller
             new() { Value = "unit-org", Label = "Unidad/org distinta" },
             new() { Value = "multi", Label = "2 o mas tipos" }
         ];
+    }
+
+    private static IReadOnlyList<FilterOptionViewModel> GetInventoryColumnFilterOptions()
+    {
+        return
+        [
+            new() { Value = "serial", Label = "S/N" },
+            new() { Value = "item", Label = "Numero item" },
+            new() { Value = "description", Label = "Descripcion" },
+            new() { Value = "unit", Label = "Unidad" },
+            new() { Value = "org", Label = "Unidad organizativa" },
+            new() { Value = "user", Label = "Usuario" },
+            new() { Value = "email", Label = "Correo" },
+            new() { Value = "ip", Label = "IP" },
+            new() { Value = "mac", Label = "MAC" },
+            new() { Value = "ticket", Label = "Ticket MDA" },
+            new() { Value = "observation", Label = "Observacion" },
+            new() { Value = "assigned-building", Label = "Edificio asignado" },
+            new() { Value = "suggested-building", Label = "Edificio sugerido" },
+            new() { Value = "source", Label = "Archivo origen" }
+        ];
+    }
+
+    private static IReadOnlyList<FilterOptionViewModel> GetLocationColumnFilterOptions()
+    {
+        return
+        [
+            new() { Value = "id", Label = "ID edificio" },
+            new() { Value = "building", Label = "Edificio" },
+            new() { Value = "campus", Label = "Campus" },
+            new() { Value = "type", Label = "Tipo" },
+            new() { Value = "floors", Label = "Pisos" },
+            new() { Value = "rooms", Label = "Salas" },
+            new() { Value = "assigned", Label = "Equipos asignados" },
+            new() { Value = "suggested", Label = "Sugeridos" },
+            new() { Value = "map", Label = "Estado mapa" },
+            new() { Value = "inventory", Label = "Estado inventario" },
+            new() { Value = "coordinates", Label = "Coordenadas" }
+        ];
+    }
+
+    private static string GetInventoryColumnFilterLabel(string field)
+    {
+        return GetInventoryColumnFilterOptions().FirstOrDefault(option => option.Value == field)?.Label ?? field;
+    }
+
+    private static string GetLocationColumnFilterLabel(string field)
+    {
+        return GetLocationColumnFilterOptions().FirstOrDefault(option => option.Value == field)?.Label ?? field;
     }
 
     private static bool MatchesInconsistencyType(string summary, string inconsistencyType)
@@ -3328,6 +3917,151 @@ public class AdminController : Controller
         var databasePath = GetDatabaseFilePath();
         var databaseDirectory = Path.GetDirectoryName(databasePath) ?? AppContext.BaseDirectory;
         return Path.Combine(databaseDirectory, "backups");
+    }
+
+    private string GetDataProtectionKeysDirectory()
+    {
+        var configuredPath = _configuration["SecuritySettings:DataProtectionKeysPath"];
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            return Path.GetFullPath(configuredPath.Trim());
+        }
+
+        var databasePath = GetDatabaseFilePath();
+        var databaseDirectory = Path.GetDirectoryName(databasePath) ?? AppContext.BaseDirectory;
+        return Path.Combine(databaseDirectory, "data-protection-keys");
+    }
+
+    private string? ResolveFrontendDataDirectory()
+    {
+        var configuredPath = _configuration["FrontendDataPath"];
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            return Path.GetFullPath(configuredPath);
+        }
+
+        const string dockerPath = "/app/frontend-data";
+        if (Directory.Exists(dockerPath))
+        {
+            return dockerPath;
+        }
+
+        var current = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (current is not null)
+        {
+            var siblingFrontendData = Path.Combine(current.FullName, "..", "sotero_map", "src", "data");
+            if (Directory.Exists(siblingFrontendData))
+            {
+                return Path.GetFullPath(siblingFrontendData);
+            }
+
+            var directFrontendData = Path.Combine(current.FullName, "sotero_map", "src", "data");
+            if (Directory.Exists(directFrontendData))
+            {
+                return Path.GetFullPath(directFrontendData);
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
+    }
+
+    private async Task RestoreProjectPackageAsync(string extractRoot, CancellationToken cancellationToken)
+    {
+        var backendPackageRoot = Path.Combine(extractRoot, "backend-data");
+        var frontendPackageRoot = Path.Combine(extractRoot, "frontend-data");
+
+        if (!Directory.Exists(backendPackageRoot))
+        {
+            throw new InvalidOperationException("El paquete no contiene la carpeta backend-data.");
+        }
+
+        var dbSource = Path.Combine(backendPackageRoot, "soteromap.db");
+        if (!System.IO.File.Exists(dbSource))
+        {
+            throw new InvalidOperationException("El paquete no contiene soteromap.db.");
+        }
+
+        ValidateSqliteFile(dbSource);
+        await RestoreDatabaseFromFileAsync(dbSource);
+
+        CopyDirectoryIfExists(Path.Combine(backendPackageRoot, "inventory-forms"), GetInventoryFormPdfDirectory(), overwrite: true);
+        CopyDirectoryIfExists(Path.Combine(backendPackageRoot, "backups"), GetDatabaseBackupDirectory(), overwrite: true);
+        CopyDirectoryIfExists(Path.Combine(backendPackageRoot, "data-protection-keys"), GetDataProtectionKeysDirectory(), overwrite: true);
+
+        var frontendDataDirectory = ResolveFrontendDataDirectory();
+        if (!string.IsNullOrWhiteSpace(frontendDataDirectory) && Directory.Exists(frontendPackageRoot))
+        {
+            Directory.CreateDirectory(frontendDataDirectory);
+            CopyFileIfExists(Path.Combine(frontendPackageRoot, "walking_routes_backup.json"), Path.Combine(frontendDataDirectory, "walking_routes_backup.json"));
+            CopyFileIfExists(Path.Combine(frontendPackageRoot, "sotero_buildings_backend_backup.json"), Path.Combine(frontendDataDirectory, "sotero_buildings_backend_backup.json"));
+            CopyFileIfExists(Path.Combine(frontendPackageRoot, "network_telemetry_backup.json"), Path.Combine(frontendDataDirectory, "network_telemetry_backup.json"));
+        }
+    }
+
+    private static void CopyFileIfExists(string sourcePath, string destinationPath)
+    {
+        if (!System.IO.File.Exists(sourcePath))
+        {
+            return;
+        }
+
+        var destinationDirectory = Path.GetDirectoryName(destinationPath);
+        if (!string.IsNullOrWhiteSpace(destinationDirectory))
+        {
+            Directory.CreateDirectory(destinationDirectory);
+        }
+
+        System.IO.File.Copy(sourcePath, destinationPath, overwrite: true);
+    }
+
+    private static void CopyDirectoryIfExists(string sourceDirectory, string destinationDirectory, bool overwrite = false)
+    {
+        if (!Directory.Exists(sourceDirectory))
+        {
+            return;
+        }
+
+        if (overwrite && Directory.Exists(destinationDirectory))
+        {
+            Directory.Delete(destinationDirectory, recursive: true);
+        }
+
+        Directory.CreateDirectory(destinationDirectory);
+
+        foreach (var directory in Directory.GetDirectories(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            Directory.CreateDirectory(directory.Replace(sourceDirectory, destinationDirectory));
+        }
+
+        foreach (var file in Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            var destinationFile = file.Replace(sourceDirectory, destinationDirectory);
+            var destinationParent = Path.GetDirectoryName(destinationFile);
+            if (!string.IsNullOrWhiteSpace(destinationParent))
+            {
+                Directory.CreateDirectory(destinationParent);
+            }
+
+            System.IO.File.Copy(file, destinationFile, overwrite: true);
+        }
+    }
+
+    private static void TryDeleteDirectory(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.Delete(path, recursive: true);
+        }
+        catch
+        {
+        }
     }
 
     private FileContentResult DownloadDatabaseFile(string sourcePath, string downloadFileName)

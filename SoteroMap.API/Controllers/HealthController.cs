@@ -77,7 +77,7 @@ public class HealthController : ControllerBase
         NetworkTelemetryDashboardViewModel networkTelemetry;
         try
         {
-            networkTelemetry = await _networkTelemetryService.GetDashboardAsync(1, cancellationToken);
+            networkTelemetry = await _networkTelemetryService.GetDashboardAsync(1, null, cancellationToken);
         }
         catch
         {
