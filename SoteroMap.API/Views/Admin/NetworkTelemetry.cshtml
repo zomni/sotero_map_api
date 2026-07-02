@@ -806,6 +806,22 @@
     </div>
 </div>
 
+<div class="card telemetry-card mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h5 class="mb-1">Escaneos programados</h5>
+                <div class="small text-muted">Ultimos 20 escaneos automaticos programados</div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="telemetry-scheduled-refresh" title="Refrescar">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+        </div>
+        <div id="telemetry-scheduled-summary" class="small text-muted mb-3"></div>
+        <div id="telemetry-scheduled-table"><div class="text-muted">Cargando escaneos programados...</div></div>
+    </div>
+</div>
+
 @if (User.IsInRole(SoteroMap.API.Models.AppRoles.Admin) || User.IsInRole(SoteroMap.API.Models.AppRoles.Auditor))
 {
     <div class="telemetry-scan-modal" id="networkTelemetryScanModal" aria-labelledby="networkTelemetryScanModalLabel" aria-hidden="true">
@@ -915,6 +931,7 @@
         const sessionUsers = @Html.Raw(JsonSerializer.Serialize(Model.SessionOverview.Users, telemetryJsonOptions));
         const initialDevicePage = @Html.Raw(ViewData["InitialDevicePageJson"] as string ?? "{}");
         const initialSnapshotPage = @Html.Raw(ViewData["InitialSnapshotPageJson"] as string ?? "{}");
+        const initialScheduledScanRuns = @Html.Raw(ViewData["InitialScheduledScanRunsJson"] as string ?? "[]");
         const subnetRiskSummaries = @Html.Raw(JsonSerializer.Serialize(Model.SubnetRiskSummaries, telemetryJsonOptions));
         let latestDevicePage = null;
         let pendingSnapshotId = 0;
@@ -1774,6 +1791,65 @@
                 });
         };
 
+        const renderScheduledScans = (items) => {
+            const scheduledTable = document.getElementById("telemetry-scheduled-table");
+            const scheduledSummary = document.getElementById("telemetry-scheduled-summary");
+            if (!scheduledTable || !scheduledSummary) return;
+
+            const list = Array.isArray(items) ? items : [];
+            scheduledSummary.textContent = `Mostrando ${list.length} escaneos programados.`;
+            if (list.length === 0) {
+                scheduledTable.innerHTML = `<div class="text-muted">No hay escaneos programados registrados.</div>`;
+                return;
+            }
+            scheduledTable.innerHTML = `<div class="telemetry-table-wrap table-responsive"><table class="table align-middle"><thead><tr><th>Dia</th><th>Hora</th><th>Inicio</th><th>Estado</th><th>Error</th><th>Equipos</th><th>Usuarios</th></tr></thead><tbody>${list.map((item) => {
+                const statusBadge = item.status === "completed" ? '<span class="badge bg-success">Completado</span>'
+                    : item.status === "failed" ? '<span class="badge bg-danger">Fallado</span>'
+                    : item.status === "running" ? '<span class="badge bg-primary">Ejecutando</span>'
+                    : item.status === "skipped" ? '<span class="badge bg-warning text-dark">Saltado</span>'
+                    : item.status === "queued" ? '<span class="badge bg-info text-dark">En cola</span>'
+                    : '<span class="badge bg-secondary">' + (item.statusLabel || item.status || "") + '</span>';
+                const startedAt = item.startedAtUtc ? new Date(item.startedAtUtc).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }) : "-";
+                const errMsg = item.status === "failed" && item.errorMessage ? `<div class="small text-danger" title="${item.errorMessage.replace(/"/g, "&quot;")}">${item.errorMessage.length > 80 ? item.errorMessage.substring(0, 80) + "..." : item.errorMessage}</div>` : "";
+                return `<tr>
+                    <td>${item.scheduledDayLocal || ""}</td>
+                    <td>${item.scheduledTimeLocal || ""}</td>
+                    <td>${startedAt}</td>
+                    <td>${statusBadge}</td>
+                    <td>${errMsg || '<span class="text-muted small">-</span>'}</td>
+                    <td>${item.deviceCount != null ? item.deviceCount : '-'}</td>
+                    <td>${item.userCount != null ? item.userCount : '-'}</td>
+                </tr>`;
+            }).join("")}</tbody></table></div>`;
+        };
+
+        const loadScheduledScans = () => {
+            const scheduledTable = document.getElementById("telemetry-scheduled-table");
+            if (!scheduledTable) return;
+            if (!scheduledTable.dataset.initialized && Array.isArray(initialScheduledScanRuns) && initialScheduledScanRuns.length > 0) {
+                scheduledTable.dataset.initialized = "true";
+                renderScheduledScans(initialScheduledScanRuns);
+                return;
+            }
+            fetch("/api/network-telemetry/scheduled-scans?take=20", {
+                credentials: "include",
+                cache: "no-store"
+            })
+                .then((response) => {
+                    if (!response.ok) throw new Error(`API respondio ${response.status}`);
+                    return response.json();
+                })
+                .then(renderScheduledScans)
+                .catch((error) => {
+                    console.error("Error cargando escaneos programados:", error);
+                    if (Array.isArray(initialScheduledScanRuns) && initialScheduledScanRuns.length > 0) {
+                        renderScheduledScans(initialScheduledScanRuns);
+                    } else {
+                        scheduledTable.textContent = "No fue posible cargar los escaneos programados.";
+                    }
+                });
+        };
+
         const renderAgentStatus = (status, reloadWhenCompleted = false) => {
             if (!agentState) {
                 return;
@@ -1781,6 +1857,11 @@
 
             const state = status?.state || "idle";
             const message = status?.message || "Sin actividad reciente del agente Windows.";
+            const triggerType = status?.triggerType || "";
+            const triggerLabel = triggerType === "scheduled" ? "Programado"
+                : triggerType === "automatic" ? "Automatico"
+                : triggerType === "manual" ? "Manual"
+                : "";
             const snapshotId = Number(status?.snapshotId) || 0;
             const updatedAt = formatChileDateTime(status?.updatedAtUtc);
             const heartbeatAt = formatChileDateTime(status?.lastHeartbeatAtUtc);
@@ -1820,7 +1901,7 @@
                         <span class="fw-semibold text-white">${agentId}</span>
                         ${refreshButton}
                     </div>
-                    <div class="text-white">${message}</div>
+                    <div class="text-white">${message}${triggerLabel && state === "failed" ? ` <span class="badge bg-light text-dark">${triggerLabel}</span>` : ""}</div>
                     ${totalHosts > 0 ? `
                         <div class="telemetry-progress" aria-label="Progreso de escaneo">
                             <span style="width:${progressPercent}%"></span>
@@ -1833,6 +1914,7 @@
                             ${currentStage ? `<span class="telemetry-agent-stat"><i class="bi bi-activity"></i> ${currentStage}</span>` : ""}
                         </div>` : ""}
                     <div class="telemetry-agent-meta">
+                        ${triggerLabel ? `<span class="telemetry-agent-stat"><i class="bi bi-tag"></i> ${triggerLabel}</span>` : ""}
                         ${heartbeatAt ? `<span class="telemetry-agent-stat"><i class="bi bi-heart-pulse"></i> Latido ${heartbeatAt}</span>` : ""}
                         ${updatedAt ? `<span class="telemetry-agent-stat"><i class="bi bi-clock-history"></i> Estado ${updatedAt}</span>` : ""}
                         ${snapshotId > 0 ? `<span class="telemetry-agent-stat"><i class="bi bi-database-check"></i> Snapshot ${snapshotId}</span>` : ""}
@@ -1914,12 +1996,15 @@
         snapshotSortSelect?.addEventListener("change", () => loadSnapshots(1));
         snapshotDirectionSelect?.addEventListener("change", () => loadSnapshots(1));
         snapshotPageSizeSelect?.addEventListener("change", () => loadSnapshots(1));
+        document.getElementById("telemetry-scheduled-refresh")?.addEventListener("click", () => loadScheduledScans());
 
         renderSubnetRiskSummaries(1);
         loadDevices(1);
         renderSessions(1);
         loadSnapshots(1);
+        loadScheduledScans();
         loadAgentStatus(false);
         window.setInterval(() => loadAgentStatus(true), 5000);
+        window.setInterval(() => loadScheduledScans(), 30000);
     })();
 </script>

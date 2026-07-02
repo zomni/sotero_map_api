@@ -23,6 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<WalkingRouteEdge> WalkingRouteEdges => Set<WalkingRouteEdge>();
     public DbSet<NetworkTelemetrySnapshot> NetworkTelemetrySnapshots => Set<NetworkTelemetrySnapshot>();
     public DbSet<NetworkTelemetryObservation> NetworkTelemetryObservations => Set<NetworkTelemetryObservation>();
+    public DbSet<ScheduledScanRun> ScheduledScanRuns => Set<ScheduledScanRun>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -327,6 +328,23 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Notes).HasMaxLength(1000);
             entity.Property(e => e.FloorsJson).HasMaxLength(500);
             entity.Property(e => e.CreatedByUsername).HasMaxLength(100);
+        });
+
+        modelBuilder.Entity<ScheduledScanRun>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.ScheduledAtUtc);
+            entity.HasIndex(e => e.Status);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.ErrorMessage).HasMaxLength(2000);
+            entity.Property(e => e.ScheduledTimeLocal).HasMaxLength(10);
+            entity.Property(e => e.ScheduledDayLocal).HasMaxLength(15);
+            entity.Property(e => e.NormalizedCron).HasMaxLength(100);
+
+            entity.HasOne(e => e.Snapshot)
+                .WithMany()
+                .HasForeignKey(e => e.SnapshotId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

@@ -139,6 +139,13 @@ public class NetworkTelemetryController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("scheduled-scans")]
+    public async Task<IActionResult> ScheduledScans([FromQuery] int take = 20, CancellationToken cancellationToken = default)
+    {
+        var result = await _service.GetScheduledScanRunsAsync(take, cancellationToken);
+        return Ok(result);
+    }
+
     [HttpGet("snapshots")]
     public async Task<IActionResult> Snapshots(
         [FromQuery] string? search = null,

@@ -68,6 +68,7 @@ public class NetworkTelemetryAgentBridgeService
             Message = $"Solicitud de escaneo creada por {requestPayload.RequestedByUsername}. Esperando al agente Windows.",
             RequestedAtUtc = requestPayload.RequestedAtUtc,
             RequestedByUsername = requestPayload.RequestedByUsername,
+            TriggerType = requestPayload.TriggerType,
             UpdatedAtUtc = DateTime.UtcNow
         };
 
@@ -201,6 +202,15 @@ public class NetworkTelemetryAgentBridgeService
             }
             : MapStatus(current);
 
+        if (string.IsNullOrWhiteSpace(mapped.TriggerType))
+        {
+            var request = await TryReadPendingRequestAsync(cancellationToken);
+            if (request is not null)
+            {
+                mapped.TriggerType = request.TriggerType;
+            }
+        }
+
         mapped.LastHeartbeatAtUtc = heartbeat?.HeartbeatAtUtc;
         var heartbeatIsFresh = heartbeat is not null && heartbeat.HeartbeatAtUtc >= nowUtc.Subtract(heartbeatTimeout);
         var stateLooksActive = mapped.State is "pending" or "running" or "paused" or "stopping";
@@ -316,6 +326,7 @@ public class NetworkTelemetryAgentBridgeService
             CompletedAtUtc = status.CompletedAtUtc,
             UpdatedAtUtc = status.UpdatedAtUtc,
             RequestedByUsername = status.RequestedByUsername,
+            TriggerType = status.TriggerType,
             TotalHosts = status.TotalHosts,
             ProcessedHosts = status.ProcessedHosts,
             CurrentIpAddress = status.CurrentIpAddress,
@@ -348,6 +359,7 @@ public class NetworkTelemetryAgentStatus
     public DateTime? CompletedAtUtc { get; set; }
     public DateTime? UpdatedAtUtc { get; set; }
     public string RequestedByUsername { get; set; } = string.Empty;
+    public string TriggerType { get; set; } = string.Empty;
     public int? TotalHosts { get; set; }
     public int? ProcessedHosts { get; set; }
     public string CurrentIpAddress { get; set; } = string.Empty;
@@ -369,6 +381,7 @@ public class NetworkTelemetryAgentStatusViewModel
     public DateTime? CompletedAtUtc { get; set; }
     public DateTime? UpdatedAtUtc { get; set; }
     public string RequestedByUsername { get; set; } = string.Empty;
+    public string TriggerType { get; set; } = string.Empty;
     public DateTime? LastHeartbeatAtUtc { get; set; }
     public bool IsConnected { get; set; }
     public int? TotalHosts { get; set; }

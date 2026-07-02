@@ -754,6 +754,7 @@ internal sealed class Collector
             WindowStartUtc = DateTime.UtcNow.AddMinutes(-30),
             WindowEndUtc = DateTime.UtcNow,
             Notes = $"Collector Windows ({(simpleScan ? "simple" : "completo")}). Hosts detectados: {materializedDevices.Count}. Identidades: {users.Count}.",
+            TriggerType = (triggerType ?? "manual").Trim().ToLowerInvariant(),
             Devices = materializedDevices.OrderBy(static item => item.IpAddress, StringComparer.OrdinalIgnoreCase).ToList(),
             Users = users
         };
@@ -1444,6 +1445,7 @@ internal sealed class IngestRequest
     public DateTime? WindowStartUtc { get; set; }
     public DateTime? WindowEndUtc { get; set; }
     public string Notes { get; set; } = string.Empty;
+    public string TriggerType { get; set; } = string.Empty;
     public IReadOnlyList<DeviceInput> Devices { get; set; } = [];
     public IReadOnlyList<UserInput> Users { get; set; } = [];
 }

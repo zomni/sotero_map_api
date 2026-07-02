@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SoteroMap.API.Data;
 using SoteroMap.API.Models;
 using SoteroMap.API.ViewModels;
@@ -14,15 +15,18 @@ public class NetworkTelemetryService
     private readonly AppDbContext _context;
     private readonly IConfiguration _configuration;
     private readonly AuditLogService _auditLogService;
+    private readonly ILogger<NetworkTelemetryService> _logger;
 
     public NetworkTelemetryService(
         AppDbContext context,
         IConfiguration configuration,
-        AuditLogService auditLogService)
+        AuditLogService auditLogService,
+        ILogger<NetworkTelemetryService> logger)
     {
         _context = context;
         _configuration = configuration;
         _auditLogService = auditLogService;
+        _logger = logger;
     }
 
     public bool IsEnabled()
@@ -678,6 +682,30 @@ public class NetworkTelemetryService
             severity: overallRiskLevel == "critical" ? "critical" : "info",
             changedByUsername: createdByUsername,
             cancellationToken: cancellationToken);
+
+        if (string.Equals(request.TriggerType, "scheduled", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var scheduledRun = await _context.ScheduledScanRuns
+                    .OrderByDescending(r => r.CreatedAtUtc)
+                    .FirstOrDefaultAsync(r => r.Status == "queued", cancellationToken);
+
+                if (scheduledRun is not null)
+                {
+                    scheduledRun.Status = "completed";
+                    scheduledRun.CompletedAtUtc = DateTime.UtcNow;
+                    scheduledRun.SnapshotId = snapshot.Id;
+                    scheduledRun.DeviceCount = deviceObservations.Count;
+                    scheduledRun.UserCount = userObservations.Count;
+                    await _context.SaveChangesAsync(cancellationToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "No se pudo actualizar el ScheduledScanRun asociado al ingesta programada.");
+            }
+        }
 
         return new NetworkTelemetryIngestResultViewModel
         {
@@ -1804,56 +1832,84 @@ public class NetworkTelemetryService
         IQueryable<NetworkTelemetryObservation> query,
         CancellationToken cancellationToken)
     {
-        return await query
+        var observations = await query
             .Where(observation => observation.ObservationType == "device" && observation.BuildingExternalId != string.Empty)
-            .GroupBy(observation => observation.BuildingExternalId)
-            .Select(group => new NetworkTelemetryBuildingRiskSummaryViewModel
+            .Select(observation => new
             {
-                BuildingExternalId = group.Key,
-                DeviceCount = group.Count(),
-                CriticalCount = group.Count(item => item.RiskLevel == "critical"),
-                HighCount = group.Count(item => item.RiskLevel == "high"),
-                MediumCount = group.Count(item => item.RiskLevel == "medium"),
-                LowCount = group.Count(item => item.RiskLevel == "low"),
-                MaxRiskScore = group.Max(item => item.RiskScore),
-                MaxRiskLevel = group
+                observation.Id,
+                observation.BuildingExternalId,
+                observation.RiskLevel,
+                observation.RiskScore
+            })
+            .ToListAsync(cancellationToken);
+
+        return observations
+            .GroupBy(observation => observation.BuildingExternalId, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var topRisk = group
                     .OrderByDescending(item => item.RiskScore)
                     .ThenByDescending(item => item.Id)
-                    .Select(item => item.RiskLevel)
-                    .FirstOrDefault() ?? "low"
+                    .First();
+
+                return new NetworkTelemetryBuildingRiskSummaryViewModel
+                {
+                    BuildingExternalId = group.Key,
+                    DeviceCount = group.Count(),
+                    CriticalCount = group.Count(item => item.RiskLevel == "critical"),
+                    HighCount = group.Count(item => item.RiskLevel == "high"),
+                    MediumCount = group.Count(item => item.RiskLevel == "medium"),
+                    LowCount = group.Count(item => item.RiskLevel == "low"),
+                    MaxRiskScore = group.Max(item => item.RiskScore),
+                    MaxRiskLevel = string.IsNullOrWhiteSpace(topRisk.RiskLevel) ? "low" : topRisk.RiskLevel
+                };
             })
             .OrderByDescending(item => item.MaxRiskScore)
             .ThenByDescending(item => item.DeviceCount)
             .Take(100)
-            .ToListAsync(cancellationToken);
+            .ToList();
     }
 
     private static async Task<IReadOnlyList<NetworkTelemetrySubnetRiskSummaryViewModel>> BuildSubnetRiskSummariesAsync(
         IQueryable<NetworkTelemetryObservation> query,
         CancellationToken cancellationToken)
     {
-        return await query
+        var observations = await query
             .Where(observation => observation.ObservationType == "device" && observation.SubnetCidr != string.Empty)
-            .GroupBy(observation => observation.SubnetCidr)
-            .Select(group => new NetworkTelemetrySubnetRiskSummaryViewModel
+            .Select(observation => new
             {
-                SubnetCidr = group.Key,
-                DeviceCount = group.Count(),
-                CriticalCount = group.Count(item => item.RiskLevel == "critical"),
-                HighCount = group.Count(item => item.RiskLevel == "high"),
-                MediumCount = group.Count(item => item.RiskLevel == "medium"),
-                LowCount = group.Count(item => item.RiskLevel == "low"),
-                MaxRiskScore = group.Max(item => item.RiskScore),
-                MaxRiskLevel = group
+                observation.Id,
+                observation.SubnetCidr,
+                observation.RiskLevel,
+                observation.RiskScore
+            })
+            .ToListAsync(cancellationToken);
+
+        return observations
+            .GroupBy(observation => observation.SubnetCidr, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var topRisk = group
                     .OrderByDescending(item => item.RiskScore)
                     .ThenByDescending(item => item.Id)
-                    .Select(item => item.RiskLevel)
-                    .FirstOrDefault() ?? "low"
+                    .First();
+
+                return new NetworkTelemetrySubnetRiskSummaryViewModel
+                {
+                    SubnetCidr = group.Key,
+                    DeviceCount = group.Count(),
+                    CriticalCount = group.Count(item => item.RiskLevel == "critical"),
+                    HighCount = group.Count(item => item.RiskLevel == "high"),
+                    MediumCount = group.Count(item => item.RiskLevel == "medium"),
+                    LowCount = group.Count(item => item.RiskLevel == "low"),
+                    MaxRiskScore = group.Max(item => item.RiskScore),
+                    MaxRiskLevel = string.IsNullOrWhiteSpace(topRisk.RiskLevel) ? "low" : topRisk.RiskLevel
+                };
             })
             .OrderByDescending(item => item.MaxRiskScore)
             .ThenByDescending(item => item.DeviceCount)
             .Take(100)
-            .ToListAsync(cancellationToken);
+            .ToList();
     }
 
     public async Task<IReadOnlyList<NetworkTelemetrySubnetRiskSummaryViewModel>> GetSubnetRiskSummariesAsync(
@@ -2015,5 +2071,44 @@ public class NetworkTelemetryService
     {
         var localDateTime = TimeZoneInfo.ConvertTimeFromUtc(observedAtUtc, ChileTimeZone);
         return localDateTime.ToString("HH:mm");
+    }
+
+    public async Task<IReadOnlyList<ScheduledScanRunViewModel>> GetScheduledScanRunsAsync(
+        int take = 20, CancellationToken cancellationToken = default)
+    {
+        take = Math.Clamp(take, 1, 100);
+
+        var runs = await _context.ScheduledScanRuns
+            .AsNoTracking()
+            .OrderByDescending(r => r.ScheduledAtUtc)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+
+        return runs.Select(run => new ScheduledScanRunViewModel
+        {
+            Id = run.Id,
+            ScheduledAtUtc = run.ScheduledAtUtc,
+            StartedAtUtc = run.StartedAtUtc,
+            CompletedAtUtc = run.CompletedAtUtc,
+            Status = run.Status,
+            StatusLabel = run.Status switch
+            {
+                "pending" => "Pendiente",
+                "running" => "Ejecutando",
+                "completed" => "Completado",
+                "failed" => "Fallado",
+                "skipped" => "Saltado",
+                "queued" => "En cola",
+                _ => run.Status
+            },
+            ErrorMessage = run.ErrorMessage,
+            SnapshotId = run.SnapshotId,
+            ScheduledTimeLocal = run.ScheduledTimeLocal,
+            ScheduledDayLocal = run.ScheduledDayLocal,
+            DeviceCount = run.DeviceCount,
+            UserCount = run.UserCount,
+            NormalizedCron = run.NormalizedCron,
+            CreatedAtUtc = run.CreatedAtUtc
+        }).ToList();
     }
 }

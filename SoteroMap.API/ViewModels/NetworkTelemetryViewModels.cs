@@ -30,6 +30,7 @@ public class NetworkTelemetryDashboardViewModel
     public IReadOnlyList<NetworkTelemetryObservationViewModel> TopRiskObservations { get; set; } = [];
     public IReadOnlyList<NetworkTelemetryBuildingRiskSummaryViewModel> BuildingRiskSummaries { get; set; } = [];
     public IReadOnlyList<NetworkTelemetrySubnetRiskSummaryViewModel> SubnetRiskSummaries { get; set; } = [];
+    public IReadOnlyList<ScheduledScanRunViewModel> ScheduledScanRuns { get; set; } = [];
     public NetworkTelemetrySessionOverviewViewModel SessionOverview { get; set; } = new();
     public NetworkTelemetryObservationPageViewModel InitialDevicePage { get; set; } = new();
     public NetworkTelemetrySnapshotPageViewModel InitialSnapshotPage { get; set; } = new();
@@ -90,4 +91,22 @@ public class NetworkTelemetrySessionUserViewModel
     public bool MfaEnabled { get; set; }
     public int LinkedDeviceCount { get; set; }
     public DateTime? LastSeenAtUtc { get; set; }
+}
+
+public class ScheduledScanRunViewModel
+{
+    public int Id { get; set; }
+    public DateTime ScheduledAtUtc { get; set; }
+    public DateTime? StartedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string StatusLabel { get; set; } = string.Empty;
+    public string? ErrorMessage { get; set; }
+    public int? SnapshotId { get; set; }
+    public string ScheduledTimeLocal { get; set; } = string.Empty;
+    public string ScheduledDayLocal { get; set; } = string.Empty;
+    public int? DeviceCount { get; set; }
+    public int? UserCount { get; set; }
+    public string NormalizedCron { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
 }

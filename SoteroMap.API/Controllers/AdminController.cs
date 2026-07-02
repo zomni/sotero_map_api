@@ -305,6 +305,7 @@ public class AdminController : Controller
         ViewData["InitialDevicePageJson"] = JsonSerializer.Serialize(model.InitialDevicePage, telemetryJsonOptions);
         ViewData["InitialSnapshotPageJson"] = JsonSerializer.Serialize(model.InitialSnapshotPage, telemetryJsonOptions);
         ViewData["InitialRiskObservationsJson"] = JsonSerializer.Serialize(model.TopRiskObservations, telemetryJsonOptions);
+        ViewData["InitialScheduledScanRunsJson"] = JsonSerializer.Serialize(model.ScheduledScanRuns, telemetryJsonOptions);
 
         return View("NetworkTelemetry", model);
     }
@@ -355,6 +356,15 @@ public class AdminController : Controller
             catch
             {
                 model.InitialSnapshotPage = new NetworkTelemetrySnapshotPageViewModel();
+            }
+
+            try
+            {
+                model.ScheduledScanRuns = await _networkTelemetryService.GetScheduledScanRunsAsync(20, cancellationToken);
+            }
+            catch
+            {
+                model.ScheduledScanRuns = [];
             }
 
             return model;

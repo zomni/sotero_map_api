@@ -397,6 +397,9 @@
 
         const guardExpiredInteraction = (event) => {
             if (sessionExpired || sessionCheckInFlight) {
+                if (expiredOverlay && expiredOverlay.contains(event.target)) {
+                    return;
+                }
                 event.preventDefault();
                 event.stopPropagation();
                 event.stopImmediatePropagation?.();

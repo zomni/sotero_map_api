@@ -8,6 +8,7 @@ public class NetworkTelemetryIngestRequest
     public DateTime? WindowStartUtc { get; set; }
     public DateTime? WindowEndUtc { get; set; }
     public string Notes { get; set; } = string.Empty;
+    public string TriggerType { get; set; } = string.Empty;
     public IReadOnlyList<NetworkTelemetryDeviceInput> Devices { get; set; } = [];
     public IReadOnlyList<NetworkTelemetryUserInput> Users { get; set; } = [];
 }

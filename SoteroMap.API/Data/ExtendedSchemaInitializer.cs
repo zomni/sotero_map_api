@@ -433,6 +433,8 @@ public static class ExtendedSchemaInitializer
             await EnsureColumnAsync(context, "NetworkTelemetryObservations", "SubnetCidr", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "NetworkTelemetryObservations", "NetworkProfile", "TEXT NOT NULL DEFAULT ''");
 
+            await EnsureScheduledScanRunsTableAsync(context);
+
             await context.Database.ExecuteSqlRawAsync("""
                 CREATE TABLE IF NOT EXISTS ManualBuildings (
                     Id INTEGER NOT NULL CONSTRAINT PK_ManualBuildings PRIMARY KEY AUTOINCREMENT,
@@ -636,5 +638,92 @@ public static class ExtendedSchemaInitializer
         {
             await context.Database.ExecuteSqlRawAsync($"ALTER TABLE {tableName} ADD COLUMN {columnName} {definition};");
         }
+    }
+
+    private static async Task EnsureScheduledScanRunsTableAsync(AppDbContext context)
+    {
+        await context.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS ScheduledScanRuns (
+                Id INTEGER NOT NULL CONSTRAINT PK_ScheduledScanRuns PRIMARY KEY AUTOINCREMENT,
+                ScheduledAtUtc TEXT NOT NULL,
+                StartedAtUtc TEXT NULL,
+                CompletedAtUtc TEXT NULL,
+                Status TEXT NOT NULL DEFAULT 'pending',
+                ErrorMessage TEXT NULL,
+                SnapshotId INTEGER NULL,
+                ScheduledTimeLocal TEXT NOT NULL DEFAULT '',
+                ScheduledDayLocal TEXT NOT NULL DEFAULT '',
+                DeviceCount INTEGER NULL,
+                UserCount INTEGER NULL,
+                NormalizedCron TEXT NOT NULL DEFAULT '',
+                CreatedAtUtc TEXT NOT NULL,
+                CONSTRAINT FK_ScheduledScanRuns_NetworkTelemetrySnapshots_SnapshotId
+                    FOREIGN KEY (SnapshotId) REFERENCES NetworkTelemetrySnapshots(Id) ON DELETE SET NULL
+            );
+            """);
+
+        await context.Database.ExecuteSqlRawAsync("""
+            CREATE INDEX IF NOT EXISTS IX_ScheduledScanRuns_ScheduledAtUtc
+            ON ScheduledScanRuns (ScheduledAtUtc);
+            """);
+
+        await context.Database.ExecuteSqlRawAsync("""
+            CREATE INDEX IF NOT EXISTS IX_ScheduledScanRuns_Status
+            ON ScheduledScanRuns (Status);
+            """);
+
+        await BackfillScheduledScanRunsAsync(context);
+    }
+
+    private static async Task BackfillScheduledScanRunsAsync(AppDbContext context)
+    {
+        var hasExistingRuns = await context.ScheduledScanRuns.AnyAsync();
+        if (hasExistingRuns)
+            return;
+
+        var scheduledSnapshots = await context.NetworkTelemetrySnapshots
+            .Where(s => s.CreatedByUsername == "system"
+                || (s.SourceType ?? "").ToLower().Contains("scheduled")
+                || (s.SourceType ?? "").ToLower().Contains("auto"))
+            .OrderByDescending(s => s.ObservedAtUtc)
+            .Take(100)
+            .ToListAsync();
+
+        if (scheduledSnapshots.Count == 0)
+            return;
+
+        var now = DateTime.UtcNow;
+        var runs = scheduledSnapshots.Select(s =>
+        {
+            var localDateTime = s.ObservedAtUtc.Kind == DateTimeKind.Utc
+                ? TimeZoneInfo.ConvertTimeFromUtc(s.ObservedAtUtc, ChileTimeZone)
+                : s.ObservedAtUtc;
+
+            return new Models.ScheduledScanRun
+            {
+                ScheduledAtUtc = s.ObservedAtUtc,
+                StartedAtUtc = s.ObservedAtUtc,
+                CompletedAtUtc = s.CreatedAtUtc,
+                Status = "completed",
+                SnapshotId = s.Id,
+                ScheduledTimeLocal = localDateTime.ToString("HH:mm"),
+                ScheduledDayLocal = localDateTime.ToString("dddd", new System.Globalization.CultureInfo("es-CL")),
+                DeviceCount = s.DeviceCount,
+                UserCount = s.ConnectedUserCount,
+                NormalizedCron = "",
+                CreatedAtUtc = now
+            };
+        }).ToList();
+
+        context.ScheduledScanRuns.AddRange(runs);
+        await context.SaveChangesAsync();
+    }
+
+    private static readonly TimeZoneInfo ChileTimeZone = ResolveChileTimeZone();
+
+    private static TimeZoneInfo ResolveChileTimeZone()
+    {
+        try { return TimeZoneInfo.FindSystemTimeZoneById("America/Santiago"); }
+        catch { return TimeZoneInfo.Local; }
     }
 }
