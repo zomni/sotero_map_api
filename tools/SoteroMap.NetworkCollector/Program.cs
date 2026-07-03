@@ -235,6 +235,7 @@ static async Task RunAgentLoopAsync(CollectorOptions options, Collector collecto
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            AgentRequest? scanRequest = null;
             try
             {
                 await AppendAgentLogAsync(logPath, $"Loop tick. RequestExists={File.Exists(requestPath)} ControlExists={File.Exists(controlPath)}", cancellationToken);
@@ -251,7 +252,7 @@ static async Task RunAgentLoopAsync(CollectorOptions options, Collector collecto
 
                 var rawRequest = await File.ReadAllTextAsync(requestPath, cancellationToken);
                 await AppendAgentLogAsync(logPath, $"Request file read. Length={rawRequest.Length}", cancellationToken);
-                var scanRequest = JsonSerializer.Deserialize<AgentRequest>(rawRequest, JsonOptions.Default);
+                scanRequest = JsonSerializer.Deserialize<AgentRequest>(rawRequest, JsonOptions.Default);
                 if (scanRequest is null || string.IsNullOrWhiteSpace(scanRequest.RequestId))
                 {
                     await AppendAgentLogAsync(logPath, "Request invalid or empty. Waiting next tick.", cancellationToken);
@@ -330,8 +331,17 @@ static async Task RunAgentLoopAsync(CollectorOptions options, Collector collecto
                 }, cancellationToken);
 
                 controlMonitor.TryClearControlFile();
-                File.Delete(requestPath);
-                await AppendAgentLogAsync(logPath, $"Request finished and files cleared. RequestId={scanRequest.RequestId}", cancellationToken);
+
+                var confirmedRequestId = await TryReadRequestIdAsync(requestPath, cancellationToken);
+                if (confirmedRequestId == scanRequest.RequestId)
+                {
+                    File.Delete(requestPath);
+                    await AppendAgentLogAsync(logPath, $"Request finished and files cleared. RequestId={scanRequest.RequestId}", cancellationToken);
+                }
+                else
+                {
+                    await AppendAgentLogAsync(logPath, $"Request NOT deleted (RequestId changed on disk from {scanRequest.RequestId} to {confirmedRequestId ?? "(null)"}). A newer request is pending.", cancellationToken);
+                }
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -351,9 +361,16 @@ static async Task RunAgentLoopAsync(CollectorOptions options, Collector collecto
                     CompletedAtUtc = timedOutAt
                 }, cancellationToken);
 
-                if (File.Exists(requestPath))
+                var timeoutRequestId = scanRequest?.RequestId;
+                var currentOnDiskId = await TryReadRequestIdAsync(requestPath, cancellationToken);
+                if (timeoutRequestId is not null && currentOnDiskId != timeoutRequestId)
+                {
+                    await AppendAgentLogAsync(logPath, $"Request NOT deleted on timeout (RequestId changed from {timeoutRequestId} to {currentOnDiskId ?? "(null)"}). A newer request is pending.", cancellationToken);
+                }
+                else if (File.Exists(requestPath))
                 {
                     File.Delete(requestPath);
+                    await AppendAgentLogAsync(logPath, $"Request deleted after timeout. RequestId={timeoutRequestId ?? "(unknown)"}", cancellationToken);
                 }
             }
             catch (Exception ex)
@@ -371,9 +388,16 @@ static async Task RunAgentLoopAsync(CollectorOptions options, Collector collecto
                     CompletedAtUtc = DateTime.UtcNow
                 }, cancellationToken);
 
-                if (File.Exists(requestPath))
+                var exRequestId = scanRequest?.RequestId;
+                var currentOnDiskIdEx = await TryReadRequestIdAsync(requestPath, cancellationToken);
+                if (exRequestId is not null && currentOnDiskIdEx != exRequestId)
+                {
+                    await AppendAgentLogAsync(logPath, $"Request NOT deleted on error (RequestId changed from {exRequestId} to {currentOnDiskIdEx ?? "(null)"}). A newer request is pending.", cancellationToken);
+                }
+                else if (File.Exists(requestPath))
                 {
                     File.Delete(requestPath);
+                    await AppendAgentLogAsync(logPath, $"Request deleted after error. RequestId={exRequestId ?? "(unknown)"}", cancellationToken);
                 }
             }
 
@@ -405,6 +429,25 @@ static async Task<AgentStatus?> TryReadStatusAsync(string statusPath, Cancellati
     return await JsonSerializer.DeserializeAsync<AgentStatus>(stream, JsonOptions.Default, cancellationToken);
 }
 
+static async Task<string?> TryReadRequestIdAsync(string requestPath, CancellationToken cancellationToken)
+{
+    if (!File.Exists(requestPath))
+    {
+        return null;
+    }
+
+    try
+    {
+        await using var stream = File.OpenRead(requestPath);
+        var request = await JsonSerializer.DeserializeAsync<AgentRequest>(stream, JsonOptions.Default, cancellationToken);
+        return request?.RequestId;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
 static async Task RunHeartbeatLoopAsync(string heartbeatPath, CollectorOptions options, CancellationToken cancellationToken)
 {
     while (!cancellationToken.IsCancellationRequested)
@@ -418,7 +461,7 @@ static string ResolveSharedPath(CollectorOptions options)
 {
     if (string.IsNullOrWhiteSpace(options.SharedPath))
     {
-        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "runtime", "network-telemetry-agent"));
+        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "runtime", "network-telemetry-agent"));
     }
 
     var basePath = !string.IsNullOrWhiteSpace(options.ConfigurationDirectory)

@@ -1,0 +1,13 @@
+{
+  "requestId": "",
+  "state": "idle",
+  "agentId": "windows-agent-paolo",
+  "message": "Agente windows-agent-paolo en espera.",
+  "error": "",
+  "requestedByUsername": "",
+  "updatedAtUtc": "2026-07-03T15:24:57.4400792Z",
+  "currentIpAddress": "",
+  "currentHostName": "",
+  "currentSubnetCidr": "",
+  "currentStage": ""
+}

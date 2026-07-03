@@ -278,6 +278,13 @@
             }
         };
 
+        const hideExpired = () => {
+            sessionExpired = false;
+            if (expiredOverlay) {
+                expiredOverlay.style.display = "none";
+            }
+        };
+
         const validateSession = async ({ force = false, showWarningWhenNearExpiry = true } = {}) => {
             if (sessionExpired) {
                 return false;
@@ -359,7 +366,7 @@
         };
 
         const handlePassiveActivity = () => {
-            if (warningActive || sessionExpired || sessionCheckInFlight) {
+            if (warningActive || sessionExpired || sessionCheckInFlight || keepAliveInFlight) {
                 return;
             }
 
@@ -452,6 +459,7 @@
                     registerActivity(Date.now());
                     lastSessionCheckAt = Date.now();
                     hideWarning();
+                    hideExpired();
                 } catch (_) {
                     showExpired();
                 } finally {
@@ -471,6 +479,10 @@
 
         const tick = () => {
             if (sessionExpired) {
+                return;
+            }
+
+            if (keepAliveInFlight) {
                 return;
             }
 

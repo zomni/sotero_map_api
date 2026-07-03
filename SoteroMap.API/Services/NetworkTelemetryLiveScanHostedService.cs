@@ -46,10 +46,7 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
             var nextOccurrenceUtc = configuredSchedules
                 .Select(expression => expression.GetNextOccurrence(nowUtc.UtcDateTime, _scheduleTimeZone))
                 .Where(next => next.HasValue)
-                .Select(next => new DateTimeOffset(
-                    TimeZoneInfo.ConvertTimeToUtc(
-                        DateTime.SpecifyKind(next!.Value, DateTimeKind.Unspecified),
-                        _scheduleTimeZone)))
+                .Select(next => new DateTimeOffset(next!.Value, TimeSpan.Zero))
                 .OrderBy(next => next)
                 .FirstOrDefault();
 
@@ -109,6 +106,8 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
                 db.ScheduledScanRuns.Add(run);
                 await db.SaveChangesAsync(stoppingToken);
 
+                var scanner = scope.ServiceProvider.GetRequiredService<NetworkTelemetryLiveScanService>();
+
                 if (bridge.UseAgentMode())
                 {
                     var agentStatus = await bridge.GetStatusAsync(stoppingToken);
@@ -121,6 +120,41 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
                         run.Status = "skipped";
                         run.CompletedAtUtc = DateTime.UtcNow;
                         run.ErrorMessage = $"Agente ocupado (estado: {agentStatus.State})";
+                        await db.SaveChangesAsync(stoppingToken);
+                        continue;
+                    }
+
+                    var previousQueuedRun = await db.ScheduledScanRuns
+                        .Where(r => r.Status == "queued" && r.CompletedAtUtc == null)
+                        .OrderByDescending(r => r.CreatedAtUtc)
+                        .FirstOrDefaultAsync(stoppingToken);
+
+                    var shouldFallbackToInline = !agentStatus.IsConnected
+                        || previousQueuedRun is not null;
+
+                    if (shouldFallbackToInline)
+                    {
+                        var reason = !agentStatus.IsConnected
+                            ? $"Agent disconnected (state={agentStatus.State})"
+                            : $"Previous scan run #{previousQueuedRun!.Id} is still queued without completion";
+
+                        _logger.LogWarning(
+                            "Falling back to inline scan. Reason: {Reason}",
+                            reason);
+
+                        var result = await scanner.ScanAndStoreAsync("system", new NetworkTelemetryLiveScanRequest
+                        {
+                            ResolveInteractiveSessions = true,
+                            ScanMode = "simple",
+                            TriggerType = "scheduled"
+                        }, stoppingToken);
+                        _logger.LogInformation("Live network telemetry auto scan completed inline (agent bypassed).");
+
+                        run.Status = "completed";
+                        run.CompletedAtUtc = DateTime.UtcNow;
+                        run.SnapshotId = result.SnapshotId;
+                        run.DeviceCount = result.DeviceCount;
+                        run.UserCount = result.UserCount;
                         await db.SaveChangesAsync(stoppingToken);
                         continue;
                     }
@@ -138,7 +172,6 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
                 }
                 else
                 {
-                    var scanner = scope.ServiceProvider.GetRequiredService<NetworkTelemetryLiveScanService>();
                     var result = await scanner.ScanAndStoreAsync("system", new NetworkTelemetryLiveScanRequest
                     {
                         ResolveInteractiveSessions = true,
@@ -192,10 +225,7 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
         var nextOccurrenceUtc = schedules
             .Select(expression => expression.GetNextOccurrence(nowUtc.UtcDateTime, _scheduleTimeZone))
             .Where(next => next.HasValue)
-            .Select(next => new DateTimeOffset(
-                TimeZoneInfo.ConvertTimeToUtc(
-                    DateTime.SpecifyKind(next!.Value, DateTimeKind.Unspecified),
-                    _scheduleTimeZone)))
+            .Select(next => new DateTimeOffset(next!.Value, TimeSpan.Zero))
             .OrderBy(next => next)
             .FirstOrDefault();
 
