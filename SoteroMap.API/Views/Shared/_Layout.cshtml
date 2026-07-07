@@ -124,11 +124,14 @@
                             <i class="bi bi-clock-history me-2"></i>Actividad
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString() == "Compliance" ? "active" : "")" href="/admin/compliance">
-                            <i class="bi bi-shield-check me-2"></i>Cumplimiento
-                        </a>
-                    </li>
+                    @if (User.IsInRole(SoteroMap.API.Models.AppRoles.Admin) || User.IsInRole(SoteroMap.API.Models.AppRoles.Auditor))
+                    {
+                        <li class="nav-item">
+                            <a class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString() == "Compliance" ? "active" : "")" href="/admin/compliance">
+                                <i class="bi bi-shield-check me-2"></i>Cumplimiento
+                            </a>
+                        </li>
+                    }
                     <li class="nav-item">
                         <a class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString() == "NetworkTelemetry" ? "active" : "")" href="/dashboard/network-telemetry">
                             <i class="bi bi-diagram-3 me-2"></i>Red y riesgo

@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,9 @@ namespace SoteroMap.API.Controllers;
 [Authorize]
 public class AdminController : Controller
 {
+    public record UpdateUserRequest(string Role, bool CanManageUsers);
+    public record ResetPasswordRequest(string NewPassword);
+    public record ToggleMfaRequest(string Action);
     private readonly AppDbContext _context;
     private readonly AuditLogService _auditLogService;
     private readonly DatabaseBackupService _databaseBackupService;
@@ -250,6 +254,12 @@ public class AdminController : Controller
             })
             .ToListAsync();
 
+        var currentUsername = User.Identity?.Name ?? string.Empty;
+        var canManageUsers = await _context.AuthUsers
+            .Where(u => u.NormalizedUsername == currentUsername.ToUpperInvariant())
+            .Select(u => u.CanManageUsers)
+            .FirstOrDefaultAsync();
+
         var model = new ComplianceDashboardViewModel
         {
             OverallStatus = overallStatus,
@@ -276,6 +286,7 @@ public class AdminController : Controller
             BackupHealthy = backupHealthy,
             LdapsConfigured = ldapsConfigured,
             DataIntegrityHealthy = dataIntegrityHealthy,
+            CurrentUserCanManageUsers = canManageUsers,
             DatabaseFileName = databaseFileInfo?.Name ?? "soteromap.db",
             DatabaseFileSizeBytes = databaseFileInfo?.Length ?? 0,
             DatabaseLastWriteUtc = databaseFileInfo?.LastWriteTimeUtc,
@@ -290,6 +301,199 @@ public class AdminController : Controller
     public IActionResult ComplianceLegacy()
     {
         return RedirectToAction(nameof(Compliance));
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpGet("/api/admin/users")]
+    public async Task<IActionResult> GetUsers(CancellationToken cancellationToken)
+    {
+        var currentUsername = User.Identity?.Name ?? string.Empty;
+        var currentUser = await _context.AuthUsers
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.NormalizedUsername == currentUsername.ToUpperInvariant(), cancellationToken);
+
+        if (currentUser is null || !currentUser.CanManageUsers)
+        {
+            return Forbid();
+        }
+
+        var users = await _context.AuthUsers
+            .AsNoTracking()
+            .OrderBy(u => u.Username)
+            .Select(u => new
+            {
+                u.Id,
+                u.Username,
+                u.Role,
+                u.IsActive,
+                u.CanManageUsers,
+                u.MfaEnabled,
+                MfaState = u.MfaEnabled && !string.IsNullOrEmpty(u.MfaSecretProtected) ? "enabled" : u.MfaEnabled ? "pending" : "disabled",
+                u.LastLoginAtUtc,
+                u.CreatedAtUtc
+            })
+            .ToListAsync(cancellationToken);
+
+        return Ok(users);
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPut("/api/admin/users/{userId:int}")]
+    public async Task<IActionResult> UpdateUser(int userId, [FromBody] UpdateUserRequest request, CancellationToken cancellationToken)
+    {
+        var currentUsername = User.Identity?.Name ?? string.Empty;
+        var currentUser = await _context.AuthUsers
+            .FirstOrDefaultAsync(u => u.NormalizedUsername == currentUsername.ToUpperInvariant(), cancellationToken);
+
+        if (currentUser is null || !currentUser.CanManageUsers)
+        {
+            return Forbid();
+        }
+
+        var targetUser = await _context.AuthUsers.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        if (targetUser is null)
+        {
+            return NotFound(new { message = "Usuario no encontrado." });
+        }
+
+        if (string.Equals(targetUser.Username, currentUser.Username, StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { message = "No puedes modificar tus propios permisos." });
+        }
+
+        var oldRole = targetUser.Role;
+        var oldCanManageUsers = targetUser.CanManageUsers;
+
+        if (!string.IsNullOrWhiteSpace(request.Role))
+        {
+            targetUser.Role = BackendAuthService.NormalizeRole(request.Role);
+        }
+        targetUser.CanManageUsers = request.CanManageUsers;
+        targetUser.UpdatedAtUtc = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        await _auditLogService.LogSecurityEventAsync(
+            actionType: "user-role-update",
+            resource: "auth",
+            summary: $"Se actualizaron permisos de {targetUser.Username}",
+            details: $"Rol: {oldRole} -> {targetUser.Role}; CanManageUsers: {oldCanManageUsers} -> {targetUser.CanManageUsers}",
+            result: "success",
+            severity: "warning",
+            changedByUsername: currentUsername,
+            cancellationToken: cancellationToken);
+
+        return Ok(new { message = $"Usuario {targetUser.Username} actualizado." });
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPost("/api/admin/users/{userId:int}/reset-password")]
+    public async Task<IActionResult> ResetPassword(int userId, [FromBody] ResetPasswordRequest request, CancellationToken cancellationToken)
+    {
+        var currentUsername = User.Identity?.Name ?? string.Empty;
+        var currentUser = await _context.AuthUsers
+            .FirstOrDefaultAsync(u => u.NormalizedUsername == currentUsername.ToUpperInvariant(), cancellationToken);
+
+        if (currentUser is null || !currentUser.CanManageUsers)
+        {
+            return Forbid();
+        }
+
+        var targetUser = await _context.AuthUsers.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        if (targetUser is null)
+        {
+            return NotFound(new { message = "Usuario no encontrado." });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 8)
+        {
+            return BadRequest(new { message = "La contrasena debe tener al menos 8 caracteres." });
+        }
+
+        var passwordHasher = HttpContext.RequestServices.GetRequiredService<IPasswordHasher<AuthUser>>();
+        var newHash = passwordHasher.HashPassword(targetUser, request.NewPassword);
+        targetUser.PasswordHash = newHash;
+        targetUser.UpdatedAtUtc = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        await _auditLogService.LogSecurityEventAsync(
+            actionType: "user-password-reset",
+            resource: "auth",
+            summary: $"Se restablecio la contrasena de {targetUser.Username}",
+            details: $"Restablecido por administrador",
+            result: "success",
+            severity: "warning",
+            changedByUsername: currentUsername,
+            cancellationToken: cancellationToken);
+
+        return Ok(new { message = $"Contrasena de {targetUser.Username} restablecida." });
+    }
+
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpPut("/api/admin/users/{userId:int}/mfa")]
+    public async Task<IActionResult> ToggleMfa(int userId, [FromBody] ToggleMfaRequest request, CancellationToken cancellationToken)
+    {
+        var currentUsername = User.Identity?.Name ?? string.Empty;
+        var currentUser = await _context.AuthUsers
+            .FirstOrDefaultAsync(u => u.NormalizedUsername == currentUsername.ToUpperInvariant(), cancellationToken);
+
+        if (currentUser is null || !currentUser.CanManageUsers)
+        {
+            return Forbid();
+        }
+
+        var targetUser = await _context.AuthUsers.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        if (targetUser is null)
+        {
+            return NotFound(new { message = "Usuario no encontrado." });
+        }
+
+        var action = request.Action?.Trim().ToLowerInvariant() ?? "disable";
+        var newState = action switch
+        {
+            "enable" => "enabled",
+            "reenroll" => "pending",
+            _ => "disabled"
+        };
+
+        switch (action)
+        {
+            case "enable":
+                targetUser.MfaEnabled = true;
+                if (string.IsNullOrEmpty(targetUser.MfaSecretProtected))
+                {
+                    newState = "pending";
+                }
+                break;
+            case "reenroll":
+                targetUser.MfaEnabled = true;
+                targetUser.MfaSecretProtected = string.Empty;
+                targetUser.MfaEnrolledAtUtc = null;
+                targetUser.MfaLastVerifiedAtUtc = null;
+                break;
+            default:
+                targetUser.MfaEnabled = false;
+                targetUser.MfaSecretProtected = string.Empty;
+                targetUser.MfaEnrolledAtUtc = null;
+                targetUser.MfaLastVerifiedAtUtc = null;
+                break;
+        }
+
+        targetUser.UpdatedAtUtc = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+
+        await _auditLogService.LogSecurityEventAsync(
+            actionType: "user-mfa-toggle",
+            resource: "auth",
+            summary: $"Se {(action == "disable" ? "desactivo" : action == "reenroll" ? "re-enrolo" : "activo")} MFA de {targetUser.Username}",
+            details: $"Accion: {action}",
+            result: "success",
+            severity: "warning",
+            changedByUsername: currentUsername,
+            cancellationToken: cancellationToken);
+
+        return Ok(new { message = $"MFA {(action == "disable" ? "desactivado" : action == "reenroll" ? "re-enrolado" : "activado")} para {targetUser.Username}.", mfaState = newState });
     }
 
     [Authorize]

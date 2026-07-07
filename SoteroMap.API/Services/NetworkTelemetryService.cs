@@ -2111,4 +2111,36 @@ public class NetworkTelemetryService
             CreatedAtUtc = run.CreatedAtUtc
         }).ToList();
     }
+
+    public async Task<bool> DeleteSnapshotAsync(int snapshotId, string deletedByUsername, CancellationToken cancellationToken = default)
+    {
+        var snapshot = await _context.NetworkTelemetrySnapshots
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == snapshotId, cancellationToken);
+
+        if (snapshot is null)
+        {
+            return false;
+        }
+
+        await _context.NetworkTelemetryObservations
+            .Where(o => o.NetworkTelemetrySnapshotId == snapshotId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        await _context.NetworkTelemetrySnapshots
+            .Where(s => s.Id == snapshotId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        await _auditLogService.LogSecurityEventAsync(
+            actionType: "network-telemetry-delete",
+            resource: "network-telemetry",
+            summary: $"Se elimino la snapshot #{snapshotId} desde {snapshot.SourceName}",
+            details: $"Fuente: {snapshot.SourceName}; Tipo: {snapshot.SourceType}; Fecha: {snapshot.ObservedAtUtc:O}",
+            result: "success",
+            severity: "warning",
+            changedByUsername: deletedByUsername,
+            cancellationToken: cancellationToken);
+
+        return true;
+    }
 }

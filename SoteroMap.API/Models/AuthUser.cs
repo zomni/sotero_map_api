@@ -11,6 +11,7 @@ public class AuthUser
     public string MfaSecretProtected { get; set; } = string.Empty;
     public DateTime? MfaEnrolledAtUtc { get; set; }
     public DateTime? MfaLastVerifiedAtUtc { get; set; }
+    public bool CanManageUsers { get; set; } = true;
     public bool IsActive { get; set; } = true;
     public int FailedLoginAttempts { get; set; }
     public DateTime? LockedUntilUtc { get; set; }

@@ -186,6 +186,7 @@ public static class ExtendedSchemaInitializer
             await EnsureColumnAsync(context, "AuthUsers", "MfaSecretProtected", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "AuthUsers", "MfaEnrolledAtUtc", "TEXT NULL");
             await EnsureColumnAsync(context, "AuthUsers", "MfaLastVerifiedAtUtc", "TEXT NULL");
+            await EnsureColumnAsync(context, "AuthUsers", "CanManageUsers", "INTEGER NOT NULL DEFAULT 1");
             await EnsureColumnAsync(context, "SyncedBuildings", "ManualCampus", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "SyncedBuildings", "ManualDisplayName", "TEXT NOT NULL DEFAULT ''");
             await EnsureColumnAsync(context, "SyncedBuildings", "ManualFloorsJson", "TEXT NOT NULL DEFAULT ''");

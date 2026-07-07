@@ -11,6 +11,22 @@
     };
 }
 
+@functions {
+    string FormatChileTime(DateTime? utcValue, string format = "dd/MM/yyyy HH:mm")
+    {
+        if (utcValue == null) return "-";
+        try
+        {
+            var tz = TimeZoneInfo.FindSystemTimeZoneById("America/Santiago");
+            return TimeZoneInfo.ConvertTimeFromUtc(utcValue.Value, tz).ToString(format);
+        }
+        catch
+        {
+            return utcValue.Value.ToLocalTime().ToString(format);
+        }
+    }
+}
+
 <style>
     .telemetry-hero {
         border: 0;
@@ -322,18 +338,40 @@
 
 @if (Model.ActiveSnapshotId > 0)
 {
-    <div class="alert alert-light border d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
-        <div>
-            <div class="fw-semibold">
-                @(Model.IsViewingLatestSnapshot ? "Viendo la ultima snapshot" : $"Viendo snapshot #{Model.ActiveSnapshotId}")
-            </div>
-            <div class="small text-muted">
-                Fuente: @Model.LatestSourceName | Fecha: @(Model.LatestObservedAtUtc?.ToString("dd/MM/yyyy HH:mm") ?? "-")
-            </div>
+    var triggerLabel = Model.LatestSourceType switch
+    {
+        "scheduled" => "Programado",
+        "automatic" => "Automatico",
+        "manual" => "Manual",
+        _ => Model.LatestSourceType
+    };
+    <div class="d-flex flex-wrap align-items-center gap-2 py-3 px-4 mb-4 rounded-4 border"
+         style="background: linear-gradient(135deg, #f0f4fe 0%, #e8eefa 100%);">
+        <div class="d-flex align-items-center gap-2 me-3">
+            <span class="badge bg-primary bg-opacity-75 rounded-pill fs-6 fw-semibold px-3 py-2">
+                <i class="bi bi-camera-fill me-1"></i>
+                @(Model.IsViewingLatestSnapshot ? "Ultima snapshot" : $"Snapshot #{Model.ActiveSnapshotId}")
+            </span>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-3 small">
+            <span class="d-inline-flex align-items-center gap-1 text-secondary">
+                <i class="bi bi-broadcast text-primary"></i>
+                @Model.LatestSourceName@(string.IsNullOrWhiteSpace(triggerLabel) ? "" : $" ({triggerLabel})")
+            </span>
+            <span class="text-secondary fw-lighter">|</span>
+            <span class="d-inline-flex align-items-center gap-1 text-secondary">
+                <i class="bi bi-calendar3 text-primary"></i>
+                @FormatChileTime(Model.LatestObservedAtUtc)
+            </span>
+            <span class="text-secondary fw-lighter">|</span>
+            <span class="d-inline-flex align-items-center gap-1 text-secondary">
+                <i class="bi bi-hash text-primary"></i>
+                #@Model.ActiveSnapshotId
+            </span>
         </div>
         @if (!Model.IsViewingLatestSnapshot && Model.LatestSnapshotId > 0)
         {
-            <a href="/dashboard/network-telemetry" class="btn btn-outline-primary">
+            <a href="/dashboard/network-telemetry" class="btn btn-sm btn-outline-primary ms-auto rounded-pill">
                 <i class="bi bi-arrow-counterclockwise me-1"></i> Volver a la ultima
             </a>
         }
@@ -347,9 +385,12 @@
                 <div class="text-uppercase small fw-semibold text-muted mb-2">Estado del modulo</div>
                 <h1 class="fw-bold mb-3">@Model.HealthLabel</h1>
                 <div class="d-flex flex-wrap gap-2">
-                    <a href="/admin/compliance" class="btn btn-light fw-semibold">
-                        <i class="bi bi-shield-check me-1"></i> Ver cumplimiento
-                    </a>
+                    @if (User.IsInRole(SoteroMap.API.Models.AppRoles.Admin) || User.IsInRole(SoteroMap.API.Models.AppRoles.Auditor))
+                    {
+                        <a href="/admin/compliance" class="btn btn-light fw-semibold">
+                            <i class="bi bi-shield-check me-1"></i> Ver cumplimiento
+                        </a>
+                    }
                     @if (User.IsInRole(SoteroMap.API.Models.AppRoles.Admin) || User.IsInRole(SoteroMap.API.Models.AppRoles.Auditor))
                     {
                         <button id="network-telemetry-scan" type="button" class="btn btn-warning fw-semibold">
@@ -376,22 +417,42 @@
             </div>
             <div class="col-lg-5">
                 <div class="bg-white bg-opacity-10 rounded-4 p-4">
-                    <div class="row g-3 text-center">
+                    <div class="row g-3">
                         <div class="col-6">
-                            <div class="fs-3 fw-bold">@Model.TotalSnapshots</div>
-                            <div class="small text-muted">Snapshots</div>
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <span class="d-inline-flex align-items-center justify-content-center rounded-2" style="width:28px;height:28px;background:rgba(255,255,255,0.15)">
+                                    <i class="bi bi-collection" style="font-size:0.85rem"></i>
+                                </span>
+                                <span class="small text-white-50">Snapshots</span>
+                            </div>
+                            <div class="fs-3 fw-bold text-white ms-1">@Model.TotalSnapshots</div>
                         </div>
                         <div class="col-6">
-                            <div class="fs-3 fw-bold">@Model.LatestConnectedUserCount</div>
-                            <div class="small text-muted">Endpoints agrupados</div>
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <span class="d-inline-flex align-items-center justify-content-center rounded-2" style="width:28px;height:28px;background:rgba(255,255,255,0.15)">
+                                    <i class="bi bi-people" style="font-size:0.85rem"></i>
+                                </span>
+                                <span class="small text-white-50">Endpoints</span>
+                            </div>
+                            <div class="fs-3 fw-bold text-white ms-1">@Model.LatestConnectedUserCount</div>
                         </div>
                         <div class="col-6">
-                            <div class="fs-3 fw-bold">@Model.LatestDeviceCount</div>
-                            <div class="small text-muted">Equipos observados</div>
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <span class="d-inline-flex align-items-center justify-content-center rounded-2" style="width:28px;height:28px;background:rgba(255,255,255,0.15)">
+                                    <i class="bi bi-pc-display" style="font-size:0.85rem"></i>
+                                </span>
+                                <span class="small text-white-50">Equipos</span>
+                            </div>
+                            <div class="fs-3 fw-bold text-white ms-1">@Model.LatestDeviceCount</div>
                         </div>
                         <div class="col-6">
-                            <div class="fs-3 fw-bold">@Model.LatestRiskScore</div>
-                            <div class="small text-muted">Riesgo base</div>
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <span class="d-inline-flex align-items-center justify-content-center rounded-2 @(Model.LatestRiskScore > 0 ? "bg-warning bg-opacity-25" : "")" style="width:28px;height:28px;background:rgba(255,255,255,0.15)">
+                                    <i class="bi bi-shield-exclamation" style="font-size:0.85rem;@(Model.LatestRiskScore > 0 ? "color:#ffc107" : "")"></i>
+                                </span>
+                                <span class="small text-white-50">Riesgo base</span>
+                            </div>
+                            <div class="fs-3 fw-bold @(Model.LatestRiskScore > 0 ? "text-warning" : "text-white") ms-1">@Model.LatestRiskScore</div>
                         </div>
                     </div>
                 </div>
@@ -437,8 +498,23 @@
                 </div>
                 <div>
                     <div class="text-muted small">Ultima captura</div>
-                    <div class="fw-semibold">@((Model.LatestObservedAtUtc is null) ? "Sin datos" : Model.LatestObservedAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm"))</div>
-                    <div class="small text-muted">@((Model.IsFresh ? "Al dia" : "Pendiente de refresco"))</div>
+                    <div class="fw-semibold">@FormatChileTime(Model.LatestObservedAtUtc)</div>
+                    <div class="small @(Model.IsFresh ? "text-success" : "text-warning")">
+                        @if (Model.LatestObservedAtUtc.HasValue)
+                        {
+                            var elapsed = DateTime.UtcNow - Model.LatestObservedAtUtc.Value;
+                            var display = elapsed.TotalSeconds < 0 ? "Ahora"
+                                : elapsed.TotalMinutes < 1 ? "Hace segundos"
+                                : elapsed.TotalMinutes < 120 ? $"Hace {(int)elapsed.TotalMinutes} min"
+                                : elapsed.TotalHours < 48 ? $"Hace {(int)elapsed.TotalHours} h {(int)elapsed.Minutes} min"
+                                : $"Hace {(int)elapsed.TotalDays} d";
+                            <span><i class="bi bi-@(Model.IsFresh ? "check-circle" : "exclamation-circle") me-1"></i>@display</span>
+                        }
+                        else
+                        {
+                            <span>Sin datos</span>
+                        }
+                    </div>
                 </div>
             </div>
         </div>
@@ -935,6 +1011,7 @@
         const subnetRiskSummaries = @Html.Raw(JsonSerializer.Serialize(Model.SubnetRiskSummaries, telemetryJsonOptions));
         let latestDevicePage = null;
         let pendingSnapshotId = 0;
+        let lastKnownSnapshotId = activeSnapshotId;
         let sessionSortDirection = "desc";
         let subnetSortBy = "risk";
         let subnetSortDirection = "desc";
@@ -1588,7 +1665,7 @@
                 <td>${user.role || ""}</td>
                 <td>${sessionStateBadge(user.sessionState, user.sessionStateLabel || user.sessionState || "")}</td>
                 <td>${user.subnetCidr || ""}</td>
-                <td>${user.lastSeenAtUtc ? new Date(user.lastSeenAtUtc).toLocaleString("es-CL") : "-"}</td>
+                <td>${user.lastSeenAtUtc ? formatChileDateTime(user.lastSeenAtUtc) : "-"}</td>
                 <td>${user.pingMs == null ? "-" : `${user.pingMs} ms`}</td>
                 <td>${user.openPorts || ""}</td>
                 <td><span class="telemetry-pill telemetry-pill-${user.riskLevel || "unknown"}">${user.riskLevel || ""} (${user.riskScore ?? 0})</span></td>
@@ -1681,7 +1758,7 @@
                 ? `<div class="text-muted">No hay snapshots para ese filtro.</div>`
                 : `<div class="telemetry-table-wrap table-responsive"><table class="table align-middle"><thead><tr><th>Fecha</th><th>Fuente</th><th>Estado</th><th>Usuarios</th><th>Equipos</th><th>Riesgo</th></tr></thead><tbody>${items.map((item) => `
                     <tr>
-                        <td>${item.observedAtUtc ? new Date(item.observedAtUtc).toLocaleString("es-CL") : ""}</td>
+                        <td>${item.observedAtUtc ? formatChileDateTime(item.observedAtUtc) : ""}</td>
                         <td><div class="fw-semibold">${item.sourceName || ""}</div><div class="small text-muted">${item.sourceType || ""} · ${item.triggerLabel || ""}</div></td>
                         <td><div>${item.status || ""}</div><div class="small text-muted">${item.createdByUsername || ""}</div></td>
                         <td>${item.connectedUserCount ?? 0}</td>
@@ -1717,7 +1794,7 @@
                         <td>${item.connectedUserCount ?? 0}</td>
                         <td>${item.deviceCount ?? 0}</td>
                         <td><span class="telemetry-pill telemetry-pill-${item.riskLevel || "unknown"}">${item.riskLevel || ""} (${item.riskScore ?? 0})</span></td>
-                        <td class="text-end">${Number(item.id) === activeSnapshotId ? '<span class="badge bg-primary-subtle text-primary-emphasis me-2">Activa</span>' : ''}<a href="/dashboard/network-telemetry?snapshotId=${item.id}" class="btn btn-sm btn-outline-primary">Abrir</a></td>
+                        <td class="text-end text-nowrap">${Number(item.id) === activeSnapshotId ? '<span class="badge bg-primary-subtle text-primary-emphasis me-2">Activa</span>' : ''}<a href="/dashboard/network-telemetry?snapshotId=${item.id}" class="btn btn-sm btn-outline-primary me-1" title="Abrir esta snapshot"><i class="bi bi-eye"></i></a><button type="button" class="btn btn-sm btn-outline-danger" title="Eliminar esta snapshot" data-delete-snapshot="${item.id}"><i class="bi bi-trash3"></i></button></td>
                     </tr>`).join("")}</tbody></table></div>`;
 
             snapshotTable.querySelectorAll("[data-snapshot-sort]").forEach((button) => {
@@ -1727,6 +1804,41 @@
                     if (snapshotSortSelect) snapshotSortSelect.value = nextSortBy;
                     if (snapshotDirectionSelect) snapshotDirectionSelect.value = nextDirection;
                     loadSnapshots(1);
+                });
+            });
+
+            snapshotTable.querySelectorAll("[data-delete-snapshot]").forEach((button) => {
+                button.addEventListener("click", () => {
+                    const snapshotId = button.getAttribute("data-delete-snapshot");
+                    if (!snapshotId || !confirm(`¿Esta seguro de eliminar la snapshot #${snapshotId}? Los datos de observacion asociados tambien se eliminaran.`)) {
+                        return;
+                    }
+
+                    button.disabled = true;
+                    button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+
+                    fetch(`/api/network-telemetry/snapshots/${snapshotId}`, {
+                        method: "DELETE",
+                        credentials: "include",
+                        headers: { "Accept": "application/json" }
+                    })
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error(`La API respondio ${response.status}`);
+                            }
+
+                            return response.json();
+                        })
+                        .then(() => {
+                            const currentPage = Number(new URLSearchParams(window.location.search).get("page")) || 1;
+                            loadSnapshots(currentPage);
+                        })
+                        .catch((error) => {
+                            console.error("Error eliminando snapshot:", error);
+                            alert("No se pudo eliminar la snapshot.");
+                            button.disabled = false;
+                            button.innerHTML = '<i class="bi bi-trash3"></i>';
+                        });
                 });
             });
 
@@ -1802,15 +1914,18 @@
                 scheduledTable.innerHTML = `<div class="text-muted">No hay escaneos programados registrados.</div>`;
                 return;
             }
-            scheduledTable.innerHTML = `<div class="telemetry-table-wrap table-responsive"><table class="table align-middle"><thead><tr><th>Dia</th><th>Hora</th><th>Inicio</th><th>Estado</th><th>Error</th><th>Equipos</th><th>Usuarios</th></tr></thead><tbody>${list.map((item) => {
+            scheduledTable.innerHTML = `<div class="telemetry-table-wrap table-responsive"><table class="table align-middle"><thead><tr><th>Dia</th><th>Hora</th><th>Inicio</th><th>Estado</th><th>Error</th><th>Equipos</th><th>Usuarios</th><th>Accion</th></tr></thead><tbody>${list.map((item) => {
                 const statusBadge = item.status === "completed" ? '<span class="badge bg-success">Completado</span>'
                     : item.status === "failed" ? '<span class="badge bg-danger">Fallado</span>'
                     : item.status === "running" ? '<span class="badge bg-primary">Ejecutando</span>'
                     : item.status === "skipped" ? '<span class="badge bg-warning text-dark">Saltado</span>'
                     : item.status === "queued" ? '<span class="badge bg-info text-dark">En cola</span>'
                     : '<span class="badge bg-secondary">' + (item.statusLabel || item.status || "") + '</span>';
-                const startedAt = item.startedAtUtc ? new Date(item.startedAtUtc).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }) : "-";
+                const startedAt = item.startedAtUtc ? formatChileTime(item.startedAtUtc) : "-";
                 const errMsg = item.status === "failed" && item.errorMessage ? `<div class="small text-danger" title="${item.errorMessage.replace(/"/g, "&quot;")}">${item.errorMessage.length > 80 ? item.errorMessage.substring(0, 80) + "..." : item.errorMessage}</div>` : "";
+                const loadBtn = item.snapshotId > 0
+                    ? `<a href="/dashboard/network-telemetry?snapshotId=${item.snapshotId}" class="btn btn-sm btn-outline-primary" title="Cargar esta snapshot"><i class="bi bi-eye"></i></a>`
+                    : '<span class="text-muted">-</span>';
                 return `<tr>
                     <td>${item.scheduledDayLocal || ""}</td>
                     <td>${item.scheduledTimeLocal || ""}</td>
@@ -1819,6 +1934,7 @@
                     <td>${errMsg || '<span class="text-muted small">-</span>'}</td>
                     <td>${item.deviceCount != null ? item.deviceCount : '-'}</td>
                     <td>${item.userCount != null ? item.userCount : '-'}</td>
+                    <td>${loadBtn}</td>
                 </tr>`;
             }).join("")}</tbody></table></div>`;
         };
@@ -1883,8 +1999,9 @@
                         ? "warning text-dark"
                         : "info";
 
-            if (snapshotId > 0 && snapshotId !== latestSnapshotId && state === "completed") {
+            if (state === "completed" && snapshotId > lastKnownSnapshotId) {
                 pendingSnapshotId = snapshotId;
+                lastKnownSnapshotId = snapshotId;
             }
 
             const refreshButton = pendingSnapshotId > 0
@@ -1928,8 +2045,11 @@
                     refreshButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Cargando...';
                 }
 
+                const targetSnapshotId = pendingSnapshotId;
+                pendingSnapshotId = 0;
+
                 window.setTimeout(() => {
-                    window.location.href = `/dashboard/network-telemetry?t=${Date.now()}`;
+                    window.location.href = `/dashboard/network-telemetry?snapshotId=${targetSnapshotId}&t=${Date.now()}`;
                 }, 120);
             });
 
@@ -1956,9 +2076,6 @@
                 stopButton.disabled = !(isConnected && (state === "running" || state === "paused" || state === "pending" || state === "stopping"));
             }
 
-            if (reloadWhenCompleted && state === "completed" && snapshotId > 0 && snapshotId !== latestSnapshotId) {
-                pendingSnapshotId = snapshotId;
-            }
         };
 
         const loadAgentStatus = (reloadWhenCompleted = false) => {

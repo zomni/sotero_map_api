@@ -87,6 +87,7 @@ public class ComplianceDashboardViewModel
     public bool BackupHealthy { get; set; }
     public bool LdapsConfigured { get; set; }
     public bool DataIntegrityHealthy { get; set; }
+    public bool CurrentUserCanManageUsers { get; set; }
     public string DatabaseFileName { get; set; } = string.Empty;
     public long DatabaseFileSizeBytes { get; set; }
     public DateTime? DatabaseLastWriteUtc { get; set; }

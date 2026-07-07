@@ -29,7 +29,7 @@ El proyecto se organiza asi:
 - Importacion/exportacion de la base SQLite desde el dashboard.
 - Formularios de entrega con vista previa PDF y opcion de agregar al inventario.
 - Sesion normal con timeout de 15 minutos.
-- Opcion `Mantener sesion iniciada`, que evita el timeout visual y usa una cookie persistente.
+- Opcion `Recordarme` en el login, que deja una cookie persistente para recordar la cuenta y mantener el flujo MFA asociado.
 - Panel de cumplimiento para Admin y Auditor con semaforo SGSI, backups, accesos, MFA, HTTPS, Swagger y LDAPS.
 - Endpoint tecnico de integridad en `GET /api/health/integrity`.
 - Panel tecnico de cumplimiento visible en `GET /dashboard/compliance`.
@@ -79,6 +79,16 @@ docker compose down -v
 - Actividad: `http://localhost:5000/dashboard/activity`
 - Formulario de entrega: `http://localhost:5000/dashboard/delivery-form`
 - Swagger: `http://localhost:5000/swagger`
+
+API interna para consumo de resultados de telemetria:
+
+- Resumen: `GET /api/network-telemetry/office/summary`
+- Snapshots: `GET /api/network-telemetry/office/snapshots`
+- Snapshot detalle: `GET /api/network-telemetry/office/snapshots/{snapshotId}`
+- Equipos del snapshot: `GET /api/network-telemetry/office/snapshots/{snapshotId}/devices`
+- Usuarios del snapshot: `GET /api/network-telemetry/office/snapshots/{snapshotId}/users`
+- Riesgos del snapshot: `GET /api/network-telemetry/office/snapshots/{snapshotId}/risks`
+- Export CSV de equipos: `GET /api/network-telemetry/office/snapshots/{snapshotId}/devices/export`
 
 Nota: `/admin` se mantiene como compatibilidad interna y redirige visualmente a `/dashboard` en solicitudes GET.
 
@@ -236,7 +246,7 @@ Configuracion en `SoteroMap.API/appsettings.json`:
 ```
 
 - Una sesion normal muestra aviso antes de expirar y caduca por inactividad.
-- Si se marca `Mantener sesion iniciada`, el timeout visual queda desactivado y la cookie dura `RememberMeDays`.
+- Si se marca `Recordarme`, se mantiene la cuenta recordada y la cookie dura `RememberMeDays`, pero el flujo operativo sigue pasando por login/MFA cuando corresponda.
 
 ## Funciones principales
 
@@ -387,6 +397,16 @@ Notas importantes:
 5. Al presionarlo, el backend encola la solicitud.
 6. El agente ejecuta el escaneo real en Windows.
 7. El dashboard se refresca cuando llega el nuevo snapshot.
+
+### Snapshots y tipos de ejecucion
+
+La telemetria guarda snapshots historicos en SQLite y distingue entre:
+
+- ejecuciones manuales desde dashboard
+- ejecuciones programadas
+- ingestas del agente Windows
+
+Las vistas del dashboard y la API interna permiten revisar una snapshot especifica, volver a la ultima y exportar el detalle para analisis externo.
 
 ### Mantencion del agente
 

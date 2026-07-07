@@ -15,6 +15,7 @@ public class AuthController : Controller
 {
     private const string PendingMfaScheme = "MfaPending";
     private const string RememberMeClaimType = "sotero:remember_me";
+    private const string CanManageUsersClaimType = "sotero:can_manage_users";
     private const string MfaModeClaimType = "sotero:mfa_mode";
     private const string MfaSetupKeyClaimType = "sotero:mfa_setup_key";
     private const string MfaUserIdClaimType = "sotero:mfa_user_id";
@@ -91,7 +92,7 @@ public class AuthController : Controller
             return View(model);
         }
 
-        if (_mfaService.IsRequiredForRole(result.User.Role))
+        if (result.User.MfaEnabled && _mfaService.IsRequiredForRole(result.User.Role))
         {
             await _auditLogService.LogSecurityEventAsync(
                 actionType: "login-challenge",
@@ -450,6 +451,10 @@ public class AuthController : Controller
             User.FindFirstValue(RememberMeClaimType),
             "true",
             StringComparison.OrdinalIgnoreCase);
+        var canManageUsers = string.Equals(
+            User.FindFirstValue(CanManageUsersClaimType),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
 
         return Ok(new
         {
@@ -457,6 +462,7 @@ public class AuthController : Controller
             username = User.FindFirstValue(ClaimTypes.Name) ?? string.Empty,
             role,
             isAdmin = string.Equals(role, AppRoles.Admin, StringComparison.OrdinalIgnoreCase),
+            canManageUsers,
             rememberMe
         });
     }
@@ -500,7 +506,8 @@ public class AuthController : Controller
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Name, user.Username),
             new(ClaimTypes.Role, BackendAuthService.NormalizeRole(user.Role)),
-            new(RememberMeClaimType, rememberMe ? "true" : "false")
+            new(RememberMeClaimType, rememberMe ? "true" : "false"),
+            new(CanManageUsersClaimType, user.CanManageUsers ? "true" : "false")
         };
 
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);

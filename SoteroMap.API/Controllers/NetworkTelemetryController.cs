@@ -146,6 +146,20 @@ public class NetworkTelemetryController : ControllerBase
         return Ok(result);
     }
 
+    [Authorize(Roles = AppRoles.Admin)]
+    [HttpDelete("snapshots/{snapshotId:int}")]
+    public async Task<IActionResult> DeleteSnapshot(int snapshotId, CancellationToken cancellationToken = default)
+    {
+        var actor = User.Identity?.Name ?? "system";
+        var deleted = await _service.DeleteSnapshotAsync(snapshotId, actor, cancellationToken);
+        if (!deleted)
+        {
+            return NotFound(new { message = $"Snapshot #{snapshotId} no encontrada." });
+        }
+
+        return Ok(new { message = $"Snapshot #{snapshotId} eliminada." });
+    }
+
     [HttpGet("snapshots")]
     public async Task<IActionResult> Snapshots(
         [FromQuery] string? search = null,

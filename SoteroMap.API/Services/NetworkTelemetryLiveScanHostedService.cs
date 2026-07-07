@@ -145,7 +145,7 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
                         var result = await scanner.ScanAndStoreAsync("system", new NetworkTelemetryLiveScanRequest
                         {
                             ResolveInteractiveSessions = true,
-                            ScanMode = "simple",
+                            ScanMode = "full",
                             TriggerType = "scheduled"
                         }, stoppingToken);
                         _logger.LogInformation("Live network telemetry auto scan completed inline (agent bypassed).");
@@ -162,7 +162,7 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
                     await bridge.QueueScanAsync("system", new NetworkTelemetryLiveScanRequest
                     {
                         ResolveInteractiveSessions = true,
-                        ScanMode = "simple",
+                        ScanMode = "full",
                         TriggerType = "scheduled"
                     }, stoppingToken);
                     _logger.LogInformation("Live network telemetry auto scan queued for Windows agent.");
@@ -175,7 +175,7 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
                     var result = await scanner.ScanAndStoreAsync("system", new NetworkTelemetryLiveScanRequest
                     {
                         ResolveInteractiveSessions = true,
-                        ScanMode = "simple",
+                        ScanMode = "full",
                         TriggerType = "scheduled"
                     }, stoppingToken);
                     _logger.LogInformation("Live network telemetry scan completed successfully.");

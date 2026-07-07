@@ -55,9 +55,9 @@
                     El panel consolida los controles clave de la plataforma y te muestra si el entorno esta listo para uso interno.
                 </p>
                 <div class="d-flex gap-2 flex-wrap">
-                    <span class="status-pill status-ok"><i class="bi bi-check-circle"></i>OK</span>
-                    <span class="status-pill status-warning"><i class="bi bi-exclamation-circle"></i>Advertencia</span>
-                    <span class="status-pill status-critical"><i class="bi bi-x-circle"></i>Critico</span>
+                    <span class="status-pill status-ok" title="OK - Todo funciona correctamente"><i class="bi bi-check-circle"></i></span>
+                    <span class="status-pill status-warning" title="Advertencia - Hay elementos por revisar"><i class="bi bi-exclamation-circle"></i></span>
+                    <span class="status-pill status-critical" title="Critico - Se requiere atencion inmediata"><i class="bi bi-x-circle"></i></span>
                 </div>
             </div>
             <div class="col-lg-5">
@@ -80,6 +80,15 @@
         </div>
     </div>
 </div>
+
+@if (compliance.CurrentUserCanManageUsers)
+{
+    <div class="mb-4">
+        <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#adminManagementModal">
+            <i class="bi bi-person-gear me-1"></i>Administrar usuarios y permisos
+        </button>
+    </div>
+}
 
 <div class="row g-4 mb-4">
     @foreach (var check in compliance.Checks)
@@ -276,6 +285,62 @@
     </div>
 </div>
 
+<div class="modal fade" id="adminManagementModal" tabindex="-1" aria-labelledby="adminManagementModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="adminManagementModalLabel"><i class="bi bi-person-gear me-2"></i>Administrar usuarios y permisos</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div id="adminUsersLoading" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Cargando...</span>
+                    </div>
+                    <div class="text-muted mt-2">Cargando usuarios...</div>
+                </div>
+                <div id="adminUsersContent" style="display:none">
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Usuario</th>
+                                    <th>Rol</th>
+                                    <th>Puede gestionar usuarios</th>
+                                    <th>MFA</th>
+                                    <th>Estado</th>
+                                    <th>Accion</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminUsersTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div id="adminUsersError" class="alert alert-danger" style="display:none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="confirmRoleModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirmar cambio de permisos</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body" id="confirmRoleBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="confirmRoleBtn">Guardar cambios</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @section Scripts {
 <script>
 window.addEventListener("DOMContentLoaded", () => {
@@ -358,5 +423,250 @@ window.addEventListener("DOMContentLoaded", () => {
             }
         });
 });
+
+const adminModal = document.getElementById("adminManagementModal");
+if (adminModal) {
+    const loading = document.getElementById("adminUsersLoading");
+    const content = document.getElementById("adminUsersContent");
+    const errorDiv = document.getElementById("adminUsersError");
+    const tbody = document.getElementById("adminUsersTableBody");
+
+    const toggleCanManageVisibility = (roleSelect, canManageTd) => {
+        const isAdmin = roleSelect?.value === "admin";
+        const chk = canManageTd?.querySelector(".can-manage-switch");
+        if (chk) {
+            chk.disabled = !isAdmin;
+            chk.closest(".form-check")?.classList.toggle("text-muted", !isAdmin);
+            chk.closest(".form-check")?.classList.toggle("opacity-50", !isAdmin);
+            if (!isAdmin) {
+                chk.checked = false;
+                chk.setAttribute("data-original-value", "false");
+            }
+        }
+    };
+
+    const updateMfaBadge = (td, state) => {
+        const map = {
+            enabled: ['bg-success', 'bi-shield-check', 'MFA activo con clave'],
+            pending: ['bg-warning text-dark', 'bi-shield-exclamation', 'Pendiente de enrolar nueva clave'],
+            disabled: ['bg-secondary', 'bi-shield-slash', 'MFA desactivado']
+        };
+        const [bg, icon, title] = map[state] || map.disabled;
+        td.innerHTML = `<span class="badge ${bg} mfa-toggle" role="button" title="${title}"><i class="bi ${icon}"></i></span>`;
+    };
+
+    const confirmMfaAction = (userId, username, action, actionLabel, td) => {
+        if (!confirm(`¿Esta seguro de ${actionLabel} MFA para ${username}?`)) return;
+
+        const badge = td.querySelector(".mfa-toggle");
+        badge.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span>';
+        badge.style.pointerEvents = "none";
+
+        fetch(`/api/admin/users/${userId}/mfa`, {
+            method: "PUT",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action })
+        })
+            .then((res) => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.json();
+            })
+            .then((data) => {
+                updateMfaBadge(td, data.mfaState);
+            })
+            .catch((err) => {
+                alert("Error: " + err.message);
+                updateMfaBadge(td, state);
+            });
+    };
+
+    adminModal.addEventListener("show.bs.modal", () => {
+        loading.style.display = "";
+        content.style.display = "none";
+        errorDiv.style.display = "none";
+
+        fetch("/api/admin/users", { credentials: "same-origin", cache: "no-store" })
+            .then((res) => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.json();
+            })
+            .then((users) => {
+                loading.style.display = "none";
+                content.style.display = "";
+                    tbody.innerHTML = users.map((user) => {
+                    const roleOptions = ["viewer", "editor", "auditor", "admin"].map((r) =>
+                        `<option value="${r}"${user.role === r ? " selected" : ""}>${r}</option>`
+                    ).join("");
+
+                    const mfaState = user.mfaState || (user.mfaEnabled ? "enabled" : "disabled");
+                    const mfaMap = { enabled: ['bg-success', 'bi-shield-check', 'MFA activo con clave'], pending: ['bg-warning text-dark', 'bi-shield-exclamation', 'Pendiente de enrolar nueva clave'], disabled: ['bg-secondary', 'bi-shield-slash', 'MFA desactivado'] };
+                    const [mfaBg, mfaIcon, mfaTitle] = mfaMap[mfaState] || mfaMap.disabled;
+                    const mfaHtml = `<span class="badge ${mfaBg} mfa-toggle" role="button" title="${mfaTitle}"><i class="bi ${mfaIcon}"></i></span>`;
+                    const statusBadge = user.isActive
+                        ? '<span class="badge bg-success">Activo</span>'
+                        : '<span class="badge bg-danger">Inactivo</span>';
+
+                    return `<tr>
+                        <td><span class="fw-semibold">${user.username}</span></td>
+                        <td>
+                            <select class="form-select form-select-sm role-select" data-user-id="${user.id}" data-original-role="${user.role}">
+                                ${roleOptions}
+                            </select>
+                        </td>
+                        <td class="can-manage-td">
+                            <div class="form-check form-switch ${user.role !== "admin" ? "text-muted opacity-50" : ""}">
+                                <input class="form-check-input can-manage-switch" type="checkbox" role="switch" data-user-id="${user.id}" data-original-value="${user.canManageUsers}" ${user.canManageUsers ? "checked" : ""} ${user.role !== "admin" ? "disabled" : ""}>
+                            </div>
+                        </td>
+                        <td class="mfa-td">${mfaHtml}</td>
+                        <td>${statusBadge}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary save-user-btn" data-user-id="${user.id}" data-username="${user.username}" disabled>
+                                <i class="bi bi-floppy"></i> Guardar
+                            </button>
+                        </td>
+                    </tr>`;
+                }).join("");
+
+                tbody.querySelectorAll(".role-select").forEach((select) => {
+                    select.addEventListener("change", () => {
+                        const userId = select.getAttribute("data-user-id");
+                        const canManageTd = tbody.querySelector(`.can-manage-td[data-user-id="${userId}"]`) || tbody.querySelector(`tr .can-manage-td`);
+                        // find the correct td by traversing
+                        const tr = select.closest("tr");
+                        const cmTd = tr?.querySelector(".can-manage-td");
+                        toggleCanManageVisibility(select, cmTd);
+
+                        const btn = tbody.querySelector(`.save-user-btn[data-user-id="${userId}"]`);
+                        if (btn) btn.disabled = false;
+                    });
+                });
+
+                tbody.querySelectorAll(".can-manage-switch").forEach((el) => {
+                    el.addEventListener("change", () => {
+                        const userId = el.getAttribute("data-user-id");
+                        const btn = tbody.querySelector(`.save-user-btn[data-user-id="${userId}"]`);
+                        if (btn) btn.disabled = false;
+                    });
+                });
+
+                tbody.addEventListener("click", (ev) => {
+                    const badge = ev.target.closest(".mfa-toggle");
+                    if (!badge) return;
+
+                    const tr = badge.closest("tr");
+                    const mfaTd = tr?.querySelector(".mfa-td");
+                    const username = tr?.querySelector("td:first-child")?.textContent?.trim() || "";
+                    const userId = tr?.querySelector(".save-user-btn")?.getAttribute("data-user-id");
+                    if (!userId || !mfaTd) return;
+
+                    const isGreen = badge.classList.contains("bg-success");
+                    const isOrange = badge.classList.contains("bg-warning");
+
+                    if (isGreen) {
+                        const action = prompt(
+                            `MFA de ${username} esta activo con clave enrolada.\n\n` +
+                            `Escriba "desactivar" para desactivar MFA.\n` +
+                            `Escriba "reenrolar" para desvincular la clave y solicitar una nueva.`,
+                            ""
+                        );
+                        if (action === "desactivar") {
+                            confirmMfaAction(userId, username, "disable", "desactivar", mfaTd);
+                        } else if (action === "reenrolar") {
+                            confirmMfaAction(userId, username, "reenroll", "re-enrolar", mfaTd);
+                        }
+                    } else if (isOrange) {
+                        const action2 = prompt(
+                            `MFA de ${username} esta pendiente de enrolar clave.\n\n` +
+                            `Escriba "desactivar" para desactivar MFA.\n` +
+                            `Escriba "activar" para activar MFA (conserva clave pendiente).`,
+                            ""
+                        );
+                        if (action2 === "desactivar") {
+                            confirmMfaAction(userId, username, "disable", "desactivar", mfaTd);
+                        } else if (action2 === "activar") {
+                            confirmMfaAction(userId, username, "enable", "activar", mfaTd);
+                        }
+                    } else {
+                        if (confirm(`¿Activar MFA para ${username}? Se le solicitara configurar MFA en su proximo inicio de sesion.`)) {
+                            confirmMfaAction(userId, username, "enable", "activar", mfaTd);
+                        }
+                    }
+                });
+
+                tbody.querySelectorAll(".save-user-btn").forEach((btn) => {
+                    btn.addEventListener("click", () => {
+                        const userId = btn.getAttribute("data-user-id");
+                        const username = btn.getAttribute("data-username");
+                        const tr = btn.closest("tr");
+                        const roleSelect = tr?.querySelector(".role-select");
+                        const canManageSwitch = tr?.querySelector(".can-manage-switch");
+                        const newRole = roleSelect?.value || "";
+                        const newCanManage = canManageSwitch?.checked || false;
+                        const origRole = roleSelect?.getAttribute("data-original-role") || "";
+                        const origCanManage = canManageSwitch?.getAttribute("data-original-value") === "true";
+
+                        if (newRole === origRole && newCanManage === origCanManage) {
+                            btn.disabled = true;
+                            return;
+                        }
+
+                        const confirmBody = document.getElementById("confirmRoleBody");
+                        confirmBody.innerHTML = `
+                            <p><strong>Usuario:</strong> ${username}</p>
+                            <p><strong>Rol:</strong> ${origRole} <i class="bi bi-arrow-right mx-2"></i> ${newRole}</p>
+                            <p><strong>Gestion de usuarios:</strong> ${origCanManage ? "Si" : "No"} <i class="bi bi-arrow-right mx-2"></i> ${newCanManage ? "Si" : "No"}</p>
+                        `;
+
+                        const confirmBtn = document.getElementById("confirmRoleBtn");
+                        const newConfirmBtn = confirmBtn.cloneNode(true);
+                        confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+
+                        const modal = new bootstrap.Modal(document.getElementById("confirmRoleModal"));
+                        modal.show();
+
+                        newConfirmBtn.addEventListener("click", () => {
+                            newConfirmBtn.disabled = true;
+                            newConfirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Guardando...';
+
+                            fetch(`/api/admin/users/${userId}`, {
+                                method: "PUT",
+                                credentials: "same-origin",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ role: newRole, canManageUsers: newCanManage })
+                            })
+                                .then((res) => {
+                                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                                    return res.json();
+                                })
+                                .then(() => {
+                                    modal.hide();
+                                    btn.disabled = true;
+                                    roleSelect?.setAttribute("data-original-role", newRole);
+                                    if (canManageSwitch) canManageSwitch.setAttribute("data-original-value", newCanManage ? "true" : "false");
+                                    if (newRole !== "admin" && canManageSwitch) {
+                                        canManageSwitch.checked = false;
+                                        canManageSwitch.setAttribute("data-original-value", "false");
+                                    }
+                                })
+                                .catch((err) => {
+                                    alert("Error al guardar: " + err.message);
+                                })
+                                .finally(() => {
+                                    newConfirmBtn.disabled = false;
+                                    newConfirmBtn.innerHTML = "Guardar cambios";
+                                });
+                        });
+                    });
+                });
+            })
+            .catch((err) => {
+                loading.style.display = "none";
+                errorDiv.style.display = "";
+                errorDiv.textContent = "Error al cargar usuarios: " + err.message;
+            });
+    });
+}
 </script>
 }
