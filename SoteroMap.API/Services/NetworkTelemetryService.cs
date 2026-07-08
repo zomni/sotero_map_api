@@ -869,6 +869,211 @@ public class NetworkTelemetryService
         };
     }
 
+    public async Task<NetworkTelemetrySnapshotViewModel?> GetSnapshotSummaryAsync(int snapshotId, CancellationToken cancellationToken = default)
+    {
+        var snapshot = await _context.NetworkTelemetrySnapshots
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == snapshotId, cancellationToken);
+
+        if (snapshot == null) return null;
+
+        return new NetworkTelemetrySnapshotViewModel
+        {
+            Id = snapshot.Id,
+            SourceName = snapshot.SourceName,
+            SourceType = snapshot.SourceType,
+            Status = snapshot.Status,
+            RiskLevel = snapshot.RiskLevel,
+            RiskScore = snapshot.RiskScore,
+            DeviceCount = snapshot.DeviceCount,
+            ConnectedUserCount = snapshot.ConnectedUserCount,
+            HighRiskDeviceCount = snapshot.HighRiskDeviceCount,
+            MediumRiskDeviceCount = snapshot.MediumRiskDeviceCount,
+            LowRiskDeviceCount = snapshot.LowRiskDeviceCount,
+            ObservedAtUtc = snapshot.ObservedAtUtc,
+            WindowStartUtc = snapshot.WindowStartUtc,
+            WindowEndUtc = snapshot.WindowEndUtc
+        };
+    }
+
+    public async Task<NetworkTelemetryExportDataViewModel> GetSnapshotExportDataAsync(
+        int snapshotId,
+        CancellationToken cancellationToken = default)
+    {
+        var snapshot = await _context.NetworkTelemetrySnapshots
+            .AsNoTracking()
+            .Where(s => s.Id == snapshotId)
+            .Select(s => new
+            {
+                s.Id, s.SourceName, s.SourceType, s.Status, s.RiskLevel, s.RiskScore,
+                s.DeviceCount, s.ConnectedUserCount, s.HighRiskDeviceCount,
+                s.MediumRiskDeviceCount, s.LowRiskDeviceCount, s.ObservedAtUtc,
+                s.WindowStartUtc, s.WindowEndUtc
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (snapshot == null)
+            return null!;
+
+        var rawDevices = await _context.NetworkTelemetryObservations
+            .AsNoTracking()
+            .Where(o => o.NetworkTelemetrySnapshotId == snapshotId && o.ObservationType == "device")
+            .OrderByDescending(o => o.RiskScore)
+            .ThenByDescending(o => o.Id)
+            .Select(o => new
+            {
+                o.Id, o.ObservationType, o.ExternalKey, o.DeviceName, o.Username,
+                o.MacAddress, o.IpAddress, o.HostName, o.SerialNumber, o.ImportedInventoryItemId,
+                o.Status, o.RiskLevel, o.RiskScore, o.ObservedAtUtc, o.DeviceCategory,
+                o.OperatingSystem, o.IsOnline, o.DomainJoined, o.IsVirtualMachine, o.PingMs,
+                o.AgentVersion, o.OpenPorts, o.SubnetCidr, o.NetworkProfile, o.RiskReasonsJson
+            })
+            .ToListAsync(cancellationToken);
+
+        var devices = new List<NetworkTelemetryObservationViewModel>(rawDevices.Count);
+        var causeCounts = new Dictionary<string, int>();
+        var userGroups = new Dictionary<string, (int count, HashSet<string> hosts, HashSet<string> ips, int maxScore, string maxLevel)>();
+
+        foreach (var raw in rawDevices)
+        {
+            var riskReasons = new List<string>();
+            if (!string.IsNullOrWhiteSpace(raw.RiskReasonsJson) && raw.RiskReasonsJson != "[]")
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(raw.RiskReasonsJson);
+                    if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var el in doc.RootElement.EnumerateArray())
+                        {
+                            if (el.ValueKind != JsonValueKind.String) continue;
+                            var r = el.GetString();
+                            if (string.IsNullOrWhiteSpace(r)) continue;
+                            riskReasons.Add(r);
+
+                            causeCounts.TryGetValue(r, out var count);
+                            causeCounts[r] = count + 1;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            devices.Add(new NetworkTelemetryObservationViewModel
+            {
+                Id = raw.Id,
+                ObservationType = raw.ObservationType,
+                ExternalKey = raw.ExternalKey,
+                DeviceName = raw.DeviceName,
+                Username = raw.Username,
+                Domain = string.Empty,
+                IpAddress = raw.IpAddress,
+                MacAddress = raw.MacAddress,
+                SerialNumber = raw.SerialNumber,
+                HostName = raw.HostName,
+                DeviceCategory = raw.DeviceCategory,
+                OperatingSystem = raw.OperatingSystem,
+                OperatingSystemVersion = string.Empty,
+                Manufacturer = string.Empty,
+                Model = string.Empty,
+                Processor = string.Empty,
+                MemoryGb = null,
+                DiskTotalGb = null,
+                DiskFreeGb = null,
+                LastBootAtUtc = null,
+                IsOnline = raw.IsOnline,
+                DomainJoined = raw.DomainJoined,
+                IsVirtualMachine = raw.IsVirtualMachine,
+                PingMs = raw.PingMs,
+                AntivirusStatus = string.Empty,
+                AntivirusVersion = string.Empty,
+                PatchStatus = string.Empty,
+                AgentVersion = raw.AgentVersion,
+                OpenPorts = raw.OpenPorts,
+                SubnetCidr = raw.SubnetCidr,
+                NetworkProfile = raw.NetworkProfile,
+                BuildingExternalId = string.Empty,
+                RoomExternalId = string.Empty,
+                Status = raw.Status,
+                RiskLevel = raw.RiskLevel,
+                RiskScore = raw.RiskScore,
+                RiskReasons = riskReasons,
+                ObservedAtUtc = raw.ObservedAtUtc,
+                ImportedInventoryItemId = raw.ImportedInventoryItemId
+            });
+
+            if (!string.IsNullOrWhiteSpace(raw.Username))
+            {
+                if (!userGroups.TryGetValue(raw.Username, out var ug))
+                {
+                    ug = (0, new HashSet<string>(), new HashSet<string>(), 0, "low");
+                }
+                ug.count++;
+                if (!string.IsNullOrWhiteSpace(raw.HostName))
+                    ug.hosts.Add(raw.HostName);
+                if (!string.IsNullOrWhiteSpace(raw.IpAddress))
+                    ug.ips.Add(raw.IpAddress);
+                if (raw.RiskScore > ug.maxScore)
+                {
+                    ug.maxScore = raw.RiskScore;
+                    ug.maxLevel = raw.RiskLevel;
+                }
+                userGroups[raw.Username] = ug;
+            }
+        }
+
+        var totalDevices = rawDevices.Count;
+        var riskCauses = causeCounts
+            .OrderByDescending(kvp => kvp.Value)
+            .Select(kvp => new NetworkTelemetryExportRiskCauseViewModel
+            {
+                Causa = kvp.Key,
+                Cantidad = kvp.Value,
+                Porcentaje = totalDevices > 0 ? Math.Round((double)kvp.Value / totalDevices * 100, 1) : 0
+            })
+            .ToList();
+
+        var repeatedUsers = userGroups
+            .OrderByDescending(ug => ug.Value.maxScore)
+            .Select(ug => new NetworkTelemetryExportRepeatedUserViewModel
+            {
+                Username = ug.Key,
+                Apariciones = ug.Value.count,
+                HostsDistintos = ug.Value.hosts.Count,
+                IPsDistintas = ug.Value.ips.Count,
+                RiesgoMax = ug.Value.maxScore,
+                NivelRiesgo = ug.Value.maxLevel,
+                TipoSospecha = ug.Value.maxLevel switch
+                {
+                    "critical" or "high" => "Sospechoso",
+                    "medium" => "Potencial",
+                    _ => "Normal"
+                }
+            })
+            .ToList();
+
+        return new NetworkTelemetryExportDataViewModel
+        {
+            SnapshotId = snapshot.Id,
+            SourceName = snapshot.SourceName,
+            SourceType = snapshot.SourceType,
+            Status = snapshot.Status,
+            RiskLevel = snapshot.RiskLevel,
+            RiskScore = snapshot.RiskScore,
+            DeviceCount = snapshot.DeviceCount,
+            HighRiskDeviceCount = snapshot.HighRiskDeviceCount,
+            MediumRiskDeviceCount = snapshot.MediumRiskDeviceCount,
+            LowRiskDeviceCount = snapshot.LowRiskDeviceCount,
+            ConnectedUserCount = snapshot.ConnectedUserCount,
+            ObservedAtUtc = snapshot.ObservedAtUtc,
+            WindowStartUtc = snapshot.WindowStartUtc,
+            WindowEndUtc = snapshot.WindowEndUtc,
+            Devices = devices,
+            RepeatedUsers = repeatedUsers,
+            RiskCauses = riskCauses
+        };
+    }
+
     private static IQueryable<NetworkTelemetryObservation> ApplyObservationSorting(
         IQueryable<NetworkTelemetryObservation> query,
         NetworkTelemetryObservationQueryRequest request)
@@ -1824,7 +2029,8 @@ public class NetworkTelemetryService
             RiskReasons = string.IsNullOrWhiteSpace(observation.RiskReasonsJson)
                 ? []
                 : JsonSerializer.Deserialize<List<string>>(observation.RiskReasonsJson) ?? [],
-            ObservedAtUtc = observation.ObservedAtUtc
+            ObservedAtUtc = observation.ObservedAtUtc,
+            ImportedInventoryItemId = observation.ImportedInventoryItemId
         };
     }
 

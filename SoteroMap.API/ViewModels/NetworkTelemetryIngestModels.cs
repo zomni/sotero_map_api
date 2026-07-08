@@ -129,6 +129,7 @@ public class NetworkTelemetryObservationViewModel
     public int RiskScore { get; set; }
     public IReadOnlyList<string> RiskReasons { get; set; } = [];
     public DateTime ObservedAtUtc { get; set; }
+    public int? ImportedInventoryItemId { get; set; }
 }
 
 public class NetworkTelemetryObservationQueryRequest

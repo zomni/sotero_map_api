@@ -1,4 +1,4 @@
-using System.Text;
+using ClosedXML.Excel;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Mvc;
@@ -180,44 +180,25 @@ public class NetworkTelemetryOfficeController : ControllerBase
         });
     }
 
-    [EndpointSummary("Exportacion CSV de equipos observados")]
-    [EndpointDescription("Genera un CSV con los equipos observados del snapshot aplicando los mismos filtros principales que la consulta paginada. Pensado para descarga interna y cruces externos.")]
-    [Produces("text/csv")]
+    [EndpointSummary("Exportacion Excel de equipos observados")]
+    [EndpointDescription("Genera un archivo Excel (.xlsx) con 4 hojas: resumen ejecutivo, activos capturados, usuarios repetidos y causas de riesgo.")]
+    [Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]
     [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [HttpGet("snapshots/{snapshotId:int}/devices/export")]
-    public async Task<IActionResult> ExportDevices(
-        int snapshotId,
-        [FromQuery] string? search = null,
-        [FromQuery] string? riskLevel = null,
-        [FromQuery] string? buildingExternalId = null,
-        [FromQuery] string? subnetCidr = null,
-        [FromQuery] string? onlineState = null,
-        [FromQuery] string? sortBy = null,
-        [FromQuery] string? sortDirection = null,
-        CancellationToken cancellationToken = default)
+    public async Task<IActionResult> ExportDevices(int snapshotId, CancellationToken cancellationToken = default)
     {
-        var result = await _service.GetObservationPageAsync(
-            snapshotId,
-            new NetworkTelemetryObservationQueryRequest
-            {
-                Search = search ?? string.Empty,
-                RiskLevel = riskLevel ?? string.Empty,
-                BuildingExternalId = buildingExternalId ?? string.Empty,
-                SubnetCidr = subnetCidr ?? string.Empty,
-                OnlineState = onlineState ?? string.Empty,
-                ObservationType = "device",
-                SortBy = sortBy ?? "risk",
-                SortDirection = sortDirection ?? "desc",
-                Page = 1,
-                PageSize = 200
-            },
-            cancellationToken);
+        var exportData = await _service.GetSnapshotExportDataAsync(snapshotId, cancellationToken);
+        if (exportData == null)
+        {
+            return NotFound(new { message = $"No se encontro el snapshot {snapshotId}." });
+        }
 
-        var csv = BuildDevicesCsv(result.Items);
-        var bytes = Encoding.UTF8.GetBytes(csv);
-        return File(bytes, "text/csv; charset=utf-8", $"network-telemetry-snapshot-{snapshotId}-devices.csv");
+        var bytes = BuildExportExcel(exportData);
+        var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmm");
+        var filename = $"telemetria_red_snapshot_{snapshotId}_{timestamp}.xlsx";
+        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename);
     }
 
     private static NetworkTelemetryOfficeSummaryViewModel MapSummary(NetworkTelemetryDashboardViewModel dashboard)
@@ -244,49 +225,155 @@ public class NetworkTelemetryOfficeController : ControllerBase
             Notes = dashboard.Notes
         };
 
-    private static string BuildDevicesCsv(IReadOnlyList<NetworkTelemetryObservationViewModel> items)
+    private static byte[] BuildExportExcel(NetworkTelemetryExportDataViewModel data)
     {
-        static string Escape(string? value)
+        using var workbook = new XLWorkbook();
+
+        var sheet1 = workbook.Worksheets.Add("Resumen_Ejecutivo");
+        sheet1.Cell("A1").Value = "Indicador";
+        sheet1.Cell("B1").Value = "Valor";
+        sheet1.Range("A1:B1").Style.Font.Bold = true;
+
+        var legendRows = new[]
         {
-            var normalized = value ?? string.Empty;
-            if (normalized.Contains('"'))
-            {
-                normalized = normalized.Replace("\"", "\"\"");
-            }
+            ("Snapshot ID", data.SnapshotId.ToString()),
+            ("Fuente", data.SourceName),
+            ("Tipo", data.SourceType),
+            ("Estado", data.Status),
+            ("Riesgo Global", data.RiskLevel),
+            ("Puntaje Riesgo", data.RiskScore.ToString()),
+            ("Dispositivos", data.DeviceCount.ToString()),
+            ("Alto Riesgo", data.HighRiskDeviceCount.ToString()),
+            ("Riesgo Medio", data.MediumRiskDeviceCount.ToString()),
+            ("Bajo Riesgo", data.LowRiskDeviceCount.ToString()),
+            ("Usuarios Conectados", data.ConnectedUserCount.ToString()),
+            ("Observado UTC", data.ObservedAtUtc?.ToString("yyyy-MM-dd HH:mm:ss") ?? ""),
+            ("Ventana Inicio UTC", data.WindowStartUtc?.ToString("yyyy-MM-dd HH:mm:ss") ?? ""),
+            ("Ventana Fin UTC", data.WindowEndUtc?.ToString("yyyy-MM-dd HH:mm:ss") ?? "")
+        };
 
-            if (normalized.IndexOfAny([',', '"', '\n', '\r']) >= 0)
-            {
-                normalized = $"\"{normalized}\"";
-            }
-
-            return normalized;
+        for (int i = 0; i < legendRows.Length; i++)
+        {
+            sheet1.Cell(i + 2, 1).Value = legendRows[i].Item1;
+            sheet1.Cell(i + 2, 2).Value = legendRows[i].Item2;
         }
 
-        var builder = new StringBuilder();
-        builder.AppendLine("Id,Tipo,Usuario,Host,Equipo,IP,MAC,Serie,Subred,Edificio,Riesgo,Puntaje,Online,Puertos,SO,Fabricante,Modelo,UltimaObservacionUtc");
-        foreach (var item in items)
-        {
-            builder.Append(Escape(item.Id.ToString())).Append(',')
-                .Append(Escape(item.ObservationType)).Append(',')
-                .Append(Escape(item.Username)).Append(',')
-                .Append(Escape(item.HostName)).Append(',')
-                .Append(Escape(item.DeviceName)).Append(',')
-                .Append(Escape(item.IpAddress)).Append(',')
-                .Append(Escape(item.MacAddress)).Append(',')
-                .Append(Escape(item.SerialNumber)).Append(',')
-                .Append(Escape(item.SubnetCidr)).Append(',')
-                .Append(Escape(item.BuildingExternalId)).Append(',')
-                .Append(Escape(item.RiskLevel)).Append(',')
-                .Append(Escape(item.RiskScore.ToString())).Append(',')
-                .Append(Escape(item.IsOnline?.ToString() ?? string.Empty)).Append(',')
-                .Append(Escape(item.OpenPorts)).Append(',')
-                .Append(Escape(item.OperatingSystem)).Append(',')
-                .Append(Escape(item.Manufacturer)).Append(',')
-                .Append(Escape(item.Model)).Append(',')
-                .Append(Escape(item.ObservedAtUtc.ToString("O")))
-                .AppendLine();
-        }
+        int legendStart = legendRows.Length + 4;
+        sheet1.Cell(legendStart, 1).Value = "Leyenda de niveles de riesgo";
+        sheet1.Range(legendStart, 1, legendStart, 2).Style.Font.Bold = true;
+        sheet1.Cell(legendStart + 1, 1).Value = "Critico (>= 70 pts)";
+        sheet1.Cell(legendStart + 1, 2).Value = "Riesgo critico, requiere accion inmediata. Causas: IP o MAC duplicada, dispositivo no coincide con inventario, o combinacion de multiples factores graves (antivirus ausente + parches + offline + etc).";
+        sheet1.Cell(legendStart + 2, 1).Value = "Alto (40-69 pts)";
+        sheet1.Cell(legendStart + 2, 2).Value = "Riesgo alto, requiere revision prioritaria. Causas: equipo sin respuesta en red, antivirus deshabilitado o ausente, parches pendientes/desactualizados, usuario no conocido, sin asignacion a edificio, equipo fuera de dominio, identificadores incompletos, espacio en disco bajo, RDP expuesto.";
+        sheet1.Cell(legendStart + 3, 1).Value = "Medio (20-39 pts)";
+        sheet1.Cell(legendStart + 3, 2).Value = "Riesgo medio, monitoreo recomendado. Causas: uptime prolongado (>45 dias), servicios SMB/WMI expuestos, SSH expuesto, latencia elevada, servicio de impresion visible, sin nombre resolvible.";
+        sheet1.Cell(legendStart + 4, 1).Value = "Bajo (0-19 pts)";
+        sheet1.Cell(legendStart + 4, 2).Value = "Riesgo bajo, sin accion inmediata requerida. Equipo sin factores de riesgo significativos detectados.";
+        sheet1.Column(1).Width = 30;
+        sheet1.Column(2).Width = 90;
 
-        return builder.ToString();
+        var sheet2 = workbook.Worksheets.Add("Activos_Capturados");
+        var deviceHeaders = new[]
+        {
+            "IdObservacion", "ObservationType", "ClaveExterna", "NombreDispositivo",
+            "UsuarioDetectado", "MAC", "IP", "HostName", "SerialNumber", "IdInventario",
+            "EstadoObservacion", "NivelRiesgo", "PuntajeRiesgo", "ObservadoUtc",
+            "Categoria", "SistemaOperativo", "EnLinea", "EnDominio", "EsVM", "PingMs",
+            "VersionAgente", "PuertosAbiertos", "Subred", "PerfilRed", "RiesgosDetectados"
+        };
+
+        for (int c = 0; c < deviceHeaders.Length; c++)
+        {
+            sheet2.Cell(1, c + 1).Value = deviceHeaders[c];
+        }
+        sheet2.Range(1, 1, 1, deviceHeaders.Length).Style.Font.Bold = true;
+
+        var deviceRows = data.Devices.Select(d => new object[]
+        {
+            d.Id, d.ObservationType, d.ExternalKey, d.DeviceName, d.Username,
+            d.MacAddress, d.IpAddress, d.HostName, d.SerialNumber, (object?)d.ImportedInventoryItemId ?? "",
+            d.Status, d.RiskLevel, d.RiskScore, d.ObservedAtUtc.ToString("O"), d.DeviceCategory,
+            d.OperatingSystem,
+            d.IsOnline switch { true => "Si", false => "No", _ => "" },
+            d.DomainJoined switch { true => "Si", false => "No", _ => "" },
+            d.IsVirtualMachine switch { true => "Si", false => "No", _ => "" },
+            (object?)d.PingMs ?? "", d.AgentVersion, d.OpenPorts, d.SubnetCidr, d.NetworkProfile,
+            string.Join("; ", d.RiskReasons)
+        });
+        sheet2.Cell(2, 1).InsertData(deviceRows);
+
+        sheet2.Column(1).Width = 14;
+        sheet2.Column(2).Width = 16;
+        sheet2.Column(3).Width = 20;
+        sheet2.Column(4).Width = 22;
+        sheet2.Column(5).Width = 20;
+        sheet2.Column(6).Width = 18;
+        sheet2.Column(7).Width = 16;
+        sheet2.Column(8).Width = 18;
+        sheet2.Column(9).Width = 16;
+        sheet2.Column(10).Width = 12;
+        sheet2.Column(11).Width = 18;
+        sheet2.Column(12).Width = 14;
+        sheet2.Column(13).Width = 12;
+        sheet2.Column(14).Width = 24;
+        sheet2.Column(15).Width = 16;
+        sheet2.Column(16).Width = 20;
+        sheet2.Column(17).Width = 10;
+        sheet2.Column(18).Width = 10;
+        sheet2.Column(19).Width = 8;
+        sheet2.Column(20).Width = 8;
+        sheet2.Column(21).Width = 14;
+        sheet2.Column(22).Width = 16;
+        sheet2.Column(23).Width = 16;
+        sheet2.Column(24).Width = 14;
+        sheet2.Column(25).Width = 40;
+
+        var sheet3 = workbook.Worksheets.Add("Usuarios_Repetidos");
+        var userHeaders = new[]
+        {
+            "Username", "Apariciones", "HostsDistintos", "IPsDistintas",
+            "RiesgoMax", "NivelRiesgo", "TipoSospecha"
+        };
+
+        for (int c = 0; c < userHeaders.Length; c++)
+        {
+            sheet3.Cell(1, c + 1).Value = userHeaders[c];
+        }
+        sheet3.Range(1, 1, 1, userHeaders.Length).Style.Font.Bold = true;
+
+        var userRows = data.RepeatedUsers.Select(u => new object[]
+        {
+            u.Username, u.Apariciones, u.HostsDistintos, u.IPsDistintas,
+            u.RiesgoMax, u.NivelRiesgo, u.TipoSospecha
+        });
+        sheet3.Cell(2, 1).InsertData(userRows);
+
+        sheet3.Column(1).Width = 24;
+        sheet3.Column(2).Width = 14;
+        sheet3.Column(3).Width = 16;
+        sheet3.Column(4).Width = 14;
+        sheet3.Column(5).Width = 12;
+        sheet3.Column(6).Width = 14;
+        sheet3.Column(7).Width = 16;
+
+        var sheet4 = workbook.Worksheets.Add("Causas_Riesgo");
+        sheet4.Cell("A1").Value = "Causa de riesgo";
+        sheet4.Cell("B1").Value = "Cantidad";
+        sheet4.Cell("C1").Value = "Porcentaje sobre activos";
+        sheet4.Range("A1:C1").Style.Font.Bold = true;
+
+        var causeRows = data.RiskCauses.Select(c => new object[]
+        {
+            c.Causa, c.Cantidad, c.Porcentaje
+        });
+        sheet4.Cell(2, 1).InsertData(causeRows);
+
+        sheet4.Column(1).Width = 50;
+        sheet4.Column(2).Width = 12;
+        sheet4.Column(3).Width = 24;
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
     }
 }

@@ -659,7 +659,7 @@
                             <i class="bi bi-x-circle me-1"></i> Limpiar
                         </button>
                         <button id="telemetry-device-export" type="button" class="btn btn-outline-success">
-                            <i class="bi bi-filetype-csv me-1"></i> Exportar pagina
+                            <i class="bi bi-filetype-xlsx me-1"></i> Exportar Excel
                         </button>
                     </div>
                 </div>
@@ -1503,28 +1503,26 @@
         };
 
         exportButton?.addEventListener("click", () => {
-            const items = Array.isArray(latestDevicePage?.items) ? latestDevicePage.items : [];
-            if (items.length === 0) {
-                return;
-            }
-
-            const headers = ["serialNumber", "deviceName", "hostName", "username", "buildingExternalId", "subnetCidr", "networkProfile", "ipAddress", "macAddress", "operatingSystem", "operatingSystemVersion", "manufacturer", "model", "antivirusStatus", "patchStatus", "isOnline", "pingMs", "riskLevel", "riskScore"];
-            const csvLines = [
-                headers.join(","),
-                ...items.map((item) => headers.map((header) => {
-                    const value = item?.[header];
-                    const text = value == null ? "" : String(value).replace(/"/g, "\"\"");
-                    return `"${text}"`;
-                }).join(","))
-            ];
-
-            const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = `network-telemetry-snapshot-${activeSnapshotId}-page.csv`;
-            link.click();
-            URL.revokeObjectURL(url);
+            const modal = new bootstrap.Modal(document.getElementById("exportLoadingModal"));
+            modal.show();
+            fetch(`/api/network-telemetry/office/snapshots/${activeSnapshotId}/devices/export`)
+                .then((res) => {
+                    if (!res.ok) throw new Error();
+                    const disposition = res.headers.get("Content-Disposition") || "";
+                    const match = disposition.match(/filename\*?=(?:UTF-8'')?([^;\s]+)/i);
+                    const filename = match ? decodeURIComponent(match[1]) : `telemetria_red_snapshot_${activeSnapshotId}.xlsx`;
+                    return res.blob().then((blob) => ({ blob, filename }));
+                })
+                .then(({ blob, filename }) => {
+                    modal.hide();
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = filename;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                })
+                .catch(() => modal.hide());
         });
 
         const renderClientPager = (container, page, totalPages, callback) => {
@@ -2125,3 +2123,15 @@
         window.setInterval(() => loadScheduledScans(), 30000);
     })();
 </script>
+
+<div class="modal fade" id="exportLoadingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content text-center p-4">
+            <div class="spinner-border text-primary mb-3" role="status" style="width:3rem;height:3rem;">
+                <span class="visually-hidden">Generando...</span>
+            </div>
+            <h6 class="mb-1">Generando Excel</h6>
+            <p class="small text-muted mb-0">Esto puede tomar unos segundos...</p>
+        </div>
+    </div>
+</div>
