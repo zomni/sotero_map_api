@@ -54,6 +54,13 @@
     }
 
     .dashboard-hero .text-muted { color: rgba(255, 255, 255, 0.72) !important; }
+    .transition-hover {
+        transition: transform .28s ease, box-shadow .28s ease;
+    }
+    .transition-hover:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 12px 30px rgba(0,0,0,0.2);
+    }
     .dashboard-card {
         border: 0;
         border-radius: 18px;
@@ -201,27 +208,33 @@
                     </a>
                 </div>
             </div>
-            <div class="col-lg-5">
-                <div class="bg-white bg-opacity-10 rounded-4 p-4">
-                    <div class="d-flex justify-content-between mb-2">
-                        <span class="text-muted">Progreso de asignacion</span>
-                        <strong>@assignedPercent.ToString("F1")%</strong>
+            <div class="col-lg-5 fade-in-up fade-in-up-d1">
+                <div class="bg-white bg-opacity-10 rounded-4 p-4 transition-hover">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <span class="text-white-50 small fw-semibold">Progreso de asignacion</span>
+                        <span class="badge bg-info bg-opacity-75 fs-6 fw-bold px-3 py-1">@assignedPercent.ToString("F1")%</span>
                     </div>
                     <div class="progress bg-white bg-opacity-25" style="height: 14px;">
                         <div class="progress-bar bg-info" style="width: @assignedPercent.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)%"></div>
                     </div>
-                    <div class="row text-center mt-4">
-                        <div class="col">
-                            <div class="fs-3 fw-bold">@Model.TotalImportedItems</div>
-                            <div class="small text-muted">Total</div>
+                    <div class="row g-3 mt-3">
+                        <div class="col-4">
+                            <div class="rounded-3 bg-white bg-opacity-10 p-2 text-center">
+                                <div class="fs-4 fw-bold text-white">@Model.TotalImportedItems</div>
+                                <div class="small text-white-50">Total</div>
+                            </div>
                         </div>
-                        <div class="col">
-                            <div class="fs-3 fw-bold">@Model.AssignedItems</div>
-                            <div class="small text-muted">Asignados</div>
+                        <div class="col-4">
+                            <div class="rounded-3 bg-white bg-opacity-10 p-2 text-center">
+                                <div class="fs-4 fw-bold text-white">@Model.AssignedItems</div>
+                                <div class="small text-white-50">Asignados</div>
+                            </div>
                         </div>
-                        <div class="col">
-                            <div class="fs-3 fw-bold">@Model.PendingAssignmentItems</div>
-                            <div class="small text-muted">Pendientes</div>
+                        <div class="col-4">
+                            <div class="rounded-3 bg-white bg-opacity-10 p-2 text-center">
+                                <div class="fs-4 fw-bold text-warning">@Model.PendingAssignmentItems</div>
+                                <div class="small text-white-50">Pendientes</div>
+                            </div>
                         </div>
                     </div>
                 </div>

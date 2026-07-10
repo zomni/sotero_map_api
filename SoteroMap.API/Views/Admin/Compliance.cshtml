@@ -70,6 +70,13 @@
     .status-warning { background: rgba(245, 158, 11, .14); color: #b45309; }
     .status-critical { background: rgba(239, 68, 68, .12); color: #b91c1c; }
 
+    .transition-hover {
+        transition: transform .28s ease, box-shadow .28s ease;
+    }
+    .transition-hover:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 12px 30px rgba(0,0,0,0.2);
+    }
     .fade-in-up {
         animation: fadeUp .5s ease both;
     }
@@ -110,14 +117,19 @@
             </div>
             <div class="col-lg-5">
                 <div class="bg-white bg-opacity-10 rounded-4 p-4">
-                    <div class="row g-3 text-center">
+                    <div class="row g-3">
+                        @{
+                            var summaryIndex = 0;
+                        }
                         @foreach (var card in compliance.SummaryCards)
                         {
-                            <div class="col-6">
-                                <div class="rounded-4 bg-white bg-opacity-10 p-3 h-100">
-                                    <i class="@card.IconClass fs-3 d-block mb-2"></i>
-                                    <div class="small text-white-50">@card.Title</div>
-                                    <div class="fs-3 fw-bold">@card.Value</div>
+                            summaryIndex++;
+                            var animClass = summaryIndex <= 4 ? $"fade-in-up-d{summaryIndex}" : "fade-in-up-d4";
+                            <div class="col-6 fade-in-up @animClass">
+                                <div class="rounded-4 bg-white bg-opacity-10 p-3 h-100 transition-hover">
+                                    <i class="@card.IconClass fs-3 d-block mb-1"></i>
+                                    <div class="small text-white-50 fw-semibold" style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.03em;">@card.Title</div>
+                                    <div class="fs-3 fw-bold text-white">@card.Value</div>
                                     <div class="small text-white-50">@card.Detail</div>
                                 </div>
                             </div>

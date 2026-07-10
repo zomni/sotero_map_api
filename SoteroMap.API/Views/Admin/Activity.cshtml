@@ -110,81 +110,157 @@
     </div>
 </div>
 
-<div class="row g-3 mb-4">
-    <div class="col-md-3">
-        <div class="p-3 rounded-3 bg-light border h-100">
-            <div class="text-muted small">Total encontrados</div>
-            <div class="fs-4 fw-bold">@totalCount</div>
+<div class="row g-4 mb-4">
+    <div class="col-md-3 fade-in-up fade-in-up-d1">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="dashboard-kpi-icon bg-primary bg-opacity-10">
+                        <i class="bi bi-search text-primary fs-4"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">Total encontrados</div>
+                        <div class="fs-3 fw-bold">@totalCount</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="p-3 rounded-3 bg-light border h-100">
-            <div class="text-muted small">Exitos</div>
-            <div class="fs-4 fw-bold">@successCount</div>
+    <div class="col-md-3 fade-in-up fade-in-up-d2">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="dashboard-kpi-icon bg-success bg-opacity-10">
+                        <i class="bi bi-check2-circle text-success fs-4"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">Exitos</div>
+                        <div class="fs-3 fw-bold">@successCount</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="p-3 rounded-3 bg-light border h-100">
-            <div class="text-muted small">Fallos</div>
-            <div class="fs-4 fw-bold">@failureCount</div>
+    <div class="col-md-3 fade-in-up fade-in-up-d3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="dashboard-kpi-icon bg-danger bg-opacity-10">
+                        <i class="bi bi-x-circle text-danger fs-4"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">Fallos</div>
+                        <div class="fs-3 fw-bold">@failureCount</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="p-3 rounded-3 bg-light border h-100">
-            <div class="text-muted small">Criticos</div>
-            <div class="fs-4 fw-bold">@criticalCount</div>
+    <div class="col-md-3 fade-in-up fade-in-up-d4">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="dashboard-kpi-icon bg-dark bg-opacity-10">
+                        <i class="bi bi-exclamation-triangle text-dark fs-4"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">Criticos</div>
+                        <div class="fs-3 fw-bold">@criticalCount</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="p-3 rounded-3 bg-light border h-100">
-            <div class="text-muted small">Advertencias</div>
-            <div class="fs-4 fw-bold">@warningCount</div>
+    <div class="col-md-3 fade-in-up fade-in-up-d5">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="dashboard-kpi-icon bg-warning bg-opacity-10">
+                        <i class="bi bi-exclamation-circle text-warning fs-4"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">Advertencias</div>
+                        <div class="fs-3 fw-bold">@warningCount</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
 <style>
-  .inventory-filter-panel {
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    border-radius: 1rem;
-    background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
-    padding: 1.25rem;
-  }
+    .dashboard-card {
+        border: 0;
+        border-radius: 18px;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+        transition: transform .28s ease, box-shadow .28s ease;
+    }
+    .dashboard-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+    }
+    .dashboard-kpi-icon {
+        width: 52px;
+        height: 52px;
+        display: grid;
+        place-items: center;
+        border-radius: 16px;
+        transition: transform .3s ease, box-shadow .3s ease;
+    }
+    .dashboard-card:hover .dashboard-kpi-icon {
+        transform: scale(1.08);
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+    }
+    .fade-in-up {
+        animation: fadeUp .5s ease both;
+    }
+    .fade-in-up-d1 { animation-delay: .05s; }
+    .fade-in-up-d2 { animation-delay: .1s; }
+    .fade-in-up-d3 { animation-delay: .15s; }
+    .fade-in-up-d4 { animation-delay: .2s; }
+    .fade-in-up-d5 { animation-delay: .25s; }
+    @@keyframes fadeUp {
+        from { opacity: 0; transform: translateY(18px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
 
-  .inventory-filter-fixed {
-    border: 1px solid rgba(148, 163, 184, 0.24);
-    border-radius: 0.9rem;
-    background: #fff;
-    padding: 0.85rem;
-    height: 100%;
-  }
-
-  .inventory-filter-fixed .filter-title {
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: #475569;
-    margin-bottom: 0.55rem;
-  }
-
-  .inventory-filter-active-bar {
-    border: 1px dashed rgba(14, 116, 144, 0.18);
-    border-radius: 0.9rem;
-    background: rgba(255, 255, 255, 0.85);
-    padding: 0.85rem;
-  }
-
-  .inventory-filter-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.55rem 0.8rem;
-    border-radius: 0.9rem;
-    border: 1px solid rgba(148, 163, 184, 0.24);
-    background: #ffffff;
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
-  }
+    .inventory-filter-panel {
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 1rem;
+        background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
+        padding: 1.25rem;
+    }
+    .inventory-filter-fixed {
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 0.9rem;
+        background: #fff;
+        padding: 0.85rem;
+        height: 100%;
+    }
+    .inventory-filter-fixed .filter-title {
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #475569;
+        margin-bottom: 0.55rem;
+    }
+    .inventory-filter-active-bar {
+        border: 1px dashed rgba(14, 116, 144, 0.18);
+        border-radius: 0.9rem;
+        background: rgba(255, 255, 255, 0.85);
+        padding: 0.85rem;
+    }
+    .inventory-filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.55rem 0.8rem;
+        border-radius: 0.9rem;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        background: #ffffff;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+    }
 </style>
 
 <div class="card border-0 shadow-sm mb-4">
