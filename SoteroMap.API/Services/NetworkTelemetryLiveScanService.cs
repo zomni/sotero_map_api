@@ -175,6 +175,7 @@ public class NetworkTelemetryLiveScanService
         {
             SourceName = GetString("NetworkTelemetrySettings:SourceName", "NETWORK_TELEMETRY_SOURCE_NAME", "Escaneo vivo de red"),
             SourceType = "live-scan",
+            TriggerType = options?.TriggerType ?? string.Empty,
             ObservedAtUtc = DateTime.UtcNow,
             WindowStartUtc = DateTime.UtcNow.AddMinutes(-Math.Max(1, GetInt("NetworkTelemetrySettings:FreshnessMinutes", "NETWORK_TELEMETRY_FRESHNESS_MINUTES", 30))),
             WindowEndUtc = DateTime.UtcNow,

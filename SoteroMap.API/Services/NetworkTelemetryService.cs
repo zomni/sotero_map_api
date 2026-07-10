@@ -473,7 +473,8 @@ public class NetworkTelemetryService
         var observedAtUtc = request.ObservedAtUtc ?? DateTime.UtcNow;
         var sourceName = string.IsNullOrWhiteSpace(request.SourceName) ? "desconocido" : request.SourceName.Trim();
         var sourceType = string.IsNullOrWhiteSpace(request.SourceType) ? "collector" : request.SourceType.Trim();
-        var liveScanMode = string.Equals(sourceType, "live-scan", StringComparison.OrdinalIgnoreCase);
+        var liveScanMode = string.Equals(sourceType, "live-scan", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(request.TriggerType, "scheduled", StringComparison.OrdinalIgnoreCase);
 
         var deviceInputs = request.Devices ?? [];
         var userInputs = request.Users ?? [];
@@ -550,7 +551,7 @@ public class NetworkTelemetryService
                 authUsers,
                 duplicateIpSet,
                 duplicateMacSet,
-                string.Equals(sourceType, "live-scan", StringComparison.OrdinalIgnoreCase)));
+                liveScanMode));
         }
 
         var userObservations = new List<ObservationResult>();

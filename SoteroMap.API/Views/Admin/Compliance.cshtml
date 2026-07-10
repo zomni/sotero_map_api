@@ -21,7 +21,43 @@
             radial-gradient(circle at top right, rgba(59, 130, 246, 0.22), transparent 32%),
             linear-gradient(135deg, #0f172a 0%, #1d4ed8 55%, #38bdf8 100%);
     }
-    .compliance-card { border: 0; border-radius: 18px; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08); }
+    .compliance-card {
+        border: 0;
+        border-radius: 18px;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+        transition: transform .28s ease, box-shadow .28s ease;
+    }
+    .compliance-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+    }
+    .compliance-card .card-header {
+        border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+        padding: 1rem 1.25rem;
+        position: relative;
+    }
+    .compliance-card .card-header::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        border-radius: 0 4px 4px 0;
+        background: linear-gradient(180deg, #2d79a0, #38bdf8);
+    }
+    .compliance-card .dashboard-kpi-icon {
+        width: 52px;
+        height: 52px;
+        display: grid;
+        place-items: center;
+        border-radius: 16px;
+        transition: transform .3s ease, box-shadow .3s ease;
+    }
+    .compliance-card:hover .dashboard-kpi-icon {
+        transform: scale(1.08);
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+    }
     .status-pill {
         display: inline-flex;
         align-items: center;
@@ -33,6 +69,18 @@
     .status-ok { background: rgba(34, 197, 94, .12); color: #15803d; }
     .status-warning { background: rgba(245, 158, 11, .14); color: #b45309; }
     .status-critical { background: rgba(239, 68, 68, .12); color: #b91c1c; }
+
+    .fade-in-up {
+        animation: fadeUp .5s ease both;
+    }
+    .fade-in-up-d1 { animation-delay: .05s; }
+    .fade-in-up-d2 { animation-delay: .1s; }
+    .fade-in-up-d3 { animation-delay: .15s; }
+    .fade-in-up-d4 { animation-delay: .2s; }
+    @@keyframes fadeUp {
+        from { opacity: 0; transform: translateY(18px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -91,6 +139,9 @@
 }
 
 <div class="row g-4 mb-4">
+    @{
+        var checkIndex = 0;
+    }
     @foreach (var check in compliance.Checks)
     {
         var checkClass = check.Status switch
@@ -99,7 +150,9 @@
             "critical" => "text-bg-danger",
             _ => "text-bg-warning"
         };
-        <div class="col-md-6 col-xl-4">
+        var animDelay = (checkIndex % 4) + 1;
+        checkIndex++;
+        <div class="col-md-6 col-xl-4 fade-in-up fade-in-up-d@(animDelay)">
             <div class="card compliance-card h-100">
                 <div class="card-body">
                     <div class="d-flex align-items-start gap-3">
@@ -121,7 +174,7 @@
 </div>
 
 <div class="row g-4">
-    <div class="col-lg-4">
+    <div class="col-lg-4 fade-in-up fade-in-up-d1">
         <div class="card compliance-card h-100">
             <div class="card-header bg-white fw-semibold">Ultimos respaldos</div>
             <div class="card-body">
@@ -149,7 +202,7 @@
         </div>
     </div>
 
-    <div class="col-lg-4">
+    <div class="col-lg-4 fade-in-up fade-in-up-d2">
         <div class="card compliance-card h-100">
             <div class="card-header bg-white fw-semibold">Ultimos accesos</div>
             <div class="card-body">
@@ -177,7 +230,7 @@
         </div>
     </div>
 
-    <div class="col-lg-4">
+    <div class="col-lg-4 fade-in-up fade-in-up-d3">
         <div class="card compliance-card h-100">
             <div class="card-header bg-white fw-semibold">Eventos criticos</div>
             <div class="card-body">
@@ -207,7 +260,7 @@
 </div>
 
 <div class="row g-4 mt-1">
-    <div class="col-lg-6">
+    <div class="col-lg-6 fade-in-up fade-in-up-d1">
         <div class="card compliance-card h-100">
             <div class="card-header bg-white fw-semibold">Resumen de salud</div>
             <div class="card-body">
@@ -220,7 +273,7 @@
             </div>
         </div>
     </div>
-    <div class="col-lg-6">
+    <div class="col-lg-6 fade-in-up fade-in-up-d2">
         <div class="card compliance-card h-100">
             <div class="card-header bg-white fw-semibold">Datos de sistema</div>
             <div class="card-body">
@@ -236,7 +289,7 @@
 </div>
 
 <div class="row g-4 mt-1">
-    <div class="col-12">
+    <div class="col-12 fade-in-up fade-in-up-d1">
         <div class="card compliance-card h-100">
             <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center gap-2">
                 <span>Integridad tecnica</span>

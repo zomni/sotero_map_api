@@ -131,6 +131,22 @@ public class AdminController : Controller
                 .ToListAsync()
         };
 
+        var latestSnapshot = await _context.NetworkTelemetrySnapshots
+            .AsNoTracking()
+            .OrderByDescending(s => s.ObservedAtUtc)
+            .ThenByDescending(s => s.Id)
+            .FirstOrDefaultAsync();
+
+        if (latestSnapshot != null)
+        {
+            model.HasNetworkTelemetryData = true;
+            model.LatestNetworkRiskLevel = latestSnapshot.RiskLevel;
+            model.LatestNetworkRiskScore = latestSnapshot.RiskScore;
+            model.LatestNetworkDeviceCount = latestSnapshot.DeviceCount;
+            model.LatestNetworkHighRiskCount = latestSnapshot.HighRiskDeviceCount;
+            model.LatestNetworkScanUtc = latestSnapshot.ObservedAtUtc;
+        }
+
         return View(model);
     }
 

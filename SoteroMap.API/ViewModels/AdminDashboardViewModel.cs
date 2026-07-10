@@ -18,6 +18,12 @@ public class AdminDashboardViewModel
     public IReadOnlyList<DashboardCategorySummaryViewModel> CategoryBreakdown { get; set; } = [];
     public IReadOnlyList<DashboardInventoryPreviewViewModel> RecentItems { get; set; } = [];
     public IReadOnlyList<ActivityLogListItemViewModel> RecentActivity { get; set; } = [];
+    public bool HasNetworkTelemetryData { get; set; }
+    public string LatestNetworkRiskLevel { get; set; } = string.Empty;
+    public int LatestNetworkRiskScore { get; set; }
+    public int LatestNetworkDeviceCount { get; set; }
+    public int LatestNetworkHighRiskCount { get; set; }
+    public DateTime? LatestNetworkScanUtc { get; set; }
 }
 
 public class DatabaseBackupViewModel
