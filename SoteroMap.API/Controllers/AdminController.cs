@@ -526,6 +526,7 @@ public class AdminController : Controller
         ViewData["InitialSnapshotPageJson"] = JsonSerializer.Serialize(model.InitialSnapshotPage, telemetryJsonOptions);
         ViewData["InitialRiskObservationsJson"] = JsonSerializer.Serialize(model.TopRiskObservations, telemetryJsonOptions);
         ViewData["InitialScheduledScanRunsJson"] = JsonSerializer.Serialize(model.ScheduledScanRuns, telemetryJsonOptions);
+        ViewData["InitialScheduledScanPageJson"] = JsonSerializer.Serialize(model.InitialScheduledScanPage, telemetryJsonOptions);
 
         return View("NetworkTelemetry", model);
     }
@@ -580,11 +581,14 @@ public class AdminController : Controller
 
             try
             {
-                model.ScheduledScanRuns = await _networkTelemetryService.GetScheduledScanRunsAsync(20, cancellationToken);
+                var scheduledPage = await _networkTelemetryService.GetScheduledScanRunsAsync(new ScheduledScanRunQueryRequest { PageSize = 10 }, cancellationToken);
+                model.ScheduledScanRuns = scheduledPage.Items;
+                model.InitialScheduledScanPage = scheduledPage;
             }
             catch
             {
                 model.ScheduledScanRuns = [];
+                model.InitialScheduledScanPage = new ScheduledScanRunPageViewModel();
             }
 
             return model;
@@ -1574,6 +1578,7 @@ public class AdminController : Controller
             manualBuilding.UpdatedAtUtc = DateTime.UtcNow;
         }
 
+        building.SyncedAtUtc = DateTime.UtcNow;
         await _context.SaveChangesAsync();
         await LogBuildingOverrideAsync(building, previousCampus, previousDisplayName, previousFloors);
 

@@ -48,6 +48,13 @@
         transform: translateY(-3px);
         box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
     }
+    .telemetry-card-static {
+        transition: none !important;
+    }
+    .telemetry-card-static:hover {
+        transform: none !important;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08) !important;
+    }
     .telemetry-card .card-header {
         border-bottom: 1px solid rgba(226, 232, 240, 0.7);
         padding: 1rem 1.25rem;
@@ -624,7 +631,7 @@
     </div>
 </div>
 
-<div class="card telemetry-card mb-4">
+<div class="card telemetry-card telemetry-card-static mb-4">
     <div class="card-body">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
             <div>
@@ -727,7 +734,7 @@
 </div>
 
 <div class="telemetry-fixed-grid mb-4">
-    <div class="card telemetry-card">
+    <div class="card telemetry-card telemetry-card-static">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="mb-0">Riesgo por subred</h5>
@@ -796,7 +803,7 @@
     </div>
 </div>
 
-<div class="card telemetry-card mb-4">
+<div class="card telemetry-card telemetry-card-static mb-4">
     <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="mb-0">Endpoints y estado de red</h5>
@@ -851,7 +858,7 @@
     </div>
 </div>
 
-<div class="card telemetry-card mb-4">
+<div class="card telemetry-card telemetry-card-static mb-4">
     <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
@@ -936,19 +943,91 @@
     </div>
 </div>
 
-<div class="card telemetry-card mb-4">
+<div class="card telemetry-card telemetry-card-static mb-4">
     <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
                 <h5 class="mb-1">Escaneos programados</h5>
-                <div class="small text-muted">Ultimos 20 escaneos automaticos programados</div>
+                <div class="small text-muted">Historial paginado de escaneos automaticos programados</div>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="telemetry-scheduled-refresh" title="Refrescar">
-                <i class="bi bi-arrow-clockwise"></i>
-            </button>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="telemetry-scheduled-refresh" title="Refrescar">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+            </div>
+        </div>
+        <div class="telemetry-filter-panel p-3 mb-3">
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-4">
+                    <label class="form-label small text-muted">Buscar</label>
+                    <input id="telemetry-scheduled-search" type="text" class="form-control" placeholder="Dia, hora, estado o cron" />
+                </div>
+                <div class="col-lg-2">
+                    <label class="form-label small text-muted">Estado</label>
+                    <select id="telemetry-scheduled-status" class="form-select">
+                        <option value="">Todos</option>
+                        <option value="completed">Completado</option>
+                        <option value="skipped">Saltado</option>
+                        <option value="failed">Fallado</option>
+                        <option value="running">Ejecutando</option>
+                        <option value="queued">En cola</option>
+                    </select>
+                </div>
+                <div class="col-lg-2">
+                    <label class="form-label small text-muted">Dia</label>
+                    <select id="telemetry-scheduled-weekday" class="form-select">
+                        <option value="">Todos</option>
+                        <option value="lunes">Lunes</option>
+                        <option value="martes">Martes</option>
+                        <option value="miercoles">Miercoles</option>
+                        <option value="jueves">Jueves</option>
+                        <option value="viernes">Viernes</option>
+                        <option value="sabado">Sabado</option>
+                        <option value="domingo">Domingo</option>
+                    </select>
+                </div>
+                <div class="col-lg-2">
+                    <label class="form-label small text-muted">Hora</label>
+                    <select id="telemetry-scheduled-time-slot" class="form-select">
+                        <option value="">Todas</option>
+                        <option value="08:30">08:30</option>
+                        <option value="13:30">13:30</option>
+                        <option value="16:30">16:30</option>
+                        <option value="17:30">17:30</option>
+                    </select>
+                </div>
+                <div class="col-lg-1">
+                    <label class="form-label small text-muted">Ordenar</label>
+                    <select id="telemetry-scheduled-sort" class="form-select">
+                        <option value="scheduledAtUtc">Fecha</option>
+                        <option value="scheduledDayLocal">Dia</option>
+                        <option value="scheduledTimeLocal">Hora</option>
+                        <option value="status">Estado</option>
+                        <option value="deviceCount">Equipos</option>
+                        <option value="userCount">Usuarios</option>
+                    </select>
+                </div>
+                <div class="col-lg-1">
+                    <label class="form-label small text-muted">Dir.</label>
+                    <select id="telemetry-scheduled-direction" class="form-select">
+                        <option value="desc">Desc.</option>
+                        <option value="asc">Asc.</option>
+                    </select>
+                </div>
+                <div class="col-lg-1">
+                    <label class="form-label small text-muted">Pagina</label>
+                    <select id="telemetry-scheduled-page-size" class="form-select">
+                        <option value="10" selected>10</option>
+                        <option value="20">20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+            </div>
         </div>
         <div id="telemetry-scheduled-summary" class="small text-muted mb-3"></div>
         <div id="telemetry-scheduled-table"><div class="text-muted">Cargando escaneos programados...</div></div>
+        <div id="telemetry-scheduled-pagination" class="d-flex justify-content-end gap-2 mt-3"></div>
     </div>
 </div>
 
@@ -1061,7 +1140,20 @@
         const sessionUsers = @Html.Raw(JsonSerializer.Serialize(Model.SessionOverview.Users, telemetryJsonOptions));
         const initialDevicePage = @Html.Raw(ViewData["InitialDevicePageJson"] as string ?? "{}");
         const initialSnapshotPage = @Html.Raw(ViewData["InitialSnapshotPageJson"] as string ?? "{}");
-        const initialScheduledScanRuns = @Html.Raw(ViewData["InitialScheduledScanRunsJson"] as string ?? "[]");
+        const scheduledTable = document.getElementById("telemetry-scheduled-table");
+        const scheduledSummary = document.getElementById("telemetry-scheduled-summary");
+        const scheduledPagination = document.getElementById("telemetry-scheduled-pagination");
+        const scheduledSearchInput = document.getElementById("telemetry-scheduled-search");
+        const scheduledStatusSelect = document.getElementById("telemetry-scheduled-status");
+        const scheduledWeekdaySelect = document.getElementById("telemetry-scheduled-weekday");
+        const scheduledTimeSlotSelect = document.getElementById("telemetry-scheduled-time-slot");
+        const scheduledSortSelect = document.getElementById("telemetry-scheduled-sort");
+        const scheduledDirectionSelect = document.getElementById("telemetry-scheduled-direction");
+        const scheduledPageSizeSelect = document.getElementById("telemetry-scheduled-page-size");
+        const initialScheduledScanPage = @Html.Raw(ViewData["InitialScheduledScanPageJson"] as string ?? "{}");
+        const initialScheduledScanRuns = Array.isArray(initialScheduledScanPage?.items)
+            ? initialScheduledScanPage.items
+            : @Html.Raw(ViewData["InitialScheduledScanRunsJson"] as string ?? "[]");
         const subnetRiskSummaries = @Html.Raw(JsonSerializer.Serialize(Model.SubnetRiskSummaries, telemetryJsonOptions));
         let latestDevicePage = null;
         let pendingSnapshotId = 0;
@@ -1069,6 +1161,7 @@
         let sessionSortDirection = "desc";
         let subnetSortBy = "risk";
         let subnetSortDirection = "desc";
+        let scheduledLastSignature = "";
 
         const openScanModal = () => {
             if (!scanModalElement) {
@@ -1338,6 +1431,20 @@
                 hour: "2-digit",
                 minute: "2-digit",
                 hour12: false
+            }).format(parsed);
+        };
+
+        const formatChileDate = (value) => {
+            const parsed = parseApiUtcDate(value);
+            if (!parsed) {
+                return "";
+            }
+
+            return new Intl.DateTimeFormat("es-CL", {
+                timeZone: chileTimeZone,
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit"
             }).format(parsed);
         };
 
@@ -1955,32 +2062,63 @@
                 });
         };
 
-        const renderScheduledScans = (items) => {
-            const scheduledTable = document.getElementById("telemetry-scheduled-table");
-            const scheduledSummary = document.getElementById("telemetry-scheduled-summary");
-            if (!scheduledTable || !scheduledSummary) return;
+        const renderScheduledLoading = (message = "Consultando escaneos programados...") => {
+            if (!scheduledTable) return;
+            scheduledTable.innerHTML = `
+                <div class="telemetry-loading-shell">
+                    <div class="telemetry-loading-content">
+                        <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+                        <div class="fw-semibold">${message}</div>
+                        <div class="small text-muted">Estamos reuniendo el historial de escaneos automaticos programados.</div>
+                    </div>
+                </div>`;
+        };
 
-            const list = Array.isArray(items) ? items : [];
-            scheduledSummary.textContent = `Mostrando ${list.length} escaneos programados.`;
-            if (list.length === 0) {
-                scheduledTable.innerHTML = `<div class="text-muted">No hay escaneos programados registrados.</div>`;
+        const renderScheduledScans = (data) => {
+            if (!scheduledTable || !scheduledSummary || !scheduledPagination) return;
+
+            const items = Array.isArray(data?.items) ? data.items : [];
+            const totalCount = Number(data?.totalCount) || 0;
+            const page = Number(data?.page) || 1;
+            const totalPages = Number(data?.totalPages) || 1;
+            const currentSortBy = data?.sortBy || scheduledSortSelect?.value || "scheduledAtUtc";
+            const currentDirection = data?.sortDirection || scheduledDirectionSelect?.value || "desc";
+
+            scheduledTable.dataset.currentPage = String(page);
+            scheduledSummary.textContent = `Mostrando ${items.length} de ${totalCount} escaneos programados. Pagina ${page} de ${totalPages}.`;
+            if (items.length === 0) {
+                scheduledTable.innerHTML = `<div class="text-muted">No hay escaneos programados para ese filtro.</div>`;
                 return;
             }
-            scheduledTable.innerHTML = `<div class="telemetry-table-wrap table-responsive"><table class="table align-middle"><thead><tr><th>Dia</th><th>Hora</th><th>Inicio</th><th>Estado</th><th>Error</th><th>Equipos</th><th>Usuarios</th><th>Accion</th></tr></thead><tbody>${list.map((item) => {
+            scheduledTable.innerHTML = `<div class="telemetry-table-wrap table-responsive"><table class="table align-middle"><thead><tr>
+                <th>ID</th>
+                <th>${buildSortableHeader("Dia", "scheduledDayLocal", currentSortBy, currentDirection, "scheduled")}</th>
+                <th>${buildSortableHeader("Hora", "scheduledTimeLocal", currentSortBy, currentDirection, "scheduled")}</th>
+                <th>${buildSortableHeader("Fecha", "scheduledAtUtc", currentSortBy, currentDirection, "scheduled")}</th>
+                <th>${buildSortableHeader("Inicio", "startedAtUtc", currentSortBy, currentDirection, "scheduled")}</th>
+                <th>${buildSortableHeader("Estado", "status", currentSortBy, currentDirection, "scheduled")}</th>
+                <th>Error</th>
+                <th>${buildSortableHeader("Equipos", "deviceCount", currentSortBy, currentDirection, "scheduled")}</th>
+                <th>${buildSortableHeader("Usuarios", "userCount", currentSortBy, currentDirection, "scheduled")}</th>
+                <th>Accion</th>
+            </tr></thead><tbody>${items.map((item) => {
                 const statusBadge = item.status === "completed" ? '<span class="badge bg-success">Completado</span>'
                     : item.status === "failed" ? '<span class="badge bg-danger">Fallado</span>'
                     : item.status === "running" ? '<span class="badge bg-primary">Ejecutando</span>'
                     : item.status === "skipped" ? '<span class="badge bg-warning text-dark">Saltado</span>'
                     : item.status === "queued" ? '<span class="badge bg-info text-dark">En cola</span>'
                     : '<span class="badge bg-secondary">' + (item.statusLabel || item.status || "") + '</span>';
+                const createdAt = item.createdAtUtc ? formatChileDate(item.createdAtUtc) : "-";
                 const startedAt = item.startedAtUtc ? formatChileTime(item.startedAtUtc) : "-";
                 const errMsg = item.status === "failed" && item.errorMessage ? `<div class="small text-danger" title="${item.errorMessage.replace(/"/g, "&quot;")}">${item.errorMessage.length > 80 ? item.errorMessage.substring(0, 80) + "..." : item.errorMessage}</div>` : "";
                 const loadBtn = item.snapshotId > 0
                     ? `<a href="/dashboard/network-telemetry?snapshotId=${item.snapshotId}" class="btn btn-sm btn-outline-primary" title="Cargar esta snapshot"><i class="bi bi-eye"></i></a>`
                     : '<span class="text-muted">-</span>';
                 return `<tr>
+                    <td class="fw-semibold">#${item.id || "-"}</td>
                     <td>${item.scheduledDayLocal || ""}</td>
                     <td>${item.scheduledTimeLocal || ""}</td>
+                    <td>${createdAt}</td>
                     <td>${startedAt}</td>
                     <td>${statusBadge}</td>
                     <td>${errMsg || '<span class="text-muted small">-</span>'}</td>
@@ -1989,17 +2127,61 @@
                     <td>${loadBtn}</td>
                 </tr>`;
             }).join("")}</tbody></table></div>`;
+
+            scheduledTable.querySelectorAll("[data-scheduled-sort]").forEach((button) => {
+                button.addEventListener("click", () => {
+                    const nextSortBy = button.getAttribute("data-scheduled-sort") || "scheduledAtUtc";
+                    const nextDirection = toggleSort(scheduledSortSelect?.value || "scheduledAtUtc", scheduledDirectionSelect?.value || "desc", nextSortBy);
+                    if (scheduledSortSelect) scheduledSortSelect.value = nextSortBy;
+                    if (scheduledDirectionSelect) scheduledDirectionSelect.value = nextDirection;
+                    loadScheduledScans(1);
+                });
+            });
+
+            renderClientPager(scheduledPagination, page, totalPages, loadScheduledScans);
         };
 
-        const loadScheduledScans = () => {
-            const scheduledTable = document.getElementById("telemetry-scheduled-table");
+        const loadScheduledScans = (page = 1, options = {}) => {
             if (!scheduledTable) return;
-            if (!scheduledTable.dataset.initialized && Array.isArray(initialScheduledScanRuns) && initialScheduledScanRuns.length > 0) {
+
+            const silent = Boolean(options?.silent);
+            if (!silent) {
+                renderScheduledLoading();
+            }
+            if (page === 1
+                && !scheduledTable.dataset.initialized
+                && initialScheduledScanRuns
+                && Array.isArray(initialScheduledScanRuns)
+                && initialScheduledScanRuns.length > 0) {
                 scheduledTable.dataset.initialized = "true";
-                renderScheduledScans(initialScheduledScanRuns);
+                const initialData = initialScheduledScanPage && typeof initialScheduledScanPage === "object" && !Array.isArray(initialScheduledScanPage)
+                    ? initialScheduledScanPage
+                    : { items: initialScheduledScanRuns, totalCount: initialScheduledScanRuns.length, page: 1, totalPages: Math.max(1, Math.ceil(initialScheduledScanRuns.length / 10)), sortBy: "scheduledAtUtc", sortDirection: "desc" };
+                scheduledLastSignature = JSON.stringify(initialData);
+                renderScheduledScans(initialData);
                 return;
             }
-            fetch("/api/network-telemetry/scheduled-scans?take=20", {
+            const params = new URLSearchParams({
+                page: String(page),
+                pageSize: scheduledPageSizeSelect?.value || "10",
+                sortBy: scheduledSortSelect?.value || "scheduledAtUtc",
+                sortDirection: scheduledDirectionSelect?.value || "desc"
+            });
+
+            if (scheduledSearchInput?.value?.trim()) {
+                params.set("search", scheduledSearchInput.value.trim());
+            }
+            if (scheduledStatusSelect?.value) {
+                params.set("status", scheduledStatusSelect.value);
+            }
+            if (scheduledWeekdaySelect?.value) {
+                params.set("weekday", scheduledWeekdaySelect.value);
+            }
+            if (scheduledTimeSlotSelect?.value) {
+                params.set("timeSlot", scheduledTimeSlotSelect.value);
+            }
+
+            fetch(`/api/network-telemetry/scheduled-scans?${params.toString()}`, {
                 credentials: "include",
                 cache: "no-store"
             })
@@ -2007,11 +2189,29 @@
                     if (!response.ok) throw new Error(`API respondio ${response.status}`);
                     return response.json();
                 })
-                .then(renderScheduledScans)
+                .then((data) => {
+                    const signature = JSON.stringify({
+                        items: Array.isArray(data?.items) ? data.items : [],
+                        totalCount: Number(data?.totalCount) || 0,
+                        page: Number(data?.page) || 1,
+                        totalPages: Number(data?.totalPages) || 1,
+                        sortBy: data?.sortBy || "",
+                        sortDirection: data?.sortDirection || ""
+                    });
+
+                    if (silent && signature === scheduledLastSignature) {
+                        return;
+                    }
+
+                    scheduledLastSignature = signature;
+                    renderScheduledScans(data);
+                })
                 .catch((error) => {
                     console.error("Error cargando escaneos programados:", error);
                     if (Array.isArray(initialScheduledScanRuns) && initialScheduledScanRuns.length > 0) {
-                        renderScheduledScans(initialScheduledScanRuns);
+                        renderScheduledScans(initialScheduledScanPage && typeof initialScheduledScanPage === "object" && !Array.isArray(initialScheduledScanPage)
+                            ? initialScheduledScanPage
+                            : { items: initialScheduledScanRuns, totalCount: initialScheduledScanRuns.length, page: 1, totalPages: Math.max(1, Math.ceil(initialScheduledScanRuns.length / 10)), sortBy: "scheduledAtUtc", sortDirection: "desc" });
                     } else {
                         scheduledTable.textContent = "No fue posible cargar los escaneos programados.";
                     }
@@ -2192,6 +2392,13 @@
         snapshotSortSelect?.addEventListener("change", () => loadSnapshots(1));
         snapshotDirectionSelect?.addEventListener("change", () => loadSnapshots(1));
         snapshotPageSizeSelect?.addEventListener("change", () => loadSnapshots(1));
+        scheduledSearchInput?.addEventListener("input", () => loadScheduledScans(1));
+        scheduledStatusSelect?.addEventListener("change", () => loadScheduledScans(1));
+        scheduledWeekdaySelect?.addEventListener("change", () => loadScheduledScans(1));
+        scheduledTimeSlotSelect?.addEventListener("change", () => loadScheduledScans(1));
+        scheduledSortSelect?.addEventListener("change", () => loadScheduledScans(1));
+        scheduledDirectionSelect?.addEventListener("change", () => loadScheduledScans(1));
+        scheduledPageSizeSelect?.addEventListener("change", () => loadScheduledScans(1));
         document.getElementById("telemetry-scheduled-refresh")?.addEventListener("click", () => loadScheduledScans());
 
         renderSubnetRiskSummaries(1);
@@ -2201,7 +2408,7 @@
         loadScheduledScans();
         loadAgentStatus(false);
         window.setInterval(() => loadAgentStatus(true), 5000);
-        window.setInterval(() => loadScheduledScans(), 30000);
+        window.setInterval(() => loadScheduledScans(Number(scheduledTable?.dataset.currentPage || 1), { silent: true }), 30000);
     })();
 </script>
 

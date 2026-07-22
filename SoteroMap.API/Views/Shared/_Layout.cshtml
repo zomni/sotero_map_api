@@ -34,7 +34,7 @@
         }
         .sidebar { min-height: 100vh; background: #1e293b; }
         .admin-shell { display: flex; flex-wrap: nowrap; }
-        .admin-sidebar { width: 220px; flex: 0 0 220px; }
+        .admin-sidebar { width: 220px; flex: 0 0 220px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
         .admin-main { flex: 1 1 auto; min-width: 0; }
         .admin-container { padding-left: 0; padding-right: 0; }
         .sidebar .nav-link { color: #94a3b8; padding: 0.6rem 0.75rem; font-size: 0.95rem; }
@@ -73,7 +73,7 @@
         @@media (max-width: 767.98px) {
             .admin-shell { flex-wrap: wrap; }
             .admin-sidebar, .admin-main { width: 100%; flex-basis: 100%; }
-            .admin-sidebar { min-height: auto; }
+            .admin-sidebar { min-height: auto; position: static; height: auto; overflow-y: visible; }
         }
     </style>
 </head>

@@ -93,6 +93,18 @@ public class NetworkTelemetryLiveScanHostedService : BackgroundService
                 var scheduledLocal = TimeZoneInfo.ConvertTime(scheduledAtUtc, _scheduleTimeZone);
                 var normalizedCron = string.Join(";", GetCronExpressions().Select(c => c.ToString()));
 
+                var existingRunForSlot = await db.ScheduledScanRuns
+                    .Where(r => r.ScheduledAtUtc == scheduledAtUtc && r.Status != "failed")
+                    .OrderByDescending(r => r.CreatedAtUtc)
+                    .FirstOrDefaultAsync(stoppingToken);
+                if (existingRunForSlot is not null)
+                {
+                    _logger.LogWarning(
+                        "Skipping duplicate scheduled scan for {ScheduledAtUtc}: run #{Id} already exists with status {Status}.",
+                        scheduledAtUtc, existingRunForSlot.Id, existingRunForSlot.Status);
+                    continue;
+                }
+
                 var run = new ScheduledScanRun
                 {
                     ScheduledAtUtc = scheduledAtUtc,

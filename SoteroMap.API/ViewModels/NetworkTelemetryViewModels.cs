@@ -31,6 +31,7 @@ public class NetworkTelemetryDashboardViewModel
     public IReadOnlyList<NetworkTelemetryBuildingRiskSummaryViewModel> BuildingRiskSummaries { get; set; } = [];
     public IReadOnlyList<NetworkTelemetrySubnetRiskSummaryViewModel> SubnetRiskSummaries { get; set; } = [];
     public IReadOnlyList<ScheduledScanRunViewModel> ScheduledScanRuns { get; set; } = [];
+    public ScheduledScanRunPageViewModel InitialScheduledScanPage { get; set; } = new();
     public NetworkTelemetrySessionOverviewViewModel SessionOverview { get; set; } = new();
     public NetworkTelemetryObservationPageViewModel InitialDevicePage { get; set; } = new();
     public NetworkTelemetrySnapshotPageViewModel InitialSnapshotPage { get; set; } = new();

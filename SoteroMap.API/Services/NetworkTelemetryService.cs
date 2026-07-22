@@ -2280,18 +2280,68 @@ public class NetworkTelemetryService
         return localDateTime.ToString("HH:mm");
     }
 
-    public async Task<IReadOnlyList<ScheduledScanRunViewModel>> GetScheduledScanRunsAsync(
-        int take = 20, CancellationToken cancellationToken = default)
+    public async Task<ScheduledScanRunPageViewModel> GetScheduledScanRunsAsync(
+        ScheduledScanRunQueryRequest request, CancellationToken cancellationToken = default)
     {
-        take = Math.Clamp(take, 1, 100);
+        request.Page = Math.Max(1, request.Page);
+        request.PageSize = Math.Clamp(request.PageSize, 1, 100);
 
-        var runs = await _context.ScheduledScanRuns
-            .AsNoTracking()
-            .OrderByDescending(r => r.ScheduledAtUtc)
-            .Take(take)
+        var query = _context.ScheduledScanRuns.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(request.Search))
+        {
+            var s = request.Search.Trim();
+            query = query.Where(r =>
+                r.ScheduledDayLocal.Contains(s) ||
+                r.ScheduledTimeLocal.Contains(s) ||
+                r.Status.Contains(s) ||
+                r.NormalizedCron.Contains(s));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            query = query.Where(r => r.Status == request.Status);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Weekday))
+        {
+            query = query.Where(r => r.ScheduledDayLocal != null && r.ScheduledDayLocal.Contains(request.Weekday));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TimeSlot))
+        {
+            query = query.Where(r => r.ScheduledTimeLocal != null && r.ScheduledTimeLocal.Contains(request.TimeSlot));
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        query = (request.SortBy, request.SortDirection) switch
+        {
+            ("scheduledAtUtc", "asc") => query.OrderBy(r => r.ScheduledAtUtc),
+            ("scheduledAtUtc", "desc") => query.OrderByDescending(r => r.ScheduledAtUtc),
+            ("startedAtUtc", "asc") => query.OrderBy(r => r.StartedAtUtc),
+            ("startedAtUtc", "desc") => query.OrderByDescending(r => r.StartedAtUtc),
+            ("completedAtUtc", "asc") => query.OrderBy(r => r.CompletedAtUtc),
+            ("completedAtUtc", "desc") => query.OrderByDescending(r => r.CompletedAtUtc),
+            ("status", "asc") => query.OrderBy(r => r.Status),
+            ("status", "desc") => query.OrderByDescending(r => r.Status),
+            ("deviceCount", "asc") => query.OrderBy(r => r.DeviceCount),
+            ("deviceCount", "desc") => query.OrderByDescending(r => r.DeviceCount),
+            ("userCount", "asc") => query.OrderBy(r => r.UserCount),
+            ("userCount", "desc") => query.OrderByDescending(r => r.UserCount),
+            ("scheduledDayLocal", "asc") => query.OrderBy(r => r.ScheduledDayLocal),
+            ("scheduledDayLocal", "desc") => query.OrderByDescending(r => r.ScheduledDayLocal),
+            ("scheduledTimeLocal", "asc") => query.OrderBy(r => r.ScheduledTimeLocal),
+            ("scheduledTimeLocal", "desc") => query.OrderByDescending(r => r.ScheduledTimeLocal),
+            _ => query.OrderByDescending(r => r.ScheduledAtUtc)
+        };
+
+        var runs = await query
+            .Skip((request.Page - 1) * request.PageSize)
+            .Take(request.PageSize)
             .ToListAsync(cancellationToken);
 
-        return runs.Select(run => new ScheduledScanRunViewModel
+        var items = runs.Select(run => new ScheduledScanRunViewModel
         {
             Id = run.Id,
             ScheduledAtUtc = run.ScheduledAtUtc,
@@ -2317,6 +2367,21 @@ public class NetworkTelemetryService
             NormalizedCron = run.NormalizedCron,
             CreatedAtUtc = run.CreatedAtUtc
         }).ToList();
+
+        return new ScheduledScanRunPageViewModel
+        {
+            Search = request.Search,
+            Status = request.Status,
+            Weekday = request.Weekday,
+            TimeSlot = request.TimeSlot,
+            SortBy = request.SortBy,
+            SortDirection = request.SortDirection,
+            Page = request.Page,
+            PageSize = request.PageSize,
+            TotalCount = totalCount,
+            TotalPages = (int)Math.Ceiling(totalCount / (double)request.PageSize),
+            Items = items
+        };
     }
 
     public async Task<bool> DeleteSnapshotAsync(int snapshotId, string deletedByUsername, CancellationToken cancellationToken = default)

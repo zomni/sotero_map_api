@@ -140,9 +140,30 @@ public class NetworkTelemetryController : ControllerBase
     }
 
     [HttpGet("scheduled-scans")]
-    public async Task<IActionResult> ScheduledScans([FromQuery] int take = 20, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> ScheduledScans(
+        [FromQuery] string? search = null,
+        [FromQuery] string? status = null,
+        [FromQuery] string? weekday = null,
+        [FromQuery] string? timeSlot = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortDirection = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        CancellationToken cancellationToken = default)
     {
-        var result = await _service.GetScheduledScanRunsAsync(take, cancellationToken);
+        var result = await _service.GetScheduledScanRunsAsync(
+            new ScheduledScanRunQueryRequest
+            {
+                Search = search ?? string.Empty,
+                Status = status ?? string.Empty,
+                Weekday = weekday ?? string.Empty,
+                TimeSlot = timeSlot ?? string.Empty,
+                SortBy = sortBy ?? "scheduledAtUtc",
+                SortDirection = sortDirection ?? "desc",
+                Page = page,
+                PageSize = pageSize
+            },
+            cancellationToken);
         return Ok(result);
     }
 

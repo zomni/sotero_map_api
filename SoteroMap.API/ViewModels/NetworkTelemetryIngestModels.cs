@@ -192,6 +192,33 @@ public class NetworkTelemetrySnapshotPageViewModel
     public IReadOnlyList<NetworkTelemetrySnapshotViewModel> Items { get; set; } = [];
 }
 
+public class ScheduledScanRunQueryRequest
+{
+    public string Search { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string Weekday { get; set; } = string.Empty;
+    public string TimeSlot { get; set; } = string.Empty;
+    public string SortBy { get; set; } = "scheduledAtUtc";
+    public string SortDirection { get; set; } = "desc";
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 10;
+}
+
+public class ScheduledScanRunPageViewModel
+{
+    public string Search { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string Weekday { get; set; } = string.Empty;
+    public string TimeSlot { get; set; } = string.Empty;
+    public string SortBy { get; set; } = "scheduledAtUtc";
+    public string SortDirection { get; set; } = "desc";
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 10;
+    public int TotalCount { get; set; }
+    public int TotalPages { get; set; } = 1;
+    public IReadOnlyList<ScheduledScanRunViewModel> Items { get; set; } = [];
+}
+
 public class NetworkTelemetryBuildingRiskSummaryViewModel
 {
     public string BuildingExternalId { get; set; } = string.Empty;
