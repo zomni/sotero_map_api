@@ -65,26 +65,66 @@ public class NetworkTelemetryService
             .OrderByDescending(snapshot => snapshot.ObservedAtUtc)
             .ThenByDescending(snapshot => snapshot.Id)
             .Take(take)
+            .Select(snapshot => new SnapshotListItem
+            {
+                Id = snapshot.Id,
+                SourceName = snapshot.SourceName,
+                SourceType = snapshot.SourceType,
+                Status = snapshot.Status,
+                RiskLevel = snapshot.RiskLevel,
+                RiskScore = snapshot.RiskScore,
+                DeviceCount = snapshot.DeviceCount,
+                ConnectedUserCount = snapshot.ConnectedUserCount,
+                ObservedAtUtc = snapshot.ObservedAtUtc,
+                WindowStartUtc = snapshot.WindowStartUtc,
+                WindowEndUtc = snapshot.WindowEndUtc,
+                Notes = snapshot.Notes,
+                CreatedByUsername = snapshot.CreatedByUsername
+            })
             .ToListAsync(cancellationToken);
 
-        var latest = snapshots.FirstOrDefault();
-        NetworkTelemetrySnapshot? activeSnapshot = latest;
-        if (selectedSnapshotId.HasValue && selectedSnapshotId.Value > 0)
+        SnapshotListItem? latestItem = snapshots.FirstOrDefault();
+        int activeSnapshotId = selectedSnapshotId.HasValue && selectedSnapshotId.Value > 0
+            ? selectedSnapshotId.Value
+            : latestItem?.Id ?? 0;
+
+        if (activeSnapshotId > 0 && latestItem is not null && activeSnapshotId != latestItem.Id)
         {
-            activeSnapshot = await _context.NetworkTelemetrySnapshots
+            var selected = await _context.NetworkTelemetrySnapshots
                 .AsNoTracking()
-                .FirstOrDefaultAsync(snapshot => snapshot.Id == selectedSnapshotId.Value, cancellationToken)
-                ?? latest;
+                .Where(s => s.Id == activeSnapshotId)
+                .Select(s => new SnapshotListItem
+                {
+                    Id = s.Id,
+                    SourceName = s.SourceName,
+                    SourceType = s.SourceType,
+                    Status = s.Status,
+                    RiskLevel = s.RiskLevel,
+                    RiskScore = s.RiskScore,
+                    DeviceCount = s.DeviceCount,
+                    ConnectedUserCount = s.ConnectedUserCount,
+                    ObservedAtUtc = s.ObservedAtUtc,
+                    WindowStartUtc = s.WindowStartUtc,
+                    WindowEndUtc = s.WindowEndUtc,
+                    Notes = s.Notes,
+                    CreatedByUsername = s.CreatedByUsername
+                })
+                .FirstOrDefaultAsync(cancellationToken);
+            if (selected is not null)
+            {
+                latestItem = selected;
+            }
         }
 
+        var activeSnapshotIdForLookup = latestItem?.Id ?? 0;
         var enabled = IsEnabled();
         var nowUtc = DateTime.UtcNow;
         var freshnessWindow = TimeSpan.FromMinutes(FreshnessMinutes());
-        var isFresh = activeSnapshot is not null && (nowUtc - activeSnapshot.ObservedAtUtc) <= freshnessWindow;
+        var isFresh = latestItem is not null && (nowUtc - latestItem.ObservedAtUtc) <= freshnessWindow;
 
         var healthLabel = !enabled
             ? "Deshabilitado"
-            : activeSnapshot is null
+            : latestItem is null
                 ? "Sin datos"
                 : isFresh
                     ? "Activo"
@@ -92,52 +132,59 @@ public class NetworkTelemetryService
 
         var healthTone = !enabled
             ? "secondary"
-            : activeSnapshot is null
+            : latestItem is null
                 ? "warning"
                 : isFresh
                     ? "success"
                     : "warning";
 
-        var topRiskObservations = activeSnapshot is null
-            ? []
-            : await GetTopRiskObservationsAsync(activeSnapshot.Id, 10, cancellationToken);
-        var buildingRiskSummaries = activeSnapshot is null
-            ? []
-            : await GetBuildingRiskSummariesAsync(activeSnapshot.Id, cancellationToken);
-        var subnetRiskSummaries = activeSnapshot is null
-            ? []
-            : await GetSubnetRiskSummariesAsync(activeSnapshot.Id, cancellationToken);
-        var sessionOverview = await GetSessionOverviewAsync(activeSnapshot?.Id, cancellationToken);
+        IReadOnlyList<NetworkTelemetryObservationViewModel> topRiskObservations = [];
+        IReadOnlyList<NetworkTelemetrySubnetRiskSummaryViewModel> subnetRiskSummaries = [];
+        NetworkTelemetrySessionOverviewViewModel sessionOverview = new();
+
+        if (activeSnapshotIdForLookup > 0)
+        {
+            var topRiskTask = GetTopRiskObservationsAsync(activeSnapshotIdForLookup, 10, cancellationToken);
+            var combinedRiskTask = GetCombinedRiskSummariesAsync(activeSnapshotIdForLookup, cancellationToken);
+            var sessionTask = GetSessionOverviewAsync(activeSnapshotIdForLookup, cancellationToken);
+
+            await Task.WhenAll(topRiskTask, combinedRiskTask, sessionTask);
+
+            topRiskObservations = await topRiskTask;
+            var combinedRisk = await combinedRiskTask;
+            subnetRiskSummaries = combinedRisk;
+            sessionOverview = await sessionTask;
+        }
 
         return new NetworkTelemetryDashboardViewModel
         {
             Enabled = enabled,
-            HasData = activeSnapshot is not null,
+            HasData = latestItem is not null,
             IsFresh = isFresh,
             HealthLabel = healthLabel,
             HealthTone = healthTone,
-            LatestSourceName = activeSnapshot?.SourceName ?? string.Empty,
-            LatestSourceType = activeSnapshot?.SourceType ?? string.Empty,
-            LatestRiskLevel = activeSnapshot?.RiskLevel ?? string.Empty,
-            LatestStatus = activeSnapshot?.Status ?? string.Empty,
-            Notes = activeSnapshot?.Notes ?? string.Empty,
-            LatestRiskScore = activeSnapshot?.RiskScore ?? 0,
+            LatestSourceName = latestItem?.SourceName ?? string.Empty,
+            LatestSourceType = latestItem?.SourceType ?? string.Empty,
+            LatestRiskLevel = latestItem?.RiskLevel ?? string.Empty,
+            LatestStatus = latestItem?.Status ?? string.Empty,
+            Notes = latestItem?.Notes ?? string.Empty,
+            LatestRiskScore = latestItem?.RiskScore ?? 0,
             TotalSnapshots = snapshots.Count,
-            LatestDeviceCount = activeSnapshot?.DeviceCount ?? 0,
-            LatestConnectedUserCount = activeSnapshot?.ConnectedUserCount ?? 0,
-            LatestHighRiskDeviceCount = activeSnapshot?.HighRiskDeviceCount ?? 0,
-            LatestMediumRiskDeviceCount = activeSnapshot?.MediumRiskDeviceCount ?? 0,
-            LatestLowRiskDeviceCount = activeSnapshot?.LowRiskDeviceCount ?? 0,
-            LatestSnapshotId = latest?.Id ?? 0,
-            ActiveSnapshotId = activeSnapshot?.Id ?? 0,
-            IsViewingLatestSnapshot = activeSnapshot?.Id == latest?.Id,
-            LatestObservedAtUtc = activeSnapshot?.ObservedAtUtc,
-            LatestWindowStartUtc = activeSnapshot?.WindowStartUtc,
-            LatestWindowEndUtc = activeSnapshot?.WindowEndUtc,
+            LatestDeviceCount = latestItem?.DeviceCount ?? 0,
+            LatestConnectedUserCount = latestItem?.ConnectedUserCount ?? 0,
+            LatestHighRiskDeviceCount = 0,
+            LatestMediumRiskDeviceCount = 0,
+            LatestLowRiskDeviceCount = 0,
+            LatestSnapshotId = snapshots.FirstOrDefault()?.Id ?? 0,
+            ActiveSnapshotId = activeSnapshotIdForLookup,
+            IsViewingLatestSnapshot = activeSnapshotIdForLookup == snapshots.FirstOrDefault()?.Id,
+            LatestObservedAtUtc = latestItem?.ObservedAtUtc,
+            LatestWindowStartUtc = latestItem?.WindowStartUtc,
+            LatestWindowEndUtc = latestItem?.WindowEndUtc,
             GeneratedAtUtc = nowUtc,
-            RecentSnapshots = snapshots.Select(MapSnapshot).ToList(),
+            RecentSnapshots = snapshots.Select(MapSnapshotListItem).ToList(),
             TopRiskObservations = topRiskObservations,
-            BuildingRiskSummaries = buildingRiskSummaries,
+            BuildingRiskSummaries = [],
             SubnetRiskSummaries = subnetRiskSummaries,
             SessionOverview = sessionOverview
         };
@@ -145,32 +192,40 @@ public class NetworkTelemetryService
 
     public async Task<NetworkTelemetrySessionOverviewViewModel> GetSessionOverviewAsync(int? snapshotId = null, CancellationToken cancellationToken = default)
     {
-        NetworkTelemetrySnapshot? latestSnapshot;
+        int effectiveSnapshotId;
         if (snapshotId.HasValue && snapshotId.Value > 0)
         {
-            latestSnapshot = await _context.NetworkTelemetrySnapshots
-                .AsNoTracking()
-                .FirstOrDefaultAsync(snapshot => snapshot.Id == snapshotId.Value, cancellationToken);
+            effectiveSnapshotId = snapshotId.Value;
         }
         else
         {
-            latestSnapshot = await _context.NetworkTelemetrySnapshots
+            effectiveSnapshotId = await _context.NetworkTelemetrySnapshots
                 .AsNoTracking()
-                .OrderByDescending(snapshot => snapshot.ObservedAtUtc)
-                .ThenByDescending(snapshot => snapshot.Id)
+                .OrderByDescending(s => s.ObservedAtUtc)
+                .ThenByDescending(s => s.Id)
+                .Select(s => s.Id)
                 .FirstOrDefaultAsync(cancellationToken);
-        }
 
-        if (latestSnapshot is null)
-        {
-            return new NetworkTelemetrySessionOverviewViewModel();
+            if (effectiveSnapshotId == 0)
+            {
+                return new NetworkTelemetrySessionOverviewViewModel();
+            }
         }
 
         var deviceObservations = await _context.NetworkTelemetryObservations
             .AsNoTracking()
-            .Where(observation => observation.NetworkTelemetrySnapshotId == latestSnapshot.Id && observation.ObservationType == "device")
-            .OrderByDescending(observation => observation.ObservedAtUtc)
-            .ThenByDescending(observation => observation.Id)
+            .Where(obs => obs.NetworkTelemetrySnapshotId == effectiveSnapshotId && obs.ObservationType == "device")
+            .Select(obs => new ObservationProjection
+            {
+                Id = obs.Id, ExternalKey = obs.ExternalKey, DeviceName = obs.DeviceName,
+                Username = obs.Username, HostName = obs.HostName, IpAddress = obs.IpAddress,
+                DeviceCategory = obs.DeviceCategory, SubnetCidr = obs.SubnetCidr,
+                NetworkProfile = obs.NetworkProfile, OpenPorts = obs.OpenPorts,
+                PingMs = obs.PingMs, IsOnline = obs.IsOnline, RiskScore = obs.RiskScore,
+                RiskLevel = obs.RiskLevel, ObservedAtUtc = obs.ObservedAtUtc
+            })
+            .OrderByDescending(obs => obs.ObservedAtUtc)
+            .ThenByDescending(obs => obs.Id)
             .ToListAsync(cancellationToken);
 
         if (deviceObservations.Count == 0)
@@ -180,10 +235,32 @@ public class NetworkTelemetryService
 
         var userObservations = await _context.NetworkTelemetryObservations
             .AsNoTracking()
-            .Where(observation => observation.NetworkTelemetrySnapshotId == latestSnapshot.Id && observation.ObservationType == "user")
-            .OrderByDescending(observation => observation.ObservedAtUtc)
-            .ThenByDescending(observation => observation.Id)
+            .Where(obs => obs.NetworkTelemetrySnapshotId == effectiveSnapshotId && obs.ObservationType == "user")
+            .Select(obs => new ObservationProjection
+            {
+                Id = obs.Id, ExternalKey = obs.ExternalKey, DeviceName = obs.DeviceName,
+                Username = obs.Username, HostName = obs.HostName, IpAddress = obs.IpAddress,
+                DeviceCategory = obs.DeviceCategory, SubnetCidr = obs.SubnetCidr,
+                NetworkProfile = obs.NetworkProfile, OpenPorts = obs.OpenPorts,
+                PingMs = obs.PingMs, IsOnline = obs.IsOnline, RiskScore = obs.RiskScore,
+                RiskLevel = obs.RiskLevel, ObservedAtUtc = obs.ObservedAtUtc
+            })
+            .OrderByDescending(obs => obs.ObservedAtUtc)
+            .ThenByDescending(obs => obs.Id)
             .ToListAsync(cancellationToken);
+
+        var deviceByUsername = new Dictionary<string, List<ObservationProjection>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var device in deviceObservations)
+        {
+            var normUser = Normalize(device.Username);
+            if (string.IsNullOrWhiteSpace(normUser)) continue;
+            if (!deviceByUsername.TryGetValue(normUser, out var list))
+            {
+                list = [];
+                deviceByUsername[normUser] = list;
+            }
+            list.Add(device);
+        }
 
         var sessionUsers = new List<NetworkTelemetrySessionUserViewModel>();
         var activeCount = 0;
@@ -200,20 +277,27 @@ public class NetworkTelemetryService
                 .GroupBy(item => item.ExternalKey, StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.First()))
             {
-                var identity = ResolveDisplayIdentity(latestUser);
+                var identity = ResolveDisplayIdentityProjection(latestUser);
                 var expectedHost = TryExtractHostFromUserExternalKey(latestUser.ExternalKey);
-                var linkedDevices = deviceObservations
-                    .Where(device =>
-                        string.Equals(Normalize(device.Username), Normalize(identity), StringComparison.OrdinalIgnoreCase) &&
-                        (string.IsNullOrWhiteSpace(expectedHost) ||
-                         string.Equals(Normalize(device.HostName), Normalize(expectedHost), StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(Normalize(device.DeviceName), Normalize(expectedHost), StringComparison.OrdinalIgnoreCase)))
-                    .ToList();
+                var linkedDevices = new List<ObservationProjection>();
+                if (deviceByUsername.TryGetValue(Normalize(identity), out var candidates))
+                {
+                    foreach (var device in candidates)
+                    {
+                        if (string.IsNullOrWhiteSpace(expectedHost) ||
+                            string.Equals(Normalize(device.HostName), Normalize(expectedHost), StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(Normalize(device.DeviceName), Normalize(expectedHost), StringComparison.OrdinalIgnoreCase))
+                        {
+                            linkedDevices.Add(device);
+                        }
+                    }
+                }
+
                 var latestDevice = linkedDevices
                     .OrderByDescending(item => item.ObservedAtUtc)
                     .ThenByDescending(item => item.Id)
                     .FirstOrDefault();
-                var sessionState = ResolveUserObservationState(latestUser, latestDevice);
+                var sessionState = ResolveUserObservationStateProjection(latestUser, latestDevice);
                 var sessionStateLabel = sessionState switch
                 {
                     "active" => "Conectado",
@@ -226,21 +310,11 @@ public class NetworkTelemetryService
 
                 switch (sessionState)
                 {
-                    case "active":
-                        activeCount++;
-                        break;
-                    case "locked":
-                        lockedCount++;
-                        break;
-                    case "expired":
-                        expiredCount++;
-                        break;
-                    case "mfa-pending":
-                        pendingIdentityCount++;
-                        break;
-                    default:
-                        inactiveCount++;
-                        break;
+                    case "active": activeCount++; break;
+                    case "locked": lockedCount++; break;
+                    case "expired": expiredCount++; break;
+                    case "mfa-pending": pendingIdentityCount++; break;
+                    default: inactiveCount++; break;
                 }
 
                 sessionUsers.Add(new NetworkTelemetrySessionUserViewModel
@@ -268,15 +342,15 @@ public class NetworkTelemetryService
         }
         else
         {
-            foreach (var group in deviceObservations.GroupBy(BuildEndpointIdentity, StringComparer.OrdinalIgnoreCase))
+            foreach (var group in deviceObservations.GroupBy(BuildEndpointIdentityProjection, StringComparer.OrdinalIgnoreCase))
             {
                 var latest = group
                     .OrderByDescending(item => item.ObservedAtUtc)
                     .ThenByDescending(item => item.Id)
                     .First();
 
-                var identity = ResolveDisplayIdentity(latest);
-                var sessionState = DetermineNetworkSessionState(latest, identity);
+                var identity = ResolveDisplayIdentityProjection(latest);
+                var sessionState = DetermineNetworkSessionStateProjection(latest, identity);
                 var sessionStateLabel = sessionState switch
                 {
                     "active" => "Conectado",
@@ -289,21 +363,11 @@ public class NetworkTelemetryService
 
                 switch (sessionState)
                 {
-                    case "active":
-                        activeCount++;
-                        break;
-                    case "locked":
-                        lockedCount++;
-                        break;
-                    case "expired":
-                        expiredCount++;
-                        break;
-                    case "mfa-pending":
-                        pendingIdentityCount++;
-                        break;
-                    default:
-                        inactiveCount++;
-                        break;
+                    case "active": activeCount++; break;
+                    case "locked": lockedCount++; break;
+                    case "expired": expiredCount++; break;
+                    case "mfa-pending": pendingIdentityCount++; break;
+                    default: inactiveCount++; break;
                 }
 
                 sessionUsers.Add(new NetworkTelemetrySessionUserViewModel
@@ -411,7 +475,24 @@ public class NetworkTelemetryService
             };
         }
 
-        var items = await query.ToListAsync(cancellationToken);
+        var items = await query
+            .Select(snapshot => new SnapshotListItem
+            {
+                Id = snapshot.Id,
+                SourceName = snapshot.SourceName,
+                SourceType = snapshot.SourceType,
+                Status = snapshot.Status,
+                RiskLevel = snapshot.RiskLevel,
+                RiskScore = snapshot.RiskScore,
+                DeviceCount = snapshot.DeviceCount,
+                ConnectedUserCount = snapshot.ConnectedUserCount,
+                ObservedAtUtc = snapshot.ObservedAtUtc,
+                WindowStartUtc = snapshot.WindowStartUtc,
+                WindowEndUtc = snapshot.WindowEndUtc,
+                Notes = snapshot.Notes,
+                CreatedByUsername = snapshot.CreatedByUsername
+            })
+            .ToListAsync(cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(request.Weekday))
         {
@@ -435,7 +516,7 @@ public class NetworkTelemetryService
                 .ToList();
         }
 
-        items = ApplySnapshotSorting(items.AsQueryable(), request).ToList();
+        items = ApplySnapshotListItemSorting(items.AsQueryable(), request).ToList();
 
         var totalCount = items.Count;
         var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)request.PageSize));
@@ -461,7 +542,7 @@ public class NetworkTelemetryService
             PageSize = request.PageSize,
             TotalCount = totalCount,
             TotalPages = totalPages,
-            Items = items.Select(MapSnapshot).ToList()
+            Items = items.Select(MapSnapshotListItem).ToList()
         };
     }
 
@@ -2418,5 +2499,187 @@ public class NetworkTelemetryService
             cancellationToken: cancellationToken);
 
         return true;
+    }
+
+    private sealed class SnapshotListItem
+    {
+        public int Id { get; init; }
+        public string? SourceName { get; init; }
+        public string? SourceType { get; init; }
+        public string? Status { get; init; }
+        public string? RiskLevel { get; init; }
+        public int RiskScore { get; init; }
+        public int DeviceCount { get; init; }
+        public int ConnectedUserCount { get; init; }
+        public DateTime ObservedAtUtc { get; init; }
+        public DateTime? WindowStartUtc { get; init; }
+        public DateTime? WindowEndUtc { get; init; }
+        public string? Notes { get; init; }
+        public string? CreatedByUsername { get; init; }
+    }
+
+    private static NetworkTelemetrySnapshotViewModel MapSnapshotListItem(SnapshotListItem item)
+    {
+        var triggerType = ResolveTriggerTypeFromParts(item.SourceType, item.CreatedByUsername);
+        return new NetworkTelemetrySnapshotViewModel
+        {
+            Id = item.Id,
+            SourceName = item.SourceName ?? string.Empty,
+            SourceType = item.SourceType ?? string.Empty,
+            TriggerType = triggerType,
+            TriggerLabel = triggerType switch
+            {
+                "scheduled" => "Programado",
+                "automatic" => "Automatico",
+                _ => "Manual"
+            },
+            Status = item.Status ?? string.Empty,
+            RiskLevel = item.RiskLevel ?? "unknown",
+            RiskScore = item.RiskScore,
+            DeviceCount = item.DeviceCount,
+            ConnectedUserCount = item.ConnectedUserCount,
+            ObservedAtUtc = item.ObservedAtUtc,
+            WindowStartUtc = item.WindowStartUtc,
+            WindowEndUtc = item.WindowEndUtc,
+            Notes = item.Notes ?? string.Empty,
+            CreatedByUsername = item.CreatedByUsername ?? string.Empty
+        };
+    }
+
+    private static string ResolveTriggerTypeFromParts(string? sourceType, string? createdBy)
+    {
+        var st = sourceType?.Trim().ToLowerInvariant() ?? string.Empty;
+        var cb = createdBy?.Trim().ToLowerInvariant() ?? string.Empty;
+
+        if (st.Contains("scheduled") || cb == "system") return "scheduled";
+        if (st.Contains("auto")) return "automatic";
+        return "manual";
+    }
+
+    private static IQueryable<SnapshotListItem> ApplySnapshotListItemSorting(
+        IQueryable<SnapshotListItem> query,
+        NetworkTelemetrySnapshotQueryRequest request)
+    {
+        var descending = !string.Equals(request.SortDirection, "asc", StringComparison.OrdinalIgnoreCase);
+        return request.SortBy.Trim().ToLowerInvariant() switch
+        {
+            "sourcename" => descending
+                ? query.OrderByDescending(s => s.SourceName).ThenByDescending(s => s.ObservedAtUtc)
+                : query.OrderBy(s => s.SourceName).ThenBy(s => s.ObservedAtUtc),
+            "devicecount" => descending
+                ? query.OrderByDescending(s => s.DeviceCount).ThenByDescending(s => s.ObservedAtUtc)
+                : query.OrderBy(s => s.DeviceCount).ThenBy(s => s.ObservedAtUtc),
+            "connectedusercount" => descending
+                ? query.OrderByDescending(s => s.ConnectedUserCount).ThenByDescending(s => s.ObservedAtUtc)
+                : query.OrderBy(s => s.ConnectedUserCount).ThenBy(s => s.ObservedAtUtc),
+            "riskscore" => descending
+                ? query.OrderByDescending(s => s.RiskScore).ThenByDescending(s => s.ObservedAtUtc)
+                : query.OrderBy(s => s.RiskScore).ThenBy(s => s.ObservedAtUtc),
+            "triggertype" => descending
+                ? query.OrderByDescending(s => s.SourceType).ThenByDescending(s => s.ObservedAtUtc)
+                : query.OrderBy(s => s.SourceType).ThenBy(s => s.ObservedAtUtc),
+            "weekday" => descending
+                ? query.OrderByDescending(s => s.ObservedAtUtc.DayOfWeek).ThenByDescending(s => s.ObservedAtUtc)
+                : query.OrderBy(s => s.ObservedAtUtc.DayOfWeek).ThenBy(s => s.ObservedAtUtc),
+            "timeslot" => descending
+                ? query.OrderByDescending(s => s.ObservedAtUtc.TimeOfDay).ThenByDescending(s => s.ObservedAtUtc)
+                : query.OrderBy(s => s.ObservedAtUtc.TimeOfDay).ThenBy(s => s.ObservedAtUtc),
+            _ => descending
+                ? query.OrderByDescending(s => s.ObservedAtUtc).ThenByDescending(s => s.Id)
+                : query.OrderBy(s => s.ObservedAtUtc).ThenBy(s => s.Id)
+        };
+    }
+
+    private sealed class ObservationProjection
+    {
+        public int Id { get; init; }
+        public string? ExternalKey { get; init; }
+        public string? DeviceName { get; init; }
+        public string? Username { get; init; }
+        public string? HostName { get; init; }
+        public string? IpAddress { get; init; }
+        public string? DeviceCategory { get; init; }
+        public string? SubnetCidr { get; init; }
+        public string? NetworkProfile { get; init; }
+        public string? OpenPorts { get; init; }
+        public int? PingMs { get; init; }
+        public bool? IsOnline { get; init; }
+        public int RiskScore { get; init; }
+        public string? RiskLevel { get; init; }
+        public DateTime ObservedAtUtc { get; init; }
+    }
+
+    private static string BuildEndpointIdentityProjection(ObservationProjection observation)
+    {
+        var candidates = new[] { observation.Username, observation.HostName, observation.DeviceName, observation.IpAddress, observation.ExternalKey };
+        return candidates.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? $"endpoint-{observation.Id}";
+    }
+
+    private static string ResolveDisplayIdentityProjection(ObservationProjection observation)
+    {
+        var candidates = new[] { observation.Username, observation.DeviceName, observation.HostName, observation.IpAddress };
+        var identity = candidates.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+        return string.IsNullOrWhiteSpace(identity) ? $"endpoint-{observation.Id}" : identity!;
+    }
+
+    private static string DetermineNetworkSessionStateProjection(ObservationProjection observation, string identity)
+    {
+        var hasHumanIdentity = !string.IsNullOrWhiteSpace(identity) &&
+                               !identity.Equals(observation.IpAddress, StringComparison.OrdinalIgnoreCase) &&
+                               !identity.Equals(observation.HostName, StringComparison.OrdinalIgnoreCase);
+        var isRisky = observation.RiskLevel is "high" or "critical";
+        if (observation.IsOnline == true && isRisky) return "locked";
+        if (observation.IsOnline == true) return hasHumanIdentity ? "active" : "mfa-pending";
+        if (observation.IsOnline == false || observation.PingMs is null && string.IsNullOrWhiteSpace(observation.OpenPorts)) return "expired";
+        return hasHumanIdentity ? "inactive" : "mfa-pending";
+    }
+
+    private static string ResolveUserObservationStateProjection(ObservationProjection userObservation, ObservationProjection? linkedDevice)
+    {
+        var hasIdentity = !string.IsNullOrWhiteSpace(userObservation.Username) &&
+                          !string.Equals(userObservation.Username, userObservation.IpAddress, StringComparison.OrdinalIgnoreCase);
+        if (linkedDevice is not null && linkedDevice.RiskLevel is "high" or "critical") return "locked";
+        if (linkedDevice is not null && linkedDevice.IsOnline == true) return "active";
+        if (hasIdentity) return "inactive";
+        return "mfa-pending";
+    }
+
+    public async Task<IReadOnlyList<NetworkTelemetrySubnetRiskSummaryViewModel>> GetCombinedRiskSummariesAsync(
+        int snapshotId,
+        CancellationToken cancellationToken = default)
+    {
+        var observations = await _context.NetworkTelemetryObservations
+            .AsNoTracking()
+            .Where(observation => observation.NetworkTelemetrySnapshotId == snapshotId && observation.ObservationType == "device" && observation.SubnetCidr != string.Empty)
+            .Select(observation => new
+            {
+                observation.Id,
+                observation.SubnetCidr,
+                observation.RiskLevel,
+                observation.RiskScore
+            })
+            .ToListAsync(cancellationToken);
+
+        return observations
+            .GroupBy(observation => observation.SubnetCidr, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var topRisk = group.OrderByDescending(item => item.RiskScore).ThenByDescending(item => item.Id).First();
+                return new NetworkTelemetrySubnetRiskSummaryViewModel
+                {
+                    SubnetCidr = group.Key,
+                    DeviceCount = group.Count(),
+                    CriticalCount = group.Count(item => item.RiskLevel == "critical"),
+                    HighCount = group.Count(item => item.RiskLevel == "high"),
+                    MediumCount = group.Count(item => item.RiskLevel == "medium"),
+                    LowCount = group.Count(item => item.RiskLevel == "low"),
+                    MaxRiskScore = group.Max(item => item.RiskScore),
+                    MaxRiskLevel = string.IsNullOrWhiteSpace(topRisk.RiskLevel) ? "low" : topRisk.RiskLevel
+                };
+            })
+            .OrderByDescending(item => item.MaxRiskScore)
+            .ThenByDescending(item => item.DeviceCount)
+            .Take(100)
+            .ToList();
     }
 }

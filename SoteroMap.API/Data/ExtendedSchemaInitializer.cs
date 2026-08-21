@@ -12,6 +12,8 @@ public static class ExtendedSchemaInitializer
 
         try
         {
+            await context.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
+
             await context.Database.ExecuteSqlRawAsync("""
                 CREATE TABLE IF NOT EXISTS SyncedBuildings (
                     Id INTEGER NOT NULL CONSTRAINT PK_SyncedBuildings PRIMARY KEY AUTOINCREMENT,
@@ -410,6 +412,16 @@ public static class ExtendedSchemaInitializer
             await context.Database.ExecuteSqlRawAsync("""
                 CREATE INDEX IF NOT EXISTS IX_NetworkTelemetryObservations_SerialNumber
                 ON NetworkTelemetryObservations (SerialNumber);
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_NetworkTelemetryObservations_SnapshotId_ObsType
+                ON NetworkTelemetryObservations (NetworkTelemetrySnapshotId, ObservationType);
+                """);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_NetworkTelemetryObservations_SnapshotId_ObsType_RiskScore
+                ON NetworkTelemetryObservations (NetworkTelemetrySnapshotId, ObservationType, RiskScore DESC, Id DESC);
                 """);
 
             await EnsureColumnAsync(context, "NetworkTelemetryObservations", "DeviceCategory", "TEXT NOT NULL DEFAULT ''");
