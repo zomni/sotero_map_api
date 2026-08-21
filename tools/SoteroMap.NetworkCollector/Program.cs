@@ -287,7 +287,9 @@ static async Task RunAgentLoopAsync(CollectorOptions options, Collector collecto
                             RequestId = scanRequest.RequestId,
                             State = currentState,
                             AgentId = options.AgentId,
-                            Message = $"Escaneando {progress.ProcessedHosts}/{progress.TotalHosts} hosts. Actual: {progress.CurrentIpAddress}",
+                            Message = string.Equals(progress.CurrentStage, "enriching", StringComparison.OrdinalIgnoreCase)
+                                ? $"Enriqueciendo {progress.ProcessedHosts}/{progress.TotalHosts} hosts Windows..."
+                                : $"Escaneando {progress.ProcessedHosts}/{progress.TotalHosts} hosts. Actual: {progress.CurrentIpAddress}",
                             RequestedAtUtc = scanRequest.RequestedAtUtc,
                             RequestedByUsername = scanRequest.RequestedByUsername,
                             StartedAtUtc = startedAt,
@@ -303,7 +305,10 @@ static async Task RunAgentLoopAsync(CollectorOptions options, Collector collecto
                     TimeSpan.FromSeconds(Math.Max(1, options.ProgressUpdateSeconds)));
 
                 var scanMode = NormalizeCollectorScanMode(scanRequest.ScanMode);
+                var originalResolveSessions = options.ResolveSessions;
+                options.ResolveSessions = scanRequest.ResolveInteractiveSessions;
                 var ingestRequest = await collector.BuildRequestAsync(scanMode, scanRequest.TriggerType, controlMonitor, scanTimeoutCts.Token, progressPublisher.ReportAsync);
+                options.ResolveSessions = originalResolveSessions;
                 await AppendAgentLogAsync(logPath, $"Scan built. Devices={ingestRequest.Devices.Count} Users={ingestRequest.Users.Count}", cancellationToken);
                 await progressPublisher.FlushAsync();
                 var ingestResult = await PostToApiAsync(options, ingestRequest, scanTimeoutCts.Token);
@@ -718,6 +723,10 @@ internal sealed class Collector
         var totalHosts = candidates.Count;
         var devices = new ConcurrentBag<DeviceInput>();
         var processedHosts = 0;
+        var needEnrichment = _options.ResolveSessions || (!simpleScan && _options.ResolveHardware);
+
+        var pingThrottle = new SemaphoreSlim(8);
+        var tcpThrottle = new SemaphoreSlim(64);
 
         if (progressCallback is not null && totalHosts > 0)
         {
@@ -732,8 +741,8 @@ internal sealed class Collector
         }
 
         var queue = new ConcurrentQueue<CandidateHost>(candidates);
-        var workerCount = Math.Max(1, _options.MaxConcurrentHosts);
-        var tasks = Enumerable.Range(0, workerCount).Select(async _ =>
+        var detectionWorkers = Math.Max(1, _options.MaxConcurrentHosts);
+        var detectionTasks = Enumerable.Range(0, detectionWorkers).Select(async _ =>
         {
             while (queue.TryDequeue(out var candidate))
             {
@@ -754,7 +763,7 @@ internal sealed class Collector
                         "probing"));
                 }
 
-                var device = await ProbeHostAsync(candidate.IpAddress, simpleScan, cancellationToken);
+                var device = await ProbeHostDetectAsync(candidate.IpAddress, simpleScan, pingThrottle, tcpThrottle, cancellationToken);
                 var processed = Interlocked.Increment(ref processedHosts);
                 if (controlMonitor is not null)
                 {
@@ -780,9 +789,92 @@ internal sealed class Collector
             }
         }).ToArray();
 
-        await Task.WhenAll(tasks);
+        await Task.WhenAll(detectionTasks);
+
+        pingThrottle.Dispose();
+        tcpThrottle.Dispose();
 
         var materializedDevices = devices.ToList();
+        var subnetCounts = materializedDevices
+            .GroupBy(d => d.SubnetCidr)
+            .Select(g => $"{g.Key}:{g.Count()}")
+            .Aggregate(string.Empty, (a, b) => string.IsNullOrEmpty(a) ? b : $"{a}, {b}");
+        Console.WriteLine($"[Detection complete] Online: {materializedDevices.Count}/{totalHosts}. Subnets: {subnetCounts}");
+
+        if (needEnrichment && materializedDevices.Count > 0)
+        {
+            var enrichCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            enrichCts.CancelAfter(TimeSpan.FromMinutes(Math.Max(15, _options.MaxScanMinutes)));
+            var enrichThrottle = new SemaphoreSlim(16);
+            var enrichCandidates = materializedDevices
+                .Where(d => IsWindowsCandidate(d))
+                .ToList();
+            Console.WriteLine($"[Enrichment] {enrichCandidates.Count} Windows hosts to enrich.");
+
+            if (progressCallback is not null && enrichCandidates.Count > 0)
+            {
+                await progressCallback(new ScanProgressSnapshot(
+                    enrichCandidates.Count,
+                    0,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    "enriching"));
+            }
+
+            var enriched = 0;
+            var enrichTasks = enrichCandidates.Select(async device =>
+            {
+                if (enrichCts.IsCancellationRequested) return;
+                await enrichThrottle.WaitAsync(enrichCts.Token);
+                try
+                {
+                    await Task.Run(() => EnrichDeviceWithWindowsData(device, simpleScan), enrichCts.Token);
+                    var current = Interlocked.Increment(ref enriched);
+                    if (progressCallback is not null && current % 10 == 0)
+                    {
+                        await progressCallback(new ScanProgressSnapshot(
+                            enrichCandidates.Count,
+                            current,
+                            device.IpAddress,
+                            string.Empty,
+                            string.Empty,
+                            "enriching"));
+                    }
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    try { enrichThrottle.Release(); } catch { }
+                }
+            });
+
+            try
+            {
+                await Task.WhenAll(enrichTasks);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+
+            if (progressCallback is not null && enrichCandidates.Count > 0)
+            {
+                await progressCallback(new ScanProgressSnapshot(
+                    enrichCandidates.Count,
+                    enriched,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    "enriching-complete"));
+            }
+
+            enrichThrottle.Dispose();
+            enrichCts.Dispose();
+            Console.WriteLine($"[Enrichment] Complete. Enriched: {enriched}/{enrichCandidates.Count}.");
+        }
+
         var users = BuildUsers(materializedDevices);
 
         return new IngestRequest
@@ -884,6 +976,113 @@ internal sealed class Collector
         return device;
     }
 
+    private async Task<DeviceInput?> ProbeHostDetectAsync(IPAddress ip, bool simpleScan, SemaphoreSlim pingThrottle, SemaphoreSlim tcpThrottle, CancellationToken cancellationToken)
+    {
+        var pingMs = await TryPingThrottledAsync(ip, pingThrottle, cancellationToken);
+        var openPorts = simpleScan ? [] : await ProbePortsThrottledAsync(ip, tcpThrottle, cancellationToken);
+        var hostName = await ResolveHostNameAsync(ip, cancellationToken);
+
+        var online = pingMs.HasValue || openPorts.Count > 0 || !string.IsNullOrWhiteSpace(hostName);
+        if (!online)
+        {
+            return null;
+        }
+
+        var category = simpleScan
+            ? InferSimpleCategory(hostName)
+            : InferCategory(openPorts, hostName);
+        var profile = simpleScan
+            ? "user-session"
+            : InferProfile(openPorts, category);
+        return new DeviceInput
+        {
+            ExternalKey = $"collector:{ip}",
+            DeviceName = !string.IsNullOrWhiteSpace(hostName) ? hostName! : $"{category}-{ip}",
+            Username = string.Empty,
+            Domain = InferDomain(hostName),
+            IpAddress = ip.ToString(),
+            MacAddress = string.Empty,
+            SerialNumber = string.Empty,
+            HostName = hostName ?? string.Empty,
+            DeviceCategory = category,
+            OperatingSystem = InferOperatingSystem(openPorts),
+            OperatingSystemVersion = string.Empty,
+            Manufacturer = string.Empty,
+            Model = string.Empty,
+            Processor = string.Empty,
+            MemoryGb = null,
+            DiskTotalGb = null,
+            DiskFreeGb = null,
+            LastBootAtUtc = null,
+            IsOnline = true,
+            DomainJoined = !string.IsNullOrWhiteSpace(hostName) && hostName.Contains('.', StringComparison.Ordinal),
+            IsVirtualMachine = null,
+            PingMs = pingMs,
+            AntivirusStatus = string.Empty,
+            AntivirusVersion = string.Empty,
+            PatchStatus = string.Empty,
+            AgentVersion = "windows-collector",
+            OpenPorts = string.Join(",", openPorts),
+            SubnetCidr = ResolveSubnet(ip),
+            NetworkProfile = profile,
+            BuildingExternalId = string.Empty,
+            RoomExternalId = string.Empty,
+            Status = "observed",
+            Notes = string.Empty
+        };
+    }
+
+    private async Task<int?> TryPingThrottledAsync(IPAddress ip, SemaphoreSlim throttle, CancellationToken cancellationToken)
+    {
+        await throttle.WaitAsync(cancellationToken);
+        try
+        {
+            return await TryPingAsync(ip, cancellationToken);
+        }
+        finally
+        {
+            throttle.Release();
+        }
+    }
+
+    private async Task<List<int>> ProbePortsThrottledAsync(IPAddress ip, SemaphoreSlim globalThrottle, CancellationToken cancellationToken)
+    {
+        var openPorts = new List<int>();
+        using var perHostThrottle = new SemaphoreSlim(12);
+        var tasks = _options.ScanPorts.Select(async port =>
+        {
+            await perHostThrottle.WaitAsync(cancellationToken);
+            await globalThrottle.WaitAsync(cancellationToken);
+            try
+            {
+                using var cts = new CancellationTokenSource(_options.TcpTimeoutMs);
+                using var client = new TcpClient();
+                var connectTask = client.ConnectAsync(ip, port, cts.Token).AsTask();
+                var delayTask = Task.Delay(_options.TcpTimeoutMs, cancellationToken);
+                var completed = await Task.WhenAny(connectTask, delayTask);
+                if (completed == connectTask && client.Connected)
+                {
+                    lock (openPorts)
+                    {
+                        openPorts.Add(port);
+                    }
+                }
+            }
+            catch
+            {
+            }
+            finally
+            {
+                globalThrottle.Release();
+                perHostThrottle.Release();
+            }
+        }).ToArray();
+
+        await Task.WhenAll(tasks);
+        openPorts.Sort();
+        return openPorts;
+    }
+
     private async Task<int?> TryPingAsync(IPAddress ip, CancellationToken cancellationToken)
     {
         try
@@ -959,7 +1158,15 @@ internal sealed class Collector
         }
 
         var host = !string.IsNullOrWhiteSpace(device.HostName) ? device.HostName : device.IpAddress;
-        var sessions = _options.ResolveSessions ? TryReadInteractiveSessions(host) : [];
+
+        ManagementScope? sharedScope = null;
+        if (_options.ResolveSessions || (!simpleScan && _options.ResolveHardware))
+        {
+            try { sharedScope = CreateManagementScope(host); }
+            catch { }
+        }
+
+        var sessions = _options.ResolveSessions ? TryReadInteractiveSessions(host, sharedScope) : [];
         if (sessions.Count > 0)
         {
             device.DetectedSessions = sessions;
@@ -975,11 +1182,11 @@ internal sealed class Collector
 
         if (!simpleScan && _options.ResolveHardware)
         {
-            TryReadHardware(device, host);
+            TryReadHardware(device, host, sharedScope);
         }
     }
 
-    private List<InteractiveSession> TryReadInteractiveSessions(string host)
+    private List<InteractiveSession> TryReadInteractiveSessions(string host, ManagementScope? sharedScope)
     {
         var quserSessions = TryRunQuser(host);
         if (quserSessions.Count > 0)
@@ -994,7 +1201,7 @@ internal sealed class Collector
 
         try
         {
-            var scope = CreateManagementScope(host);
+            var scope = sharedScope ?? CreateManagementScope(host);
             using var searcher = new ManagementObjectSearcher(scope, new ObjectQuery("SELECT UserName FROM Win32_ComputerSystem"));
             foreach (ManagementObject item in searcher.Get())
             {
@@ -1131,11 +1338,11 @@ internal sealed class Collector
         return "pc";
     }
 
-    private void TryReadHardware(DeviceInput device, string host)
+    private void TryReadHardware(DeviceInput device, string host, ManagementScope? sharedScope)
     {
         try
         {
-            var scope = CreateManagementScope(host);
+            var scope = sharedScope ?? CreateManagementScope(host);
 
             using (var searcher = new ManagementObjectSearcher(scope, new ObjectQuery("SELECT Manufacturer, Model, TotalPhysicalMemory, UserName FROM Win32_ComputerSystem")))
             {
@@ -1187,6 +1394,33 @@ internal sealed class Collector
                     }
                 }
             }
+
+            if (string.IsNullOrWhiteSpace(device.SerialNumber))
+            {
+                using (var biosSearcher = new ManagementObjectSearcher(scope, new ObjectQuery("SELECT SerialNumber FROM Win32_BIOS")))
+                {
+                    foreach (ManagementObject item in biosSearcher.Get())
+                    {
+                        device.SerialNumber = item["SerialNumber"]?.ToString()?.Trim() ?? device.SerialNumber;
+                    }
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(device.MacAddress))
+            {
+                using (var nicSearcher = new ManagementObjectSearcher(scope, new ObjectQuery("SELECT MACAddress, IPEnabled FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled = TRUE")))
+                {
+                    foreach (ManagementObject item in nicSearcher.Get())
+                    {
+                        var mac = item["MACAddress"]?.ToString()?.Trim();
+                        if (!string.IsNullOrWhiteSpace(mac))
+                        {
+                            device.MacAddress = mac;
+                            break;
+                        }
+                    }
+                }
+            }
         }
         catch
         {
@@ -1195,7 +1429,10 @@ internal sealed class Collector
 
     private ManagementScope CreateManagementScope(string host)
     {
-        var connectionOptions = new ConnectionOptions();
+        var connectionOptions = new ConnectionOptions
+        {
+            Timeout = TimeSpan.FromSeconds(8)
+        };
         if (_credential is not null)
         {
             connectionOptions.Username = _credential.QualifiedUsername;
@@ -1451,7 +1688,7 @@ internal sealed class CollectorOptions
     public bool WatchMode { get; set; }
     public int PollIntervalSeconds { get; set; } = 5;
     public int ProgressUpdateSeconds { get; set; } = 2;
-    public int MaxScanMinutes { get; set; } = 8;
+    public int MaxScanMinutes { get; set; } = 30;
     public string Domain { get; set; } = "SSMSO";
     public string Username { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
@@ -1461,7 +1698,7 @@ internal sealed class CollectorOptions
     public List<string> ScanCidrs { get; set; } = [];
     public List<int> ScanPorts { get; set; } = [];
     public int MaxHostsPerScan { get; set; } = 4096;
-    public int MaxConcurrentHosts { get; set; } = 64;
+    public int MaxConcurrentHosts { get; set; } = 32;
     public int PingTimeoutMs { get; set; } = 400;
     public int TcpTimeoutMs { get; set; } = 350;
     public int DnsTimeoutMs { get; set; } = 1200;

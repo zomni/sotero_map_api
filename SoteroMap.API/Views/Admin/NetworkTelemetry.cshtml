@@ -372,6 +372,108 @@
             grid-template-columns: 1fr;
         }
     }
+    .schedule-slot-row {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 12px;
+        padding: 12px 14px;
+        background: #f8fafc;
+        margin-bottom: 10px;
+    }
+
+    .schedule-slot-row .schedule-time-input {
+        width: 110px;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        padding: 6px 10px;
+        font-size: 0.95rem;
+        font-weight: 600;
+    }
+
+    .schedule-day-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 38px;
+        height: 34px;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        background: #fff;
+        color: #64748b;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        user-select: none;
+    }
+
+    .schedule-day-btn:hover {
+        border-color: #3b82f6;
+        color: #3b82f6;
+    }
+
+    .schedule-day-btn.active {
+        background: #3b82f6;
+        border-color: #3b82f6;
+        color: #fff;
+    }
+
+    .schedule-card {
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 14px;
+        padding: 14px 16px;
+        margin-bottom: 10px;
+        background: #fff;
+        transition: box-shadow 0.15s ease;
+    }
+
+    .schedule-card:hover {
+        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+
+    .schedule-card .schedule-card-title {
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: #1e293b;
+    }
+
+    .schedule-card .schedule-card-detail {
+        font-size: 0.82rem;
+        color: #64748b;
+    }
+
+    .schedule-card .schedule-day-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 28px;
+        height: 22px;
+        border-radius: 6px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 0 6px;
+    }
+
+    .schedule-card .schedule-day-badge.active {
+        background: #dbeafe;
+        color: #2563eb;
+    }
+
+    .schedule-card .schedule-day-badge.inactive {
+        background: #f1f5f9;
+        color: #94a3b8;
+    }
+
+    .schedule-card .schedule-time-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 8px;
+        background: #f0fdf4;
+        color: #16a34a;
+        font-size: 0.82rem;
+        font-weight: 600;
+    }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -948,12 +1050,87 @@
         <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
                 <h5 class="mb-1">Escaneos programados</h5>
-                <div class="small text-muted">Historial paginado de escaneos automaticos programados</div>
+                <div class="small text-muted">Configura horarios de escaneo y revisa el historial automatico</div>
             </div>
             <div class="d-flex gap-2">
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="telemetry-scheduled-refresh" title="Refrescar">
+                <button type="button" class="btn btn-sm btn-outline-primary" id="telemetry-schedule-toggle" title="Gestionar horarios">
+                    <i class="bi bi-calendar-event me-1"></i><span>Horarios</span>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="telemetry-scheduled-refresh" title="Refrescar historial">
                     <i class="bi bi-arrow-clockwise"></i>
                 </button>
+            </div>
+        </div>
+
+        <div id="telemetry-schedule-panel" class="d-none mb-4">
+            <div class="telemetry-filter-panel p-3 mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="fw-semibold">Horarios configurados</div>
+                    <button type="button" class="btn btn-sm btn-primary" id="telemetry-schedule-add">
+                        <i class="bi bi-plus-lg me-1"></i>Agregar horario
+                    </button>
+                </div>
+                <div id="telemetry-schedule-table"><div class="text-muted small">Cargando horarios...</div></div>
+            </div>
+        </div>
+
+        <div id="telemetry-schedule-modal" class="telemetry-scan-modal" aria-hidden="true">
+            <div class="telemetry-scan-dialog" style="max-width:540px">
+                <div class="modal-content telemetry-scan-card border-0 shadow">
+                    <div class="modal-header">
+                        <div>
+                            <div class="text-uppercase small fw-semibold text-muted mb-1">Horario de escaneo</div>
+                            <h6 class="modal-title mb-0" id="telemetry-schedule-modal-title">Nuevo horario</h6>
+                        </div>
+                        <button type="button" class="btn-close" id="telemetry-schedule-modal-close" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="telemetry-schedule-id" />
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold" for="telemetry-schedule-label">Nombre</label>
+                            <input type="text" class="form-control" id="telemetry-schedule-label" placeholder="Ej: Escaneo diario" />
+                        </div>
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="form-label fw-semibold mb-0">Horarios del escaneo</label>
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="telemetry-schedule-add-slot">
+                                    <i class="bi bi-plus-lg me-1"></i>Agregar
+                                </button>
+                            </div>
+                            <div id="telemetry-schedule-slots"></div>
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="telemetry-schedule-timezone">Zona horaria</label>
+                                <select class="form-select" id="telemetry-schedule-timezone">
+                                    <option value="America/Santiago" selected>America/Santiago</option>
+                                    <option value="America/Argentina/Buenos_Aires">America/Argentina/Buenos_Aires</option>
+                                    <option value="America/Lima">America/Lima</option>
+                                    <option value="UTC">UTC</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 d-flex align-items-end">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="telemetry-schedule-enabled" checked />
+                                    <label class="form-check-label fw-semibold" for="telemetry-schedule-enabled">Habilitado</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="telemetry-schedule-preview" class="p-3 bg-light rounded small d-none"></div>
+                    </div>
+                    <div class="modal-footer d-flex justify-content-between">
+                        <button type="button" class="btn btn-outline-danger btn-sm d-none" id="telemetry-schedule-delete">
+                            <i class="bi bi-trash me-1"></i>Eliminar
+                        </button>
+                        <div class="d-flex gap-2 ms-auto">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="telemetry-schedule-preview-btn">
+                                <i class="bi bi-eye me-1"></i>Vista previa
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="telemetry-schedule-cancel">Cancelar</button>
+                            <button type="button" class="btn btn-primary btn-sm" id="telemetry-schedule-save">Guardar</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="telemetry-filter-panel p-3 mb-3">
@@ -1943,8 +2120,9 @@
             snapshotSummary.textContent = `Mostrando ${items.length} de ${totalCount} snapshots. Pagina ${page} de ${totalPages}.`;
             snapshotTable.innerHTML = items.length === 0
                 ? `<div class="text-muted">No hay snapshots para ese filtro.</div>`
-                : `<div class="telemetry-table-wrap table-responsive"><table class="table align-middle"><thead><tr><th>${buildSortableHeader("Fecha", "observedAt", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Dia", "weekday", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Hora", "timeSlot", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Fuente", "sourceName", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Estado", "triggerType", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Usuarios", "connectedUserCount", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Equipos", "deviceCount", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Riesgo", "riskScore", currentSortBy, currentDirection, "snapshot")}</th><th></th></tr></thead><tbody>${items.map((item) => `
+                : `<div class="telemetry-table-wrap table-responsive"><table class="table align-middle"><thead><tr><th>ID</th><th>${buildSortableHeader("Fecha", "observedAt", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Dia", "weekday", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Hora", "timeSlot", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Fuente", "sourceName", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Estado", "triggerType", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Usuarios", "connectedUserCount", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Equipos", "deviceCount", currentSortBy, currentDirection, "snapshot")}</th><th>${buildSortableHeader("Riesgo", "riskScore", currentSortBy, currentDirection, "snapshot")}</th><th></th></tr></thead><tbody>${items.map((item) => `
                     <tr>
+                        <td class="fw-semibold">#${item.id || '-'}</td>
                         <td>${formatChileDateTime(item.observedAtUtc)}</td>
                         <td>${formatChileWeekday(item.observedAtUtc)}</td>
                         <td>${formatChileTime(item.observedAtUtc)}</td>
@@ -2092,6 +2270,7 @@
             }
             scheduledTable.innerHTML = `<div class="telemetry-table-wrap table-responsive"><table class="table align-middle"><thead><tr>
                 <th>ID</th>
+                <th>${buildSortableHeader("Horario", "scheduleLabel", currentSortBy, currentDirection, "scheduled")}</th>
                 <th>${buildSortableHeader("Dia", "scheduledDayLocal", currentSortBy, currentDirection, "scheduled")}</th>
                 <th>${buildSortableHeader("Hora", "scheduledTimeLocal", currentSortBy, currentDirection, "scheduled")}</th>
                 <th>${buildSortableHeader("Fecha", "scheduledAtUtc", currentSortBy, currentDirection, "scheduled")}</th>
@@ -2115,7 +2294,8 @@
                     ? `<a href="/dashboard/network-telemetry?snapshotId=${item.snapshotId}" class="btn btn-sm btn-outline-primary" title="Cargar esta snapshot"><i class="bi bi-eye"></i></a>`
                     : '<span class="text-muted">-</span>';
                 return `<tr>
-                    <td class="fw-semibold">#${item.id || "-"}</td>
+                    <td class="fw-semibold">${item.snapshotId ? '#' + item.snapshotId : '<span class="text-muted">-</span>'}</td>
+                    <td>${item.scheduleLabel || '<span class="text-muted">-</span>'}</td>
                     <td>${item.scheduledDayLocal || ""}</td>
                     <td>${item.scheduledTimeLocal || ""}</td>
                     <td>${createdAt}</td>
@@ -2241,6 +2421,7 @@
             const currentHostName = status?.currentHostName || "";
             const currentSubnetCidr = status?.currentSubnetCidr || "";
             const currentStage = status?.currentStage || "";
+            const isEnriching = currentStage === "enriching" || currentStage === "enriching-complete";
             const progressPercent = totalHosts > 0 ? Math.min(100, Math.max(0, Math.round((processedHosts / totalHosts) * 100))) : 0;
             const connectionTone = isConnected ? "success" : "secondary";
             const stateTone = state === "completed"
@@ -2273,14 +2454,15 @@
                     <div class="text-white">${message}${triggerLabel && state === "failed" ? ` <span class="badge bg-light text-dark">${triggerLabel}</span>` : ""}</div>
                     ${totalHosts > 0 ? `
                         <div class="telemetry-progress" aria-label="Progreso de escaneo">
-                            <span style="width:${progressPercent}%"></span>
+                            <span style="width:${progressPercent}%;${isEnriching ? 'background:linear-gradient(90deg,#f59e0b,#f97316)' : ''}"></span>
                         </div>
                         <div class="telemetry-agent-meta">
-                            <span class="telemetry-agent-stat"><i class="bi bi-hdd-network"></i> ${processedHosts}/${totalHosts} hosts</span>
-                            ${currentSubnetCidr ? `<span class="telemetry-agent-stat"><i class="bi bi-diagram-3"></i> ${currentSubnetCidr}</span>` : ""}
-                            ${currentIpAddress ? `<span class="telemetry-agent-stat"><i class="bi bi-router"></i> ${currentIpAddress}</span>` : ""}
-                            ${currentHostName ? `<span class="telemetry-agent-stat"><i class="bi bi-pc-display"></i> ${currentHostName}</span>` : ""}
-                            ${currentStage ? `<span class="telemetry-agent-stat"><i class="bi bi-activity"></i> ${currentStage}</span>` : ""}
+                            <span class="telemetry-agent-stat"><i class="bi ${isEnriching ? 'bi-gear-wide-connected' : 'bi-hdd-network'}"></i> ${isEnriching ? 'WMI' : ''} ${processedHosts}/${totalHosts} ${isEnriching ? 'hosts Windows' : 'hosts'}</span>
+                            ${!isEnriching && currentSubnetCidr ? `<span class="telemetry-agent-stat"><i class="bi bi-diagram-3"></i> ${currentSubnetCidr}</span>` : ""}
+                            ${!isEnriching && currentIpAddress ? `<span class="telemetry-agent-stat"><i class="bi bi-router"></i> ${currentIpAddress}</span>` : ""}
+                            ${!isEnriching && currentHostName ? `<span class="telemetry-agent-stat"><i class="bi bi-pc-display"></i> ${currentHostName}</span>` : ""}
+                            ${isEnriching ? `<span class="telemetry-agent-stat"><i class="bi bi-gear-wide-connected"></i> Enriqueciendo hardware...</span>` : ""}
+                            ${!isEnriching && currentStage ? `<span class="telemetry-agent-stat"><i class="bi bi-activity"></i> ${currentStage}</span>` : ""}
                         </div>` : ""}
                     <div class="telemetry-agent-meta">
                         ${triggerLabel ? `<span class="telemetry-agent-stat"><i class="bi bi-tag"></i> ${triggerLabel}</span>` : ""}
@@ -2327,17 +2509,30 @@
             const runningPct = document.getElementById("telemetry-scan-running-pct");
             if (state === "running" || state === "pending") {
                 runningBanner?.classList.remove("d-none");
-                if (runningText) runningText.textContent = triggerType === "scheduled"
-                    ? "Escaneo programado en curso..."
-                    : "Escaneo en curso...";
+                if (runningText) runningText.textContent = isEnriching
+                    ? "Enriquecimiento WMI en curso..."
+                    : triggerType === "scheduled"
+                        ? "Escaneo programado en curso..."
+                        : "Escaneo en curso...";
                 if (runningDetail) {
                     const detailParts = [];
                     if (triggerLabel) detailParts.push(triggerLabel);
-                    if (currentIpAddress) detailParts.push(currentIpAddress);
-                    if (currentStage) detailParts.push(currentStage);
+                    if (isEnriching) {
+                        detailParts.push(`${processedHosts}/${totalHosts} hosts Windows enriquecidos`);
+                    } else {
+                        if (currentIpAddress) detailParts.push(currentIpAddress);
+                        if (currentStage) detailParts.push(currentStage);
+                    }
                     runningDetail.textContent = detailParts.join(" · ") || "";
                 }
-                if (runningProgress) runningProgress.style.width = progressPercent + "%";
+                if (runningProgress) {
+                    runningProgress.style.width = progressPercent + "%";
+                    if (isEnriching) {
+                        runningProgress.style.background = "linear-gradient(90deg,#f59e0b,#f97316)";
+                    } else {
+                        runningProgress.style.background = "";
+                    }
+                }
                 if (runningPct) runningPct.textContent = progressPercent + "%";
             } else {
                 runningBanner?.classList.add("d-none");
@@ -2400,6 +2595,282 @@
         scheduledDirectionSelect?.addEventListener("change", () => loadScheduledScans(1));
         scheduledPageSizeSelect?.addEventListener("change", () => loadScheduledScans(1));
         document.getElementById("telemetry-scheduled-refresh")?.addEventListener("click", () => loadScheduledScans());
+
+        // --- Schedule CRUD ---
+        const DAY_LABELS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sa", "Do"];
+        const DAY_KEYS = ["lu", "ma", "mi", "ju", "vi", "sa", "do"];
+
+        const schedulePanel = document.getElementById("telemetry-schedule-panel");
+        const scheduleToggle = document.getElementById("telemetry-schedule-toggle");
+        const scheduleTable = document.getElementById("telemetry-schedule-table");
+        const scheduleModal = document.getElementById("telemetry-schedule-modal");
+        const scheduleModalTitle = document.getElementById("telemetry-schedule-modal-title");
+        const scheduleIdInput = document.getElementById("telemetry-schedule-id");
+        const scheduleLabelInput = document.getElementById("telemetry-schedule-label");
+        const scheduleTimezoneSelect = document.getElementById("telemetry-schedule-timezone");
+        const scheduleEnabledInput = document.getElementById("telemetry-schedule-enabled");
+        const schedulePreviewDiv = document.getElementById("telemetry-schedule-preview");
+        const scheduleSlotsContainer = document.getElementById("telemetry-schedule-slots");
+        const scheduleAddSlotBtn = document.getElementById("telemetry-schedule-add-slot");
+        const scheduleAddBtn = document.getElementById("telemetry-schedule-add");
+        const scheduleSaveBtn = document.getElementById("telemetry-schedule-save");
+        const scheduleCancelBtn = document.getElementById("telemetry-schedule-cancel");
+        const scheduleDeleteBtn = document.getElementById("telemetry-schedule-delete");
+        const schedulePreviewBtn = document.getElementById("telemetry-schedule-preview-btn");
+        const scheduleModalClose = document.getElementById("telemetry-schedule-modal-close");
+
+        const buildCronFromSlots = (slots) => {
+            const groups = {};
+            for (const slot of slots) {
+                if (!slot.time || !slot.days || slot.days.length === 0) continue;
+                const [h, m] = slot.time.split(":").map(Number);
+                const key = `${h}:${m}`;
+                if (!groups[key]) groups[key] = new Set();
+                for (const d of slot.days) {
+                    const idx = DAY_KEYS.indexOf(d);
+                    if (idx >= 0) groups[key].add(String(idx === 6 ? 0 : idx + 1));
+                }
+            }
+            const parts = [];
+            for (const [time, days] of Object.entries(groups)) {
+                const [h, m] = time.split(":").map(Number);
+                const sortedDays = [...days].sort((a, b) => Number(a) - Number(b));
+                parts.push(`0 ${m} ${h} * * ${sortedDays.join(",")}`);
+            }
+            return parts.join(";");
+        };
+
+        const readSlotsFromModal = () => {
+            const rows = scheduleSlotsContainer.querySelectorAll(".schedule-slot-row");
+            const slots = [];
+            rows.forEach(row => {
+                const timeInput = row.querySelector(".schedule-time-input");
+                const dayBtns = row.querySelectorAll(".schedule-day-btn");
+                const days = [];
+                dayBtns.forEach(btn => { if (btn.classList.contains("active")) days.push(btn.dataset.day); });
+                if (timeInput?.value && days.length > 0) {
+                    slots.push({ time: timeInput.value, days });
+                }
+            });
+            return slots;
+        };
+
+        const createSlotRow = (time, activeDays) => {
+            const row = document.createElement("div");
+            row.className = "schedule-slot-row";
+            const daysHtml = DAY_LABELS.map((label, i) => {
+                const key = DAY_KEYS[i];
+                const isActive = activeDays?.includes(key) ? "active" : "";
+                return `<button type="button" class="schedule-day-btn ${isActive}" data-day="${key}">${label}</button>`;
+            }).join("");
+            row.innerHTML = `
+                <div class="d-flex align-items-center gap-3 flex-wrap">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-clock text-muted"></i>
+                        <input type="time" class="form-control form-control-sm schedule-time-input" value="${time || '08:30'}" />
+                    </div>
+                    <div class="d-flex gap-1 flex-wrap">${daysHtml}</div>
+                    <button type="button" class="btn btn-sm btn-outline-danger ms-auto schedule-remove-slot" title="Eliminar"><i class="bi bi-trash"></i></button>
+                </div>`;
+            row.querySelectorAll(".schedule-day-btn").forEach(btn => {
+                btn.addEventListener("click", () => btn.classList.toggle("active"));
+            });
+            row.querySelector(".schedule-remove-slot")?.addEventListener("click", () => {
+                row.remove();
+            });
+            return row;
+        };
+
+        const formatSlotDescription = (slots) => {
+            if (!slots || slots.length === 0) return "Sin horarios";
+            const timeDayMap = {};
+            for (const slot of slots) {
+                for (const d of (slot.days || [])) {
+                    const label = DAY_LABELS[DAY_KEYS.indexOf(d)] || d;
+                    if (!timeDayMap[label]) timeDayMap[label] = [];
+                    timeDayMap[label].push(slot.time);
+                }
+            }
+            const dayOrder = [...DAY_LABELS];
+            const groups = [];
+            let current = [];
+            for (const d of dayOrder) {
+                if (timeDayMap[d]) {
+                    current.push(d);
+                } else {
+                    if (current.length > 0) { groups.push([...current]); current = []; }
+                }
+            }
+            if (current.length > 0) groups.push(current);
+
+            const parts = groups.map(g => {
+                const dayStr = g.length >= 3 && DAY_KEYS.indexOf(g[g.length - 1]) - DAY_KEYS.indexOf(g[0]) === g.length - 1
+                    ? `${g[0]}-${g[g.length - 1]}`
+                    : g.join(", ");
+                const times = [...new Set([].concat(...g.map(d => timeDayMap[d])))].sort().join(", ");
+                return `${dayStr} ${times}`;
+            });
+            return parts.join(" | ");
+        };
+
+        scheduleToggle?.addEventListener("click", () => {
+            schedulePanel?.classList.toggle("d-none");
+            if (!schedulePanel?.classList.contains("d-none")) {
+                loadSchedules();
+            }
+        });
+
+        scheduleAddSlotBtn?.addEventListener("click", () => {
+            scheduleSlotsContainer.appendChild(createSlotRow("08:30", []));
+        });
+
+        scheduleAddBtn?.addEventListener("click", () => {
+            scheduleIdInput.value = "";
+            scheduleLabelInput.value = "";
+            scheduleTimezoneSelect.value = "America/Santiago";
+            scheduleEnabledInput.checked = true;
+            schedulePreviewDiv.classList.add("d-none");
+            scheduleDeleteBtn.classList.add("d-none");
+            scheduleModalTitle.textContent = "Nuevo horario";
+            scheduleSlotsContainer.innerHTML = "";
+            scheduleSlotsContainer.appendChild(createSlotRow("08:30", ["lu", "ma", "mi", "ju", "vi"]));
+            scheduleModal?.classList.add("is-open");
+        });
+
+        scheduleCancelBtn?.addEventListener("click", () => scheduleModal?.classList.remove("is-open"));
+        scheduleModalClose?.addEventListener("click", () => scheduleModal?.classList.remove("is-open"));
+
+        schedulePreviewBtn?.addEventListener("click", () => {
+            const slots = readSlotsFromModal();
+            if (slots.length === 0) { schedulePreviewDiv.classList.add("d-none"); return; }
+            fetch("/api/network-telemetry/schedule/preview", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ slots, timeZone: scheduleTimezoneSelect.value, count: 5 })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.valid) { schedulePreviewDiv.innerHTML = '<span class="text-danger">No se pudo generar el horario.</span>'; schedulePreviewDiv.classList.remove("d-none"); return; }
+                const lines = (data.occurrences || []).map(o => {
+                    const local = new Date(o.local);
+                    return "- " + local.toLocaleString("es-CL", { weekday: "long", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+                });
+                schedulePreviewDiv.innerHTML = '<strong>Proximas ejecuciones:</strong><br/>' + lines.join("<br/>");
+                schedulePreviewDiv.classList.remove("d-none");
+            })
+            .catch(() => { schedulePreviewDiv.innerHTML = '<span class="text-danger">Error al previsualizar.</span>'; schedulePreviewDiv.classList.remove("d-none"); });
+        });
+
+        scheduleSaveBtn?.addEventListener("click", () => {
+            const id = scheduleIdInput.value.trim();
+            const slots = readSlotsFromModal();
+            if (slots.length === 0) { alert("Debe agregar al menos un horario con al menos un dia seleccionado."); return; }
+            const payload = {
+                label: scheduleLabelInput.value.trim(),
+                slots,
+                timeZone: scheduleTimezoneSelect.value,
+                isEnabled: scheduleEnabledInput.checked,
+                sortOrder: 0
+            };
+            const url = id ? `/api/network-telemetry/schedule/${id}` : "/api/network-telemetry/schedule";
+            const method = id ? "PUT" : "POST";
+            fetch(url, {
+                method,
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify(payload)
+            })
+            .then(r => {
+                if (r.status === 409) {
+                    return r.json().then(e => {
+                        const msg = e.message + "\n" + (e.overlaps || []).map(o => "- " + o).join("\n");
+                        throw new Error(msg);
+                    });
+                }
+                if (!r.ok) return r.json().then(e => { throw new Error(e.message || `HTTP ${r.status}`); });
+                return r.json();
+            })
+            .then(() => {
+                scheduleModal?.classList.remove("is-open");
+                loadSchedules();
+            })
+            .catch(err => alert("Error guardando horario: " + err.message));
+        });
+
+        scheduleDeleteBtn?.addEventListener("click", () => {
+            const id = scheduleIdInput.value.trim();
+            if (!id) return;
+            if (!confirm("Eliminar este horario?")) return;
+            fetch(`/api/network-telemetry/schedule/${id}`, { method: "DELETE", credentials: "include" })
+            .then(r => { if (!r.ok && r.status !== 204) throw new Error(`HTTP ${r.status}`); })
+            .then(() => { scheduleModal?.classList.remove("is-open"); loadSchedules(); })
+            .catch(err => alert("Error eliminando horario: " + err.message));
+        });
+
+        const loadSchedules = () => {
+            if (!scheduleTable) return;
+            fetch("/api/network-telemetry/schedule", { credentials: "include", cache: "no-store" })
+            .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+            .then(schedules => {
+                if (!Array.isArray(schedules) || schedules.length === 0) {
+                    scheduleTable.innerHTML = '<div class="text-muted small">No hay horarios configurados. Puedes crear uno con "Agregar horario".</div>';
+                    return;
+                }
+                scheduleTable.innerHTML = schedules.map(s => {
+                    const nextLocal = s.nextOccurrenceLocal ? new Date(s.nextOccurrenceLocal).toLocaleString("es-CL", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+                    const statusBadge = s.isEnabled
+                        ? '<span class="badge bg-success-subtle text-success">Activo</span>'
+                        : '<span class="badge bg-secondary-subtle text-secondary">Inactivo</span>';
+                    const editBtn = `<button class="btn btn-sm btn-outline-primary schedule-edit-btn" data-id="${s.id}" title="Editar"><i class="bi bi-pencil"></i></button>`;
+                    const desc = formatSlotDescription(s.scheduleSlots);
+                    const dayBadges = DAY_LABELS.map((label, i) => {
+                        const isActive = s.scheduleSlots?.some(slot => slot.days?.includes(DAY_KEYS[i]));
+                        return `<span class="schedule-day-badge ${isActive ? 'active' : 'inactive'}">${label}</span>`;
+                    }).join("");
+                    return `<div class="schedule-card">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <div class="schedule-card-title">${s.label || desc}${statusBadge}</div>
+                                <div class="schedule-card-detail mt-1">${desc}</div>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                ${nextLocal ? `<span class="small text-muted"><i class="bi bi-clock-history me-1"></i>${nextLocal}</span>` : ''}
+                                ${editBtn}
+                            </div>
+                        </div>
+                        <div class="d-flex gap-1 mt-2">${dayBadges}</div>
+                    </div>`;
+                }).join("");
+                scheduleTable.querySelectorAll(".schedule-edit-btn").forEach(btn => {
+                    btn.addEventListener("click", () => {
+                        const id = btn.dataset.id;
+                        const sched = schedules.find(s => s.id === id);
+                        if (!sched) return;
+                        scheduleIdInput.value = sched.id;
+                        scheduleLabelInput.value = sched.label || "";
+                        scheduleTimezoneSelect.value = sched.timeZone || "America/Santiago";
+                        scheduleEnabledInput.checked = sched.isEnabled;
+                        schedulePreviewDiv.classList.add("d-none");
+                        scheduleDeleteBtn.classList.remove("d-none");
+                        scheduleModalTitle.textContent = "Editar horario";
+                        scheduleSlotsContainer.innerHTML = "";
+                        if (sched.scheduleSlots && sched.scheduleSlots.length > 0) {
+                            sched.scheduleSlots.forEach(slot => {
+                                scheduleSlotsContainer.appendChild(createSlotRow(slot.time, slot.days));
+                            });
+                        } else {
+                            scheduleSlotsContainer.appendChild(createSlotRow("08:30", []));
+                        }
+                        scheduleModal?.classList.add("is-open");
+                    });
+                });
+            })
+            .catch(err => {
+                console.error("Error cargando horarios:", err);
+                scheduleTable.textContent = "Error cargando horarios.";
+            });
+        };
 
         renderSubnetRiskSummaries(1);
         loadDevices(1);

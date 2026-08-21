@@ -54,6 +54,7 @@ services:
       - LDAP_TRUST_SERVER_CERTIFICATE=${LDAP_TRUST_SERVER_CERTIFICATE:-true}
       - LDAPTLS_REQCERT=${LDAPTLS_REQCERT:-never}
       - NetworkTelemetrySettings__IngestApiKey=${NETWORK_TELEMETRY_INGEST_API_KEY:-SoteroMapNetworkCollector-2026}
+      - NetworkTelemetrySettings__AgentSharedPath=/app/runtime/network-telemetry-agent
     volumes:
       - ./:/app
       - api_bin:/app/SoteroMap.API/bin

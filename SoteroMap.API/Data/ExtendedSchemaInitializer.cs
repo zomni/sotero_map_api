@@ -435,6 +435,7 @@ public static class ExtendedSchemaInitializer
             await EnsureColumnAsync(context, "NetworkTelemetryObservations", "NetworkProfile", "TEXT NOT NULL DEFAULT ''");
 
             await EnsureScheduledScanRunsTableAsync(context);
+            await EnsureColumnAsync(context, "ScheduledScanRuns", "ScheduleLabel", "TEXT NOT NULL DEFAULT ''");
 
             await context.Database.ExecuteSqlRawAsync("""
                 CREATE TABLE IF NOT EXISTS ManualBuildings (

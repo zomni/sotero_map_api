@@ -140,6 +140,7 @@ builder.Services.AddScoped<EquipmentDeliveryDocumentService>();
 builder.Services.AddScoped<NetworkTelemetryService>();
 builder.Services.AddScoped<NetworkTelemetryLiveScanService>();
 builder.Services.AddScoped<NetworkTelemetryAgentBridgeService>();
+builder.Services.AddScoped<TelemetryScanScheduleService>();
 builder.Services.AddHostedService<NetworkTelemetryLiveScanHostedService>();
 
 // CORS para que el frontend (sotero_map) pueda consumir la API

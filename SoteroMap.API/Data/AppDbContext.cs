@@ -24,6 +24,7 @@ public class AppDbContext : DbContext
     public DbSet<NetworkTelemetrySnapshot> NetworkTelemetrySnapshots => Set<NetworkTelemetrySnapshot>();
     public DbSet<NetworkTelemetryObservation> NetworkTelemetryObservations => Set<NetworkTelemetryObservation>();
     public DbSet<ScheduledScanRun> ScheduledScanRuns => Set<ScheduledScanRun>();
+    public DbSet<TelemetryScanSchedule> TelemetryScanSchedules => Set<TelemetryScanSchedule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -345,6 +346,16 @@ public class AppDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.SnapshotId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<TelemetryScanSchedule>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.IsEnabled);
+            entity.HasIndex(e => e.DeletedAtUtc);
+            entity.Property(e => e.Label).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Cron).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.TimeZone).IsRequired().HasMaxLength(50);
         });
     }
 }

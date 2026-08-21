@@ -2295,7 +2295,8 @@ public class NetworkTelemetryService
                 r.ScheduledDayLocal.Contains(s) ||
                 r.ScheduledTimeLocal.Contains(s) ||
                 r.Status.Contains(s) ||
-                r.NormalizedCron.Contains(s));
+                r.NormalizedCron.Contains(s) ||
+                r.ScheduleLabel.Contains(s));
         }
 
         if (!string.IsNullOrWhiteSpace(request.Status))
@@ -2333,6 +2334,8 @@ public class NetworkTelemetryService
             ("scheduledDayLocal", "desc") => query.OrderByDescending(r => r.ScheduledDayLocal),
             ("scheduledTimeLocal", "asc") => query.OrderBy(r => r.ScheduledTimeLocal),
             ("scheduledTimeLocal", "desc") => query.OrderByDescending(r => r.ScheduledTimeLocal),
+            ("scheduleLabel", "asc") => query.OrderBy(r => r.ScheduleLabel),
+            ("scheduleLabel", "desc") => query.OrderByDescending(r => r.ScheduleLabel),
             _ => query.OrderByDescending(r => r.ScheduledAtUtc)
         };
 
@@ -2365,6 +2368,7 @@ public class NetworkTelemetryService
             DeviceCount = run.DeviceCount,
             UserCount = run.UserCount,
             NormalizedCron = run.NormalizedCron,
+            ScheduleLabel = run.ScheduleLabel,
             CreatedAtUtc = run.CreatedAtUtc
         }).ToList();
 

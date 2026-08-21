@@ -15,5 +15,6 @@ public class ScheduledScanRun
     public int? DeviceCount { get; set; }
     public int? UserCount { get; set; }
     public string NormalizedCron { get; set; } = string.Empty;
+    public string ScheduleLabel { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
